@@ -1,0 +1,123 @@
+{
+  "expo": {
+    "name": "AC Manager",
+    "slug": "ac-manager",
+    "owner": "acmenago",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "ac-manager",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.acmenago.acmanager",
+      "config": {
+        "googleMapsApiKey": "AIzaSyAsJ4XUjWlHiREnFyy5n_R74C_HyAOTmHM"
+      },
+      "associatedDomains": [],
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.acmenago.acmanager",
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAsJ4XUjWlHiREnFyy5n_R74C_HyAOTmHM"
+        }
+      },
+      "useNextNotificationsApi": true,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "ac-manager"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b0c8cfe5-669d-412c-b36e-acc1a80d3255"
+      },
+      "apiUrl": "http://10.0.2.2:8000"
+    },
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b0c8cfe5-669d-412c-b36e-acc1a80d3255"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "flipper": true
+          }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you share them with your friends."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#4CBF24",
+          "sounds": []
+        }
+      ],
+      "expo-sqlite"
+    ],
+    "notification": {
+      "icon": "./assets/icon.png",
+      "color": "#4CBF24",
+      "androidMode": "default",
+      "androidCollapsedTitle": "Nowa wiadomość"
+    }
+  },
+  "platforms": [
+    "ios",
+    "android",
+    "web"
+  ],
+  "web": {
+    "favicon": "./assets/favicon.png"
+  }
+}

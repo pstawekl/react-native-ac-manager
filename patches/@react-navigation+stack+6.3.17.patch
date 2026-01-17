@@ -1,0 +1,11 @@
+diff --git a/node_modules/@react-navigation/stack/src/views/Stack/CardContainer.tsx b/node_modules/@react-navigation/stack/src/views/Stack/CardContainer.tsx
+index 1e9ee0e..3c95b61 100644
+--- a/node_modules/@react-navigation/stack/src/views/Stack/CardContainer.tsx
++++ b/node_modules/@react-navigation/stack/src/views/Stack/CardContainer.tsx
+@@ -316,5 +316,6 @@ const styles = StyleSheet.create({
+   },
+   scene: {
+     flex: 1,
++    zIndex: 10,
+   },
+ });

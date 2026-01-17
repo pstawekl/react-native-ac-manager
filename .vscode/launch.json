@@ -1,0 +1,37 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Expo: Run Android",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npx expo run:android",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Expo Go: Start Metro Bundler",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npx expo start",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Start Android Emulator",
+      "request": "launch",
+      "runtimeExecutable": "powershell.exe",
+      "type": "pwa-node",
+      "args": ["-NoExit", "-Command", "emulator -avd Medium_Phone_API_36.1"],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    }
+  ]
+}

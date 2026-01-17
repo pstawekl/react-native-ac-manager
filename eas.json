@@ -1,0 +1,51 @@
+{
+  "cli": {
+    "version": ">= 7.8.1"
+  },
+  "build": {
+    "development-simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      }
+    },
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true,
+        "resourceClass": "m-medium"
+      },
+      "channel": "simulator"
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "image": "ubuntu-20.04-jdk-11-ndk-r21e",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "NODE_VERSION": "16.16.0",
+        "GRADLE_VERSION": "7.5.1"
+      }
+    },
+    "production": {
+      "android": {
+        "image": "ubuntu-20.04-jdk-11-ndk-r21e"
+      },
+      "env": {
+        "NODE_VERSION": "16.16.0",
+        "GRADLE_VERSION": "7.5.1"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
