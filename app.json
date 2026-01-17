@@ -20,7 +20,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.acmenago.acmanager",
       "config": {
-        "googleMapsApiKey": "AIzaSyAsJ4XUjWlHiREnFyy5n_R74C_HyAOTmHM"
+        "googleMapsApiKey": "zamień lokalnie na prawidzwy secret"
       },
       "associatedDomains": [],
       "infoPlist": {
@@ -40,7 +40,7 @@
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyAsJ4XUjWlHiREnFyy5n_R74C_HyAOTmHM"
+          "apiKey": "zamień lokalnie na prawidzwy secret"
         }
       },
       "useNextNotificationsApi": true,
