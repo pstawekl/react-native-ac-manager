@@ -20,3 +20,9 @@ web-build/
 .idea
 
 .env
+
+# Windows system junk
+%ProgramData%/
+$RECYCLE.BIN/
+System Volume Information/
+Thumbs.db
