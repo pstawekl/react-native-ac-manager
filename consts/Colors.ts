@@ -23,10 +23,10 @@ const Colors = {
   rose: '#CE177D',
   lightRose: '#CE177D1A',
   transparent: 'transparent',
+  newPurple: '#8829BC',
+  newPurpleWithOpacity: '#8829BC26',
 
   backgroundTeal: '#0F7A7A1A',
-
-  lightRose: '#CF4F8D',
 
   menuIconBackground: '#F6F6F6',
   settingsAvatarBackground: '#4CBF241A',

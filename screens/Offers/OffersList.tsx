@@ -1,10 +1,18 @@
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { ListItem, Overlay, Text } from '@rneui/themed';
+import { Overlay, Text } from '@rneui/themed';
 import { FlashList } from '@shopify/flash-list';
+import { format, parseISO } from 'date-fns';
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Alert, Animated, Dimensions, StyleSheet, View } from 'react-native';
+import {
+  Alert,
+  Animated,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { Swipeable } from 'react-native-gesture-handler';
 import Spinner from 'react-native-loading-spinner-overlay';
 
 import { IconButton, SubmitButton } from '../../components/Button';
@@ -13,7 +21,7 @@ import { Dropdown, FormInput } from '../../components/Input';
 import RadioButtons from '../../components/RadioButtons';
 import Switch from '../../components/Switch';
 import CloseIcon from '../../components/icons/CloseIcon';
-import NoteTextIcon from '../../components/icons/NoteTextIcon';
+import FilesIcon from '../../components/icons/FilesIcon';
 import TrashIcon from '../../components/icons/TrashIcon';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
@@ -58,30 +66,28 @@ function getOfferClientAndInstallationInfo(
   return { clientInfo, installationInfo };
 }
 
-// Swipe action components similar to ClientsList
+// Swipe action component for delete - same as ClientsList
 function RowRightContent({ onDeletePress }: { onDeletePress: () => void }) {
   const translateX = useRef(new Animated.Value(150)).current;
 
-  const animate = useCallback(
-    (toValue: number) => {
-      Animated.spring(translateX, {
-        toValue,
-        useNativeDriver: true,
-        friction: 8,
-        tension: 100,
-      }).start();
-    },
-    [translateX],
-  );
+  const animate = (toValue: number) => {
+    Animated.spring(translateX, {
+      toValue,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 100,
+    }).start();
+  };
 
   useEffect(() => {
     animate(0);
-  }, [animate]);
+  }, []);
 
   return (
     <Animated.View
       style={[
         styles.actionContainer,
+        styles.actionContainerRight,
         styles.offerDelete,
         { transform: [{ translateX }] },
       ]}
@@ -97,7 +103,7 @@ function RowRightContent({ onDeletePress }: { onDeletePress: () => void }) {
   );
 }
 
-// Single offer row component similar to ClientRow
+// Single offer row component with swipe - same as ClientsList
 const OfferRow = memo(
   ({
     offer,
@@ -105,42 +111,45 @@ const OfferRow = memo(
     isTemplate = false,
     allInstallations,
     clients,
+    onCloseAllSwipes,
+    registerSwipeRef,
   }: {
     offer: Offer;
     onDeletePress: (id: number) => void;
     isTemplate?: boolean;
     allInstallations?: ClientsInstallationListItem[];
     clients?: any[];
+    onCloseAllSwipes: () => void;
+    registerSwipeRef: (id: number, ref: any) => void;
   }) => {
     const navigation = useNavigation<StackNavigationProp<OffersParamList>>();
-    const [isDuringSwipe, setIsDuringSwipe] = useState(false);
-    const [swipeDirection, setSwipeDirection] = useState<
-      'left' | 'right' | null
-    >(null);
+    const [isSwiping, setIsSwiping] = useState(false);
 
-    // Get client and installation info first
-    const { clientInfo, installationInfo } = getOfferClientAndInstallationInfo(
-      offer,
-      allInstallations,
-      clients,
+    // Formatuj datę w formacie DD/MM/YYYY
+    const formattedDate = offer.created_date
+      ? format(parseISO(offer.created_date), 'dd/MM/yyyy')
+      : 'Brak daty';
+
+    // Tytuł oferty: użyj nazwa_oferty jeśli istnieje, w przeciwnym razie "Oferta nr X"
+    const offerTitle =
+      offer.nazwa_oferty || offer.nazwa || `Oferta nr ${offer.id}`;
+
+    const swipeRefCallback = useCallback(
+      (ref: any) => {
+        if (ref) {
+          registerSwipeRef(offer.id, ref);
+        }
+      },
+      [offer.id, registerSwipeRef],
     );
 
-    const offerTitle =
-      offer.nazwa_oferty ||
-      offer.nazwa ||
-      `${clientInfo || 'Brak klienta'} - ${installationInfo || `Instalacja ${offer.instalacja}`
-      }`;
-    const swipeableStyle = { borderRadius: 6, height: 60 };
-
-    const renderRightActions = (): React.ReactNode => {
-      if (swipeDirection !== 'right') {
-        return null;
-      }
-      return <RowRightContent onDeletePress={() => onDeletePress(offer.id)} />;
+    const renderRightActions = () => {
+      return <RowRightContent onDeletePress={handleRightAction} />;
     };
 
-    const viewWidth = Dimensions.get('window').width;
-    const halfWidth = viewWidth / 2;
+    const handleRightAction = () => {
+      onDeletePress(offer.id);
+    };
 
     const handlePress = () => {
       if (isTemplate) {
@@ -190,72 +199,43 @@ const OfferRow = memo(
     };
 
     return (
-      <ListItem.Swipeable
-        key={offer.id}
-        style={[styles.listItem, isDuringSwipe && swipeableStyle]}
-        rightStyle={[styles.offerDelete]}
-        rightContent={renderRightActions}
-        rightWidth={swipeDirection === 'right' ? halfWidth : 0}
-        onPress={handlePress}
-        onSwipeBegin={direction => {
-          setIsDuringSwipe(true);
-          setSwipeDirection(direction);
+      <Swipeable
+        ref={swipeRefCallback}
+        renderRightActions={renderRightActions}
+        friction={2}
+        rightThreshold={40}
+        overshootRight={false}
+        onSwipeableWillOpen={() => {
+          setIsSwiping(true);
         }}
-        onSwipeEnd={() => {
-          setIsDuringSwipe(false);
+        onSwipeableWillClose={() => {
+          setIsSwiping(false);
         }}
-        containerStyle={
-          isDuringSwipe && [
-            swipeableStyle,
-            { backgroundColor: Colors.draggableBackground },
-          ]
-        }
+        onSwipeableOpen={direction => {
+          if (direction === 'right') {
+            handleRightAction();
+          }
+          onCloseAllSwipes();
+        }}
       >
-        <View style={styles.noteTextIcon}>
-          <NoteTextIcon color={Colors.white} size={20} />
-        </View>
-        <ListItem.Content>
-          <ListItem.Title style={styles.offerTitle}>
-            {offerTitle}
-          </ListItem.Title>
-          {/* Client and Installation info */}
-          {!isTemplate &&
-            (offer.nazwa_oferty || offer.nazwa) &&
-            (clientInfo || installationInfo) && (
-              <ListItem.Subtitle style={styles.offerSubtitle}>
-                <Text style={styles.clientInstallationText}>
-                  {clientInfo && installationInfo
-                    ? `${clientInfo} - ${installationInfo}`
-                    : clientInfo || installationInfo}
-                </Text>
-              </ListItem.Subtitle>
-            )}
-          {!isTemplate ? (
-            <ListItem.Subtitle
-              style={[
-                styles.offerSubtitle,
-                {
-                  backgroundColor: offer.is_accepted
-                    ? Colors.green
-                    : Colors.red,
-                },
-              ]}
-            >
-              <Text style={styles.isAcceptedText}>
-                {offer.is_accepted ? 'Zaakceptowana' : 'Nie zaakceptowana'}
-              </Text>
-            </ListItem.Subtitle>
-          ) : (
-            <ListItem.Subtitle style={styles.offerSubtitle}>
-              <Text style={styles.deviceCountText}>
-                Ilość urządzeń:{' '}
-                {(offer.devices_split?.length || 0) +
-                  (offer.devices_multi_split?.length || 0)}
-              </Text>
-            </ListItem.Subtitle>
-          )}
-        </ListItem.Content>
-      </ListItem.Swipeable>
+        <TouchableOpacity
+          style={[styles.offerItem, isSwiping && styles.offerItemSwiping]}
+          onPress={handlePress}
+          activeOpacity={0.7}
+        >
+          <View style={styles.offerContent}>
+            <View style={styles.offerIconContainer}>
+              <View style={styles.offerIcon}>
+                <FilesIcon color={Colors.teal} size={20} />
+              </View>
+            </View>
+            <View style={styles.offerDetails}>
+              <Text style={styles.offerTitle}>{offerTitle}</Text>
+              <Text style={styles.offerDate}>{formattedDate}</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Swipeable>
     );
   },
 );
@@ -830,6 +810,7 @@ function OffersList({
   >([]);
   const navigation = useNavigation();
   const { offers, getOffers, offersLoading } = useOffers();
+  const swipeRefs = useRef<Map<number, any>>(new Map());
   const { execute: fetchTemplates } = useApi<any[]>({
     path: 'oferta_template_list',
   });
@@ -954,6 +935,22 @@ function OffersList({
     setDeleteVisible(!deleteVisible);
   }, [deleteVisible]);
 
+  // Funkcja do zamykania wszystkich swipe elementów
+  const closeAllSwipes = useCallback(() => {
+    swipeRefs.current.forEach((ref, offerId) => {
+      if (ref && ref.close) {
+        ref.close();
+      }
+    });
+  }, []);
+
+  // Funkcja do rejestrowania referencji swipe elementów
+  const registerSwipeRef = useCallback((id: number, ref: any) => {
+    if (ref) {
+      swipeRefs.current.set(id, ref);
+    }
+  }, []);
+
   // Handle external trigger to show add overlay
   useEffect(() => {
     if (shouldShowAddOverlay) {
@@ -1035,7 +1032,9 @@ function OffersList({
     } else if (!offers && !route.params?.isTemplate) {
       setFilteredOffers(null);
     }
-  }, [offers, route.params, clientInstallationsRes]);
+    // Zamknij wszystkie swipe elementy gdy zmienia się lista
+    closeAllSwipes();
+  }, [offers, route.params, clientInstallationsRes, closeAllSwipes]);
 
   return (
     <View style={styles.container}>
@@ -1049,9 +1048,12 @@ function OffersList({
               isTemplate={route.params?.isTemplate}
               allInstallations={allInstallations}
               clients={clients}
+              onCloseAllSwipes={closeAllSwipes}
+              registerSwipeRef={registerSwipeRef}
             />
           )}
           estimatedItemSize={80}
+          contentContainerStyle={styles.offersList}
         />
       </View>
 
@@ -1084,33 +1086,87 @@ export default OffersList;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.homeScreenBackground,
   },
   listContainer: {
     flex: 1,
     width: '100%',
     alignSelf: 'center',
   },
-  listItem: {
-    width: '100%',
-    paddingVertical: 0,
+  offersList: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 20,
   },
-  noteTextIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.offersTeal,
+  offerItem: {
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    marginBottom: 12,
+    padding: 16,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  offerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  offerIconContainer: {
+    marginRight: 12,
+  },
+  offerIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    backgroundColor: Colors.backgroundTeal,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  offerDetails: {
+    flex: 1,
+  },
+  offerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.black,
+    fontFamily: 'Archivo_600SemiBold',
+    marginBottom: 4,
+  },
+  offerDate: {
+    fontSize: 12,
+    color: '#616161',
+    fontFamily: 'Archivo_400Regular',
+  },
+  offerItemSwiping: {
+    backgroundColor: Colors.gray,
+  },
+  offerDelete: {
+    borderTopRightRadius: 6,
+    borderBottomRightRadius: 6,
+    color: Colors.white,
+    backgroundColor: Colors.logout,
+    marginBottom: 12,
+    alignSelf: 'stretch',
+  },
+  actionContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  actionContainerRight: {
+    alignItems: 'flex-end',
+    paddingRight: 0,
   },
   buttonStyle: {
     flex: 1,
     overflow: 'hidden',
-    height: 60,
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    width: 100,
+    width: 80,
     borderRadius: 0,
     margin: 0,
     padding: 0,
@@ -1121,34 +1177,6 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 12,
     backgroundColor: Colors.transparent,
-  },
-  offerTitle: {
-    fontSize: 16,
-  },
-  offerSubtitle: {
-    fontSize: 14,
-    color: Colors.grayerText,
-    padding: 4,
-    borderRadius: 9,
-    alignSelf: 'flex-start',
-  },
-  clientInstallationText: {
-    fontSize: 12,
-    color: Colors.grayerText,
-    fontStyle: 'italic',
-  },
-  offerDelete: {
-    borderTopRightRadius: 6,
-    borderBottomRightRadius: 6,
-    color: Colors.white,
-    backgroundColor: Colors.logout,
-  },
-  actionContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-    height: '100%',
   },
   overlay: {
     padding: 0,

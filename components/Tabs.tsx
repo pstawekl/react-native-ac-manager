@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { useNavigation } from '@react-navigation/native';
-import { Tab, TabView } from '@rneui/themed';
+import { Divider, Tab, TabView } from '@rneui/themed';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
@@ -24,6 +24,9 @@ type TabsProps = {
   onBackPress?: () => void;
   title?: string;
   onTabChange?: (index: number) => void;
+  headerContent?: React.ReactNode;
+  headerDividerColor?: string;
+  fabBgColor?: string;
 };
 
 type TabMeasurement = {
@@ -40,6 +43,9 @@ export default function Tabs({
   onBackPress,
   title,
   onTabChange,
+  headerContent,
+  headerDividerColor,
+  fabBgColor,
 }: TabsProps): JSX.Element {
   const [index, setIndex] = useState(
     defaultTab ? items.findIndex(item => item.id === defaultTab) : 0,
@@ -77,6 +83,9 @@ export default function Tabs({
           title={title}
         />
       )}
+      {headerContent && (
+        <View style={styles.headerContent}>{headerContent}</View>
+      )}
       <Tab
         value={index}
         onChange={handleIndexChange}
@@ -101,6 +110,17 @@ export default function Tabs({
         ))}
       </Tab>
 
+      {headerDividerColor && (
+        <Divider
+          style={[
+            styles.headerDivider,
+            {
+              borderBottomColor: headerDividerColor || Colors.blue,
+            },
+          ]}
+        />
+      )}
+
       <TabView
         value={index}
         onChange={handleIndexChange}
@@ -122,7 +142,7 @@ export default function Tabs({
       {items[index]?.onAddPress && (
         <FloatingActionButton
           onPress={items[index]!.onAddPress!}
-          backgroundColor={Colors.offersTeal}
+          backgroundColor={fabBgColor || Colors.offersTeal}
         />
       )}
     </View>
@@ -149,6 +169,9 @@ const styles = StyleSheet.create({
     flex: 1,
     display: 'flex',
     justifyContent: 'flex-start',
+  },
+  headerDivider: {
+    borderBottomWidth: 2,
   },
   container: {
     flex: 1,
@@ -198,5 +221,8 @@ const styles = StyleSheet.create({
   },
   indicator: {
     height: 0,
+  },
+  headerContent: {
+    paddingBottom: 0,
   },
 });

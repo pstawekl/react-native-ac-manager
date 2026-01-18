@@ -10,8 +10,7 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 import { useNavigation } from '@react-navigation/native';
@@ -21,7 +20,6 @@ import { IconButton } from '../../components/Button';
 import ArrowRightIcon from '../../components/icons/ArrowRightIcon';
 import CloseIcon from '../../components/icons/CloseIcon';
 import PlusIcon from '../../components/icons/PlusIcon';
-import { FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import useAuth from '../../providers/AuthProvider';
@@ -582,21 +580,19 @@ export default function ClientsTab({
         </View>
       )}
       {!clientsTabOpen && (
-        <>
-          <FlashList<ClientsLists>
-            data={clientsLists}
-            renderItem={({ item }) => (
-              <ClientListRow
-                clientsList={item}
-                onPress={() => {
-                  setClientsTabOpen(true);
-                  setCurrentClientsList(item.id);
-                }}
-              />
-            )}
-            estimatedItemSize={70}
-          />
-        </>
+        <FlashList<ClientsLists>
+          data={clientsLists}
+          renderItem={({ item }) => (
+            <ClientListRow
+              clientsList={item}
+              onPress={() => {
+                setClientsTabOpen(true);
+                setCurrentClientsList(item.id);
+              }}
+            />
+          )}
+          estimatedItemSize={70}
+        />
       )}
       {clientsTabOpen && (
         <>

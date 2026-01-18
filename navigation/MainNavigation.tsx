@@ -519,7 +519,7 @@ function MainNavigation() {
             },
           }}
           options={{
-            headerTitle: 'Katalogi',
+            headerTitle: 'Dokumentacja',
             drawerLabel: 'Katalogi',
             drawerIcon: () => (
               <Book2Icon

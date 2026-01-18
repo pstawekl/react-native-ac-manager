@@ -1,6 +1,16 @@
 {
   "extends": "@tsconfig/react-native/tsconfig.json",
   "compilerOptions": {
-    "typeRoots": ["./node_modules/@types", "./custom-typings.d.ts"]
-  }
+    "typeRoots": ["./node_modules/@types"],
+    "jsx": "react-native",
+    "moduleResolution": "node",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "custom-typings.d.ts"
+  ]
 }
