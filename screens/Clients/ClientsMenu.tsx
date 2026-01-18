@@ -1937,8 +1937,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   invitationButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 8,
+    backgroundColor: Colors.green,
+    borderRadius: 60,
     paddingVertical: 12,
     paddingHorizontal: 16,
   },
@@ -1949,7 +1949,7 @@ const styles = StyleSheet.create({
   invitationButtonTitle: {
     color: Colors.white,
     fontFamily: 'Archivo_600SemiBold',
-    fontSize: 14,
+    fontSize: 12,
   },
   gusDataButton: {
     width: '100%',

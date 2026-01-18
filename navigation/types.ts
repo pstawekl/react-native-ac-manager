@@ -161,8 +161,19 @@ export type ClientsParamList = {
   };
   InvoiceData: undefined;
   Form: { client?: Client };
-  Settings: { installationId: string; clientId: string };
+  Settings: {
+    installationId: string;
+    clientId: string;
+    activeTab?: TabType;
+    returnTab?: TabType;
+    selectedDevice?: Device;
+  };
   InstallationForm: undefined;
+  AgreementForm: { installationId: string; clientId: string };
+  DeviceSelector: {
+    installationId: string;
+    montageId?: number;
+  };
 };
 
 export type CertificatesParamList = {

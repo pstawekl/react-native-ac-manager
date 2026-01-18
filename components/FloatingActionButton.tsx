@@ -1,8 +1,8 @@
 import React from 'react';
 import { StyleSheet, TouchableOpacity } from 'react-native';
 
+import { Text } from '@rneui/themed';
 import Colors from '../consts/Colors';
-import PlusIcon from './icons/PlusIcon';
 
 interface FloatingActionButtonProps {
   onPress: () => void;
@@ -37,7 +37,7 @@ function FloatingActionButton({
       onPress={onPress}
       activeOpacity={0.8}
     >
-      <PlusIcon color={Colors.white} size={size * 0.33} />
+      <Text style={styles.fabText}>+</Text>
     </TouchableOpacity>
   );
 }
@@ -48,6 +48,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
+  },
+  fabText: {
+    fontSize: 24,
+    fontFamily: 'Archivo_400Regular',
+    color: Colors.white,
   },
 });
 

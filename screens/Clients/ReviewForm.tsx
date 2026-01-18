@@ -10,8 +10,9 @@ import { ScrollView } from 'react-native-gesture-handler';
 import { ButtonGroup } from '../../components/Button';
 import DatePicker from '../../components/DatePicker';
 import FilePicker, { File } from '../../components/FilePicker';
+import { Dropdown, FormInput, Textarea } from '../../components/Input';
+import EditIcon from '../../components/icons/EditIcon';
 import FilesIcon from '../../components/icons/FilesIcon';
-import { Dropdown, Textarea } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 
@@ -111,34 +112,97 @@ const reviewStyles = StyleSheet.create({
     color: Colors.black,
     marginBottom: 6,
   },
-  readOnlySection: {
+  editSection: {
     backgroundColor: Colors.white,
     borderRadius: 10,
     padding: 16,
     marginBottom: 20,
-    marginTop: 20,
+    marginTop: 0,
+  },
+  readOnlySection: {
+    backgroundColor: Colors.transparent,
+    borderRadius: 10,
+    marginBottom: 20,
+    marginTop: 0,
+  },
+  readOnlySectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  readOnlySectionTitle: {
+    fontSize: 14,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
   },
   readOnlyRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 12,
     paddingHorizontal: 0,
   },
   readOnlyLabel: {
-    fontSize: 12,
-    fontFamily: 'Archivo_400Regular',
+    fontSize: 10,
+    fontFamily: 'Archivo_600SemiBold',
     color: Colors.black,
   },
   readOnlyValue: {
-    fontSize: 12,
-    fontFamily: 'Archivo_600SemiBold',
+    fontSize: 10,
+    fontFamily: 'Archivo_400Regular',
     color: Colors.black,
   },
   readOnlyDivider: {
     height: 1,
     backgroundColor: Colors.divider,
     marginVertical: 0,
+  },
+  editIconButton: {
+    padding: 4,
+  },
+  editFormSection: {
+    marginBottom: 16,
+  },
+  editFormLabel: {
+    fontSize: 10,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+    marginBottom: 6,
+  },
+  editOverlayButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 20,
+    gap: 12,
+  },
+  editCancelButton: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.borderButton,
+    borderRadius: 60,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editCancelButtonText: {
+    fontSize: 12,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+  },
+  editSaveButton: {
+    flex: 1,
+    backgroundColor: Colors.green,
+    borderRadius: 60,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editSaveButtonText: {
+    fontSize: 12,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.white,
   },
   reviewCancelButton: {
     minHeight: 48,
@@ -197,9 +261,27 @@ const reviewStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    marginBottom: 0,
+    marginBottom: 12,
   },
   pdfButtonText: {
+    fontSize: 14,
+    fontFamily: 'Archivo_400Regular',
+    color: Colors.black,
+    marginLeft: 12,
+  },
+  addPhotoButton: {
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.borderInput,
+    height: 54,
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 20,
+  },
+  addPhotoButtonText: {
     fontSize: 14,
     fontFamily: 'Archivo_400Regular',
     color: Colors.black,
@@ -219,6 +301,28 @@ export default function ReviewProtocolForm({
   });
 
   const [deviceData, setDeviceData] = useState<any>(null);
+  const [montageData, setMontageData] = useState<any>(null);
+  const [isEditingMontageData, setIsEditingMontageData] = useState(false);
+  const [editedMontageData, setEditedMontageData] = useState<any>(null);
+
+  // Formularz do edycji danych montażu
+  const {
+    control: montageControl,
+    handleSubmit: handleMontageSubmit,
+    setValue: setMontageValue,
+    reset: resetMontageForm,
+  } = useForm<any>({
+    defaultValues: {
+      data_montazu: new Date(),
+      gwarancja: undefined,
+      liczba_przegladow: undefined,
+      split_multisplit: null,
+      deviceManufacturer: '',
+      deviceType: '',
+      deviceModel: '',
+      devicePower: '',
+    },
+  });
 
   const { execute: fetchReviewData } = useApi<{
     serwis: any;
@@ -261,6 +365,10 @@ export default function ReviewProtocolForm({
     path: 'montaz_data',
   });
 
+  const { execute: editMontage } = useApi<{ status?: string; error?: any }>({
+    path: 'montaz_edit',
+  });
+
   // Wczytaj dane przeglądu jeśli reviewId jest podane, lub dane urządzenia z montażu dla nowych przeglądów
   useEffect(() => {
     const loadReviewData = async () => {
@@ -274,6 +382,20 @@ export default function ReviewProtocolForm({
             // Ustaw dane urządzenia
             if (reviewData.device) {
               setDeviceData(reviewData.device);
+            }
+
+            // Pobierz dane montażu jeśli są dostępne
+            if (reviewData.serwis?.montaz_id) {
+              try {
+                const montageDataResponse = await fetchMontageData({
+                  data: { montaz_id: reviewData.serwis.montaz_id },
+                });
+                if (montageDataResponse) {
+                  setMontageData(montageDataResponse);
+                }
+              } catch (error) {
+                console.error('Error fetching montage data:', error);
+              }
             }
 
             // Ustaw wartości formularza
@@ -386,11 +508,14 @@ export default function ReviewProtocolForm({
             const montage = montageList[0];
             // Pobierz pełne dane montażu z urządzeniem
             try {
-              const montageData = await fetchMontageData({
+              const montageDataResponse = await fetchMontageData({
                 data: { montaz_id: montage.id },
               });
-              if (montageData?.device) {
-                setDeviceData(montageData.device);
+              if (montageDataResponse) {
+                setMontageData(montageDataResponse);
+                if (montageDataResponse.device) {
+                  setDeviceData(montageDataResponse.device);
+                }
               }
             } catch (error) {
               console.error('Error fetching montage device data:', error);
@@ -497,6 +622,32 @@ export default function ReviewProtocolForm({
 
   const onSubmit = async (data: ReviewData) => {
     try {
+      // Zapisz edytowane dane montażu jeśli były edytowane
+      if (editedMontageData && montageData?.id) {
+        try {
+          const montageUpdateData = {
+            id: montageData.id,
+            instalacja_id: Number(installationId),
+            data_montazu: editedMontageData.data_montazu
+              ? typeof editedMontageData.data_montazu === 'string'
+                ? editedMontageData.data_montazu
+                : (editedMontageData.data_montazu as Date).toISOString()
+              : undefined,
+            gwarancja: editedMontageData.gwarancja,
+            liczba_przegladow: editedMontageData.liczba_przegladow,
+            split_multisplit: editedMontageData.split_multisplit,
+            deviceManufacturer: editedMontageData.deviceManufacturer,
+            deviceType: editedMontageData.deviceType,
+            deviceModel: editedMontageData.deviceModel,
+            devicePower: editedMontageData.devicePower,
+          };
+          await editMontage({ data: montageUpdateData });
+        } catch (error) {
+          console.error('Error saving montage data:', error);
+          // Kontynuuj zapis przeglądu nawet jeśli zapis montażu się nie powiódł
+        }
+      }
+
       // Wyodrębnij zdjęcia z danych przed zapisaniem
       const photoToUpload = data.photos;
       const dataWithoutPhotos = { ...data };
@@ -509,7 +660,7 @@ export default function ReviewProtocolForm({
         serwis_id: reviewId || undefined,
         data_przegladu: data.data_przegladu
           ? typeof data.data_przegladu === 'string'
-            ? data.data_przegladuokui
+            ? data.data_przegladu
             : (data.data_przegladu as Date).toISOString()
           : undefined,
       };
@@ -542,8 +693,8 @@ export default function ReviewProtocolForm({
           if (onSave) {
             onSave();
           }
-        } else if (response.error) {
-          Alert.alert('Błąd', JSON.stringify(response.error));
+        } else if ((response as any).error) {
+          Alert.alert('Błąd', JSON.stringify((response as any).error));
         } else {
           Alert.alert('Sukces', 'Dane przeglądu zostały zapisane');
         }
@@ -560,25 +711,364 @@ export default function ReviewProtocolForm({
     return `${power.toFixed(2)} kW`;
   };
 
+  // Formatowanie daty
+  const formatDate = (date: Date | string | null | undefined): string => {
+    if (!date) return '-';
+    if (typeof date === 'string') {
+      const d = new Date(date);
+      return `${String(d.getDate()).padStart(2, '0')}/${String(
+        d.getMonth() + 1,
+      ).padStart(2, '0')}/${d.getFullYear()}`;
+    }
+    return `${String(date.getDate()).padStart(2, '0')}/${String(
+      date.getMonth() + 1,
+    ).padStart(2, '0')}/${date.getFullYear()}`;
+  };
+
+  // Formatowanie Split/Multisplit
+  const formatSplitType = (type: string | null | undefined): string => {
+    if (!type) return '-';
+    if (type === 'split') return 'Split';
+    if (type === 'multi_split') return 'Multisplit';
+    return type;
+  };
+
+  // Formatowanie gwarancji
+  const formatWarranty = (
+    years: number | string | null | undefined,
+  ): string => {
+    if (!years) return '-';
+    if (typeof years === 'string') return years;
+    return `${years} ${years === 1 ? 'Rok' : years < 5 ? 'Lata' : 'Lat'}`;
+  };
+
+  // Obsługa zapisu zmian w danych montażu (lokalnie, bez zapisu do bazy)
+  const handleSaveMontageData = (data: any) => {
+    const updatedData = {
+      ...montageData,
+      data_montazu: data.data_montazu,
+      gwarancja: data.gwarancja,
+      liczba_przegladow: data.liczba_przegladow,
+      split_multisplit: data.split_multisplit,
+      deviceManufacturer: data.deviceManufacturer,
+      deviceType: data.deviceType,
+      deviceModel: data.deviceModel,
+      devicePower: data.devicePower,
+      device: {
+        ...montageData?.device,
+        producent: data.deviceManufacturer,
+        typ: data.deviceType,
+        nazwa_modelu_producenta: data.deviceModel,
+        nazwa_modelu: data.deviceModel,
+        moc: data.devicePower,
+      },
+    };
+    setEditedMontageData(updatedData);
+    setIsEditingMontageData(false);
+  };
+
+  // Obsługa anulowania edycji
+  const handleCancelMontageEdit = () => {
+    setIsEditingMontageData(false);
+    resetMontageForm();
+  };
+
   return (
     <View style={reviewStyles.reviewFormContainer}>
       <ScrollView
         style={reviewStyles.reviewScrollView}
         contentContainerStyle={reviewStyles.reviewScrollContent}
       >
-        <Text style={reviewStyles.reviewTitle}>Przegląd</Text>
+        {/* Sekcja "Dane montażu" - warunkowe renderowanie: read-only lub formularz edycji */}
+        {!isEditingMontageData ? (
+          <View style={reviewStyles.editSection}>
+            <View style={reviewStyles.readOnlySectionHeader}>
+              <Text style={reviewStyles.readOnlySectionTitle}>
+                Dane montażu
+              </Text>
+              <TouchableOpacity
+                style={reviewStyles.editIconButton}
+                onPress={() => {
+                  // Inicjalizuj formularz edycji z aktualnymi danymi
+                  const currentData = editedMontageData || montageData;
+                  if (currentData) {
+                    setMontageValue(
+                      'data_montazu',
+                      currentData.data_montazu
+                        ? new Date(currentData.data_montazu)
+                        : new Date(),
+                    );
+                    setMontageValue('gwarancja', currentData.gwarancja);
+                    setMontageValue(
+                      'liczba_przegladow',
+                      currentData.liczba_przegladow,
+                    );
+                    setMontageValue(
+                      'split_multisplit',
+                      currentData.split_multisplit,
+                    );
+                    setMontageValue(
+                      'deviceManufacturer',
+                      currentData.deviceManufacturer ||
+                      currentData.device?.producent ||
+                      '',
+                    );
+                    setMontageValue(
+                      'deviceType',
+                      currentData.deviceType || currentData.device?.typ || '',
+                    );
+                    setMontageValue(
+                      'deviceModel',
+                      currentData.deviceModel ||
+                      currentData.device?.nazwa_modelu_producenta ||
+                      currentData.device?.nazwa_modelu ||
+                      '',
+                    );
+                    setMontageValue(
+                      'devicePower',
+                      currentData.devicePower || currentData.device?.moc || '',
+                    );
+                  } else {
+                    // Jeśli nie ma danych, użyj wartości domyślnych
+                    setMontageValue('data_montazu', new Date());
+                    setMontageValue('gwarancja', undefined);
+                    setMontageValue('liczba_przegladow', undefined);
+                    setMontageValue('split_multisplit', null);
+                    setMontageValue('deviceManufacturer', '');
+                    setMontageValue('deviceType', '');
+                    setMontageValue('deviceModel', '');
+                    setMontageValue('devicePower', '');
+                  }
+                  setIsEditingMontageData(true);
+                }}
+              >
+                <EditIcon color={Colors.black} size={20} />
+              </TouchableOpacity>
+            </View>
+            <View style={reviewStyles.readOnlyRow}>
+              <Text style={reviewStyles.readOnlyLabel}>Data montażu:</Text>
+              <Text style={reviewStyles.readOnlyValue}>
+                {(() => {
+                  const data = editedMontageData || montageData;
+                  return data?.data_montazu
+                    ? formatDate(data.data_montazu)
+                    : '-';
+                })()}
+              </Text>
+            </View>
+            <Divider style={reviewStyles.readOnlyDivider} />
+            <View style={reviewStyles.readOnlyRow}>
+              <Text style={reviewStyles.readOnlyLabel}>
+                Długość okresu gwarancji:
+              </Text>
+              <Text style={reviewStyles.readOnlyValue}>
+                {(() => {
+                  const data = editedMontageData || montageData;
+                  return formatWarranty(data?.gwarancja);
+                })()}
+              </Text>
+            </View>
+            <Divider style={reviewStyles.readOnlyDivider} />
+            <View style={reviewStyles.readOnlyRow}>
+              <Text style={reviewStyles.readOnlyLabel}>
+                Liczba przeglądów w roku:
+              </Text>
+              <Text style={reviewStyles.readOnlyValue}>
+                {(() => {
+                  const data = editedMontageData || montageData;
+                  return data?.liczba_przegladow || '-';
+                })()}
+              </Text>
+            </View>
+            <Divider style={reviewStyles.readOnlyDivider} />
+            <View style={reviewStyles.readOnlyRow}>
+              <Text style={reviewStyles.readOnlyLabel}>
+                Split / Multisplit:
+              </Text>
+              <Text style={reviewStyles.readOnlyValue}>
+                {(() => {
+                  const data = editedMontageData || montageData;
+                  return formatSplitType(data?.split_multisplit);
+                })()}
+              </Text>
+            </View>
+            <Divider style={reviewStyles.readOnlyDivider} />
+            <View style={reviewStyles.readOnlyRow}>
+              <Text style={reviewStyles.readOnlyLabel}>
+                Producent urządzenia:
+              </Text>
+              <Text style={reviewStyles.readOnlyValue}>
+                {(() => {
+                  const data = editedMontageData || montageData;
+                  return (
+                    data?.deviceManufacturer ||
+                    data?.device?.producent ||
+                    deviceData?.producent ||
+                    '-'
+                  );
+                })()}
+              </Text>
+            </View>
+            <Divider style={reviewStyles.readOnlyDivider} />
+            <View style={reviewStyles.readOnlyRow}>
+              <Text style={reviewStyles.readOnlyLabel}>Typ urządzenia:</Text>
+              <Text style={reviewStyles.readOnlyValue}>
+                {(() => {
+                  const data = editedMontageData || montageData;
+                  return (
+                    data?.deviceType ||
+                    data?.device?.typ ||
+                    deviceData?.typ ||
+                    '-'
+                  );
+                })()}
+              </Text>
+            </View>
+            <Divider style={reviewStyles.readOnlyDivider} />
+            <View style={reviewStyles.readOnlyRow}>
+              <Text style={reviewStyles.readOnlyLabel}>Model urządzenia:</Text>
+              <Text style={reviewStyles.readOnlyValue}>
+                {(() => {
+                  const data = editedMontageData || montageData;
+                  return (
+                    data?.deviceModel ||
+                    data?.device?.nazwa_modelu_producenta ||
+                    data?.device?.nazwa_modelu ||
+                    deviceData?.nazwa_modelu_producenta ||
+                    deviceData?.nazwa_modelu ||
+                    '-'
+                  );
+                })()}
+              </Text>
+            </View>
+            <Divider style={reviewStyles.readOnlyDivider} />
+            <View style={reviewStyles.readOnlyRow}>
+              <Text style={reviewStyles.readOnlyLabel}>Moc urządzenia:</Text>
+              <Text style={reviewStyles.readOnlyValue}>
+                {(() => {
+                  const data = editedMontageData || montageData;
+                  return formatPower(
+                    data?.devicePower || data?.device?.moc || deviceData?.moc,
+                  );
+                })()}
+              </Text>
+            </View>
+          </View>
+        ) : (
+          <View style={reviewStyles.editSection}>
+            <View style={reviewStyles.readOnlySectionHeader}>
+              <Text style={reviewStyles.readOnlySectionTitle}>
+                Dane montażu
+              </Text>
+            </View>
 
-        {/* Data przeglądu */}
-        <View style={reviewStyles.reviewSection}>
-          <Text style={reviewStyles.reviewLabel}>Data przeglądu</Text>
-          <DatePicker
-            name="data_przegladu"
-            control={control}
-            color={Colors.borderInput}
-          />
-        </View>
+            <View style={reviewStyles.editFormSection}>
+              <Text style={reviewStyles.editFormLabel}>Data montażu</Text>
+              <DatePicker
+                name="data_montazu"
+                control={montageControl}
+                color={Colors.borderInput}
+              />
+            </View>
 
-        {/* Sekcja read-only - dane jednostki */}
+            <View style={reviewStyles.editFormSection}>
+              <Dropdown
+                name="gwarancja"
+                control={montageControl}
+                label="Długość okresu gwarancji"
+                options={Array.from({ length: 10 }, (_, index) => ({
+                  label: `${index + 1} ${index === 0 ? 'Rok' : index < 4 ? 'Lata' : 'Lat'
+                    }`,
+                  value: index + 1,
+                }))}
+                isBordered={false}
+              />
+            </View>
+
+            <View style={reviewStyles.editFormSection}>
+              <Dropdown
+                name="liczba_przegladow"
+                control={montageControl}
+                label="Liczba przeglądów w roku"
+                options={Array.from({ length: 4 }, (_, index) => ({
+                  label: String(index + 1),
+                  value: index + 1,
+                }))}
+                isBordered={false}
+              />
+            </View>
+
+            <View style={reviewStyles.editFormSection}>
+              <Dropdown
+                name="split_multisplit"
+                control={montageControl}
+                label="Split / Multisplit"
+                options={[
+                  { label: 'Split', value: 'split' },
+                  { label: 'Multisplit', value: 'multi_split' },
+                ]}
+                isBordered={false}
+              />
+            </View>
+
+            <View style={reviewStyles.editFormSection}>
+              <FormInput
+                name="deviceManufacturer"
+                control={montageControl}
+                label="Producent urządzenia"
+                noPadding
+              />
+            </View>
+
+            <View style={reviewStyles.editFormSection}>
+              <FormInput
+                name="deviceType"
+                control={montageControl}
+                label="Typ urządzenia"
+                noPadding
+              />
+            </View>
+
+            <View style={reviewStyles.editFormSection}>
+              <FormInput
+                name="deviceModel"
+                control={montageControl}
+                label="Model urządzenia"
+                noPadding
+              />
+            </View>
+
+            <View style={reviewStyles.editFormSection}>
+              <FormInput
+                name="devicePower"
+                control={montageControl}
+                label="Moc urządzenia"
+                noPadding
+              />
+            </View>
+
+            <View style={reviewStyles.editOverlayButtons}>
+              <TouchableOpacity
+                style={reviewStyles.editCancelButton}
+                onPress={handleCancelMontageEdit}
+              >
+                <Text style={reviewStyles.editCancelButtonText}>
+                  Nie zapisuj
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={reviewStyles.editSaveButton}
+                onPress={handleMontageSubmit(handleSaveMontageData)}
+              >
+                <Text style={reviewStyles.editSaveButtonText}>
+                  Zapisz zmiany
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Sekcja informacji o jednostce - tylko do odczytu */}
         <View style={reviewStyles.readOnlySection}>
           <View style={reviewStyles.readOnlyRow}>
             <Text style={reviewStyles.readOnlyLabel}>Nazwa jednostki:</Text>
@@ -586,7 +1076,8 @@ export default function ReviewProtocolForm({
               {deviceData?.nazwa_modelu ||
                 deviceData?.nazwa_jedn_wew ||
                 deviceData?.nazwa_jedn_zew ||
-                '-'}
+                montageData?.unitName ||
+                ''}
             </Text>
           </View>
           <Divider style={reviewStyles.readOnlyDivider} />
@@ -595,7 +1086,7 @@ export default function ReviewProtocolForm({
               Nazwa jednostki wewnętrznej:
             </Text>
             <Text style={reviewStyles.readOnlyValue}>
-              {deviceData?.nazwa_jedn_wew || '-'}
+              {deviceData?.nazwa_jedn_wew || montageData?.indoorUnitName || ''}
             </Text>
           </View>
           <Divider style={reviewStyles.readOnlyDivider} />
@@ -604,25 +1095,38 @@ export default function ReviewProtocolForm({
               Nazwa jednostki zewnętrznej:
             </Text>
             <Text style={reviewStyles.readOnlyValue}>
-              {deviceData?.nazwa_jedn_zew || '-'}
+              {deviceData?.nazwa_jedn_zew || montageData?.outdoorUnitName || ''}
             </Text>
           </View>
           <Divider style={reviewStyles.readOnlyDivider} />
           <View style={reviewStyles.readOnlyRow}>
             <Text style={reviewStyles.readOnlyLabel}>
-              Moc nominalna chłodzenia:
+              Moc nominalna chłodzenia / grzania
             </Text>
             <Text style={reviewStyles.readOnlyValue}>
-              {formatPower(deviceData?.moc_chlodnicza)}
-            </Text>
-          </View>
-          <Divider style={reviewStyles.readOnlyDivider} />
-          <View style={reviewStyles.readOnlyRow}>
-            <Text style={reviewStyles.readOnlyLabel}>
-              Moc nominalna grzania:
-            </Text>
-            <Text style={reviewStyles.readOnlyValue}>
-              {formatPower(deviceData?.moc_grzewcza)}
+              {(() => {
+                const cooling =
+                  montageData?.nominalCoolingCapacity ||
+                  (deviceData?.moc_chlodnicza
+                    ? formatPower(deviceData.moc_chlodnicza)
+                    : '');
+                const heating =
+                  montageData?.nominalHeatingCapacity ||
+                  (deviceData?.moc_grzewcza
+                    ? formatPower(deviceData.moc_grzewcza)
+                    : '');
+
+                if (cooling && heating) {
+                  return `${cooling} / ${heating}`;
+                }
+                if (cooling) {
+                  return cooling;
+                }
+                if (heating) {
+                  return heating;
+                }
+                return '';
+              })()}
             </Text>
           </View>
         </View>
@@ -636,7 +1140,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Kontrola stanu technicznego jednostki wewnętrznej"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -644,7 +1148,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Kontrola stanu technicznego jednostki zewnętrznej"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -652,7 +1156,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Kontrola stanu mocowania agregatu"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -660,7 +1164,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Czyszczenie filtrów jednostki wewnętrznej"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -668,7 +1172,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Czyszczenie wymiennika ciepła jednostki wewnętrznej"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -676,7 +1180,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Czyszczenie obudowy jednostki wewnętrznej"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -684,7 +1188,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Czyszczenie tacy skroplin oraz odpływu skroplin"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -692,7 +1196,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Kontrola drożności odpływu skroplin"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -700,7 +1204,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Czyszczenie obudowy jednostki zewnętrznej"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -708,7 +1212,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Czyszczenie wymiennika ciepła jednostki zewnętrznej"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -716,7 +1220,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Kontrola szczelności instalacji chłodniczej"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -724,7 +1228,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Kontrola poprawności działania urządzenia"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -732,7 +1236,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Kontrola temperatury nawiewu jednostki wewnętrznej (chłodzenie/grzanie)"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
 
           <Dropdown
@@ -740,7 +1244,7 @@ export default function ReviewProtocolForm({
             control={control}
             label="Diagnostyka awarii urządzeń"
             options={checklistOptions}
-            isBordered
+            isBordered={false}
           />
         </View>
 
@@ -762,9 +1266,7 @@ export default function ReviewProtocolForm({
         </View>
 
         {/* Przycisk Dodaj zdjęcie/a */}
-        <View
-          style={(reviewStyles.reviewSection, reviewStyles.addPhotoSection)}
-        >
+        <View style={reviewStyles.reviewSection}>
           <FilePicker
             name="photos"
             type="image"
