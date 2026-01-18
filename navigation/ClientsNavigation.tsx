@@ -1,5 +1,6 @@
 import { createStackNavigator } from '@react-navigation/stack';
 
+import AgreementForm from '../screens/Clients/AgreementForm';
 import ClientForm from '../screens/Clients/ClientForm';
 import ClientInspection from '../screens/Clients/ClientInspection';
 import ClientInstallation from '../screens/Clients/ClientInstallation';
@@ -8,6 +9,7 @@ import ClientService from '../screens/Clients/ClientService';
 import ClientSettings from '../screens/Clients/ClientSettings';
 import ClientsList from '../screens/Clients/ClientsList';
 import ClientsMenu from '../screens/Clients/ClientsMenu';
+import DeviceSelectorScreen from '../screens/Clients/DeviceSelectorScreen';
 
 import { SubNavigationStyles } from '../consts/Styles';
 import ClientInstallationsList from '../screens/Clients/ClientInstallationsList';
@@ -33,6 +35,8 @@ function ClientsNavigation() {
       <Clients.Screen name="InvoiceData" component={ClientInvoiceData} />
       <Clients.Screen name="Form" component={ClientForm} />
       <Clients.Screen name="Settings" component={ClientSettings} />
+      <Clients.Screen name="AgreementForm" component={AgreementForm} />
+      <Clients.Screen name="DeviceSelector" component={DeviceSelectorScreen} />
     </Clients.Navigator>
   );
 }

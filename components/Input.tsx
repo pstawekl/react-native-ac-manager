@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { MaterialIcons } from '@expo/vector-icons';
 import { Input, InputProps, Text } from '@rneui/themed';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Control, Controller, FieldError } from 'react-hook-form';
 import { FieldPathValue } from 'react-hook-form/dist/types';
 import { FieldValues } from 'react-hook-form/dist/types/fields';
@@ -355,11 +355,8 @@ export function Dropdown<
         render={({ field }) => {
           const handleValueChange = (newValue: any) => {
             if (isUpdatingRef.current) return;
-            if (
-              newValue !== field.value &&
-              newValue !== null &&
-              newValue !== undefined
-            ) {
+            // Akceptuj również puste stringi i 0 jako prawidłowe wartości
+            if (newValue !== field.value) {
               isUpdatingRef.current = true;
               field.onChange(newValue);
               if (onChange) {
@@ -373,12 +370,26 @@ export function Dropdown<
           };
 
           const handleSetValue = (callback: any) => {
-            // Ignorujemy setValue, używamy tylko onChangeValue
-            // to zapobiega podwójnym aktualizacjom
+            // DropDownPicker używa setValue jako funkcji settera (podobnie jak useState)
+            // callback może być wartością lub funkcją (prevValue) => newValue
+            if (isUpdatingRef.current) return;
+            
+            let newValue: any;
+            if (typeof callback === 'function') {
+              newValue = callback(field.value);
+            } else {
+              newValue = callback;
+            }
+            
+            // Wywołaj handleValueChange tylko jeśli wartość się zmieniła
+            if (newValue !== field.value) {
+              handleValueChange(newValue);
+            }
           };
 
           return (
             <DropDownPicker<FieldPathValue<TFieldValues, TName>>
+              key={`${name}-${field.value ?? 'null'}`}
               disabled={props.disabled}
               dropDownDirection={dropDownDirection}
               /* eslint-disable-next-line react-native/no-inline-styles */
@@ -415,7 +426,7 @@ export function Dropdown<
               }}
               itemKey="value"
               open={open}
-              value={field.value}
+              value={field.value ?? null}
               setValue={handleSetValue}
               items={options}
               setOpen={setOpen}
@@ -423,6 +434,7 @@ export function Dropdown<
                 // Nie używamy setItems, bo options są kontrolowane z zewnątrz
               }}
               onChangeValue={handleValueChange}
+              placeholder={field.value ? undefined : 'Wybierz...'}
               listMode="MODAL"
               modalAnimationType="slide"
               closeAfterSelecting

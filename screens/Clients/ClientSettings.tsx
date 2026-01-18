@@ -18,9 +18,11 @@ import { useForm } from 'react-hook-form';
 import { Swipeable } from 'react-native-gesture-handler';
 import { ButtonGroup, SubmitButton } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
+import FilePicker from '../../components/FilePicker';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import HorizontalTabs, { TabItem } from '../../components/HorizontalTabs';
-import { FormInput } from '../../components/Input';
+import { Dropdown, FormInput } from '../../components/Input';
+import SegmentedControl from '../../components/SegmentedControl';
 import TrashIcon from '../../components/icons/TrashIcon';
 import { MontageProtocolForm } from '../Clients/ClientInstallation';
 import ReviewCard, { Review } from '../Clients/ReviewCard';
@@ -29,12 +31,15 @@ import ReviewProtocolForm from '../Clients/ReviewForm';
 import FilesIcon from '../../components/icons/FilesIcon';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
+import useAuth from '../../providers/AuthProvider';
 import useClients, { Client } from '../../providers/ClientsProvider';
 import { Montage } from '../../providers/MontageProvider';
 import useOffers from '../../providers/OffersProvider';
 import useStaff from '../../providers/StaffProvider';
 import useTasks from '../../providers/TasksProvider';
 import {
+  Agreement,
+  AgreementListResponse,
   ClientInstallationsListResponse,
   ClientsInstallationListItem,
 } from '../../types/clients.types';
@@ -60,7 +65,7 @@ const installationTabs: TabItem[] = [
   { id: 'zadania', label: 'Zadania' },
   { id: 'ogledziny', label: 'Oględziny' },
   { id: 'oferty', label: 'Oferty' },
-  { id: 'umowa', label: 'Umowa' },
+  { id: 'umowa', label: 'Umowy' },
   { id: 'montaz', label: 'Montaż' },
   { id: 'faktury', label: 'Faktury' },
   { id: 'przeglady', label: 'Przeglądy' },
@@ -148,6 +153,7 @@ function MontazView({
   onDeleteMontage,
   onSave,
   onCancel,
+  selectedDevice,
 }: {
   installationId: string;
   montageList: Montage[] | null;
@@ -155,6 +161,7 @@ function MontazView({
   onDeleteMontage: (id: number) => void;
   onSave?: () => void;
   onCancel?: () => void;
+  selectedDevice?: any;
 }) {
   // Pobierz montaż dla tej instalacji (jedna instalacja = jeden montaż)
   const montage = montageList && montageList.length > 0 ? montageList[0] : null;
@@ -165,6 +172,7 @@ function MontazView({
       montage={montage}
       onSave={onSave}
       onCancel={onCancel}
+      selectedDevice={selectedDevice}
     />
   );
 }
@@ -524,11 +532,517 @@ function InstallationZadaniaView({
   );
 }
 
-// Komponent placeholder dla "Umowa"
-function UmowaView() {
+// Komponent karty umowy
+function AgreementCard({
+  title,
+  date,
+  onPress,
+}: {
+  title: string;
+  date: string;
+  onPress: () => void;
+}) {
   return (
-    <View style={styles.placeholderView}>
-      <Text style={styles.placeholderText}>Strona w budowie</Text>
+    <TouchableOpacity
+      style={styles.agreementCard}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.agreementContent}>
+        <View style={styles.agreementIconContainer}>
+          <View style={styles.agreementIconCircle}>
+            <FilesIcon color="#36B130" size={20} />
+          </View>
+        </View>
+        <View style={styles.agreementTextContainer}>
+          <Text style={styles.agreementTitle}>{title}</Text>
+          <Text style={styles.agreementDate}>{date}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// Komponent formularza umowy (do użycia w AgreementsView)
+function AgreementFormContent({
+  installationId,
+  clientId,
+  existingAgreement,
+  onCancel,
+}: {
+  installationId: string;
+  clientId: string;
+  existingAgreement?: Agreement | null;
+  onCancel: () => void;
+}) {
+  const { clients, getClients } = useClients();
+  const { token } = useAuth();
+  const { control, handleSubmit, watch, setValue } = useForm<{
+    client_type: 'firma' | 'klient_prywatny';
+    nip?: string;
+    nazwa_firmy?: string;
+    ulica?: string;
+    numer_budynku?: string;
+    numer_lokalu?: string;
+    kod_pocztowy?: string;
+    miasto?: string;
+    imie?: string;
+    nazwisko?: string;
+    email?: string;
+    stanowisko_klienta?: string;
+    umowa_file?: {
+      uri: string;
+      name: string;
+      type: string;
+    };
+  }>({
+    defaultValues: {
+      client_type: 'firma',
+      stanowisko_klienta: 'Właściciel instalacji',
+    },
+  });
+
+  const { execute: createAgreement } = useApi<{
+    status: string;
+    agreement: any;
+    error?: string;
+  }>({
+    path: 'agreement_create',
+  });
+
+  const watchedClientType = watch('client_type');
+
+  // Pobierz dane klienta i wypełnij formularz
+  useEffect(() => {
+    if (getClients) {
+      getClients();
+    }
+  }, [getClients]);
+
+  // Wypełnij formularz danymi z istniejącej umowy lub klienta
+  useEffect(() => {
+    if (existingAgreement) {
+      // Jeśli umowa istnieje, wypełnij formularz danymi z umowy
+      setValue('client_type', existingAgreement.client_type);
+      setValue('nip', existingAgreement.nip || '');
+      setValue('nazwa_firmy', existingAgreement.nazwa_firmy || '');
+      setValue('ulica', existingAgreement.ulica || '');
+      setValue('numer_budynku', existingAgreement.numer_budynku || '');
+      setValue('numer_lokalu', existingAgreement.numer_lokalu || '');
+      setValue('kod_pocztowy', existingAgreement.kod_pocztowy || '');
+      setValue('miasto', existingAgreement.miasto || '');
+      setValue('imie', existingAgreement.imie || '');
+      setValue('nazwisko', existingAgreement.nazwisko || '');
+      setValue('email', existingAgreement.email || '');
+      setValue(
+        'stanowisko_klienta',
+        existingAgreement.stanowisko_klienta || '',
+      );
+
+      // Ustaw plik PDF jeśli istnieje
+      if (existingAgreement.pdf_file || existingAgreement.pdf_file_url) {
+        const pdfUrl =
+          existingAgreement.pdf_file_url || existingAgreement.pdf_file;
+        const urlParts = pdfUrl.split('/');
+        const fileName = urlParts[urlParts.length - 1] || 'umowa.pdf';
+        setValue('umowa_file', {
+          uri: pdfUrl,
+          name: fileName,
+          type: 'application/pdf',
+        });
+      }
+    } else if (clients && clientId) {
+      // Jeśli umowy nie ma, wypełnij danymi klienta
+      const client = clients.find(c => c.id === Number(clientId));
+      if (client) {
+        // Mapuj rodzaj_klienta na client_type
+        const clientType =
+          client.rodzaj_klienta === 'osoba_prywatna'
+            ? 'klient_prywatny'
+            : 'firma';
+
+        setValue('client_type', clientType);
+        setValue('imie', client.first_name || '');
+        setValue('nazwisko', client.last_name || '');
+        setValue('email', client.email || '');
+        setValue('ulica', client.ulica || '');
+        setValue('numer_budynku', client.numer_domu || '');
+        setValue('numer_lokalu', client.mieszkanie || '');
+        setValue('kod_pocztowy', client.kod_pocztowy || '');
+        setValue('miasto', client.miasto || '');
+
+        // Pola tylko dla firmy
+        if (clientType === 'firma') {
+          setValue('nip', client.nip || '');
+          setValue('nazwa_firmy', client.nazwa_firmy || '');
+        }
+      }
+    }
+  }, [existingAgreement, clients, clientId, setValue]);
+
+  const onSubmit = async (data: any) => {
+    try {
+      // Sprawdź czy plik został wybrany (obiekt File) czy to URL z bazy (string)
+      const isNewFile =
+        data.umowa_file &&
+        typeof data.umowa_file === 'object' &&
+        data.umowa_file.uri &&
+        !data.umowa_file.uri.startsWith('http');
+
+      if (!isNewFile && !existingAgreement) {
+        Alert.alert('Błąd', 'Proszę wybrać plik PDF umowy');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('token', token || '');
+      formData.append('instalacja_id', installationId);
+      formData.append('klient_id', clientId);
+
+      // Dodaj plik tylko jeśli został wybrany nowy plik
+      if (isNewFile) {
+        formData.append('pdf_file', {
+          uri: data.umowa_file.uri,
+          name: data.umowa_file.name,
+          type: 'application/pdf',
+        } as any);
+      } else if (existingAgreement) {
+        // Jeśli umowa istnieje ale nie wybrano nowego pliku, użyj istniejącego
+        // Backend powinien zachować istniejący plik - na razie wymagamy nowego pliku
+        Alert.alert(
+          'Błąd',
+          'Aby zaktualizować umowę, proszę wybrać nowy plik PDF',
+        );
+        return;
+      }
+
+      // Dodaj wszystkie pola formularza
+      formData.append('client_type', data.client_type || 'firma');
+      if (data.nip) formData.append('nip', data.nip);
+      if (data.nazwa_firmy) formData.append('nazwa_firmy', data.nazwa_firmy);
+      if (data.ulica) formData.append('ulica', data.ulica);
+      if (data.numer_budynku)
+        formData.append('numer_budynku', data.numer_budynku);
+      if (data.numer_lokalu) formData.append('numer_lokalu', data.numer_lokalu);
+      if (data.kod_pocztowy) formData.append('kod_pocztowy', data.kod_pocztowy);
+      if (data.miasto) formData.append('miasto', data.miasto);
+      if (data.imie) formData.append('imie', data.imie);
+      if (data.nazwisko) formData.append('nazwisko', data.nazwisko);
+      if (data.email) formData.append('email', data.email);
+      if (data.stanowisko_klienta)
+        formData.append('stanowisko_klienta', data.stanowisko_klienta);
+
+      const response = await createAgreement({ data: formData });
+
+      if (response && response.status === 'Agreement created') {
+        Alert.alert('Sukces', 'Umowa została zapisana');
+        onCancel();
+      } else {
+        Alert.alert('Błąd', response?.error || 'Nie udało się zapisać umowy');
+      }
+    } catch (error) {
+      Alert.alert('Błąd', 'Nie udało się zapisać umowy');
+    }
+  };
+
+  const handleFetchGUSData = () => {
+    // TODO: Implementacja pobierania danych z GUS
+    Alert.alert(
+      'Info',
+      'Funkcja pobierania danych z GUS będzie dostępna wkrótce',
+    );
+  };
+
+  return (
+    <ScrollView
+      style={styles.agreementFormScrollContainer}
+      contentContainerStyle={styles.agreementFormScrollContent}
+    >
+      {/* Sekcja: Dane klienta */}
+      <Text style={styles.agreementFormSectionTitle}>Dane klienta</Text>
+
+      <View style={styles.agreementFormSegmentedControlContainer}>
+        <SegmentedControl
+          options={[
+            { label: 'Firma', value: 'firma' },
+            { label: 'Klient prywatny', value: 'klient_prywatny' },
+          ]}
+          value={watchedClientType}
+          onChange={value =>
+            setValue('client_type', value as 'firma' | 'klient_prywatny')
+          }
+        />
+      </View>
+
+      {watchedClientType === 'firma' && (
+        <>
+          <View style={styles.agreementFormInputContainer}>
+            <FormInput
+              name="nip"
+              control={control}
+              label="NIP"
+              placeholder="Wpisz NIP"
+              noPadding
+            />
+          </View>
+          <View style={styles.agreementFormGusButtonContainer}>
+            <SubmitButton
+              title="Pobierz dane z GUS"
+              onPress={handleFetchGUSData}
+              style={styles.agreementFormGusButton}
+              titleStyle={styles.agreementFormGusButtonTitle}
+            />
+          </View>
+          <View style={styles.agreementFormInputContainer}>
+            <FormInput
+              name="nazwa_firmy"
+              control={control}
+              label="Nazwa firmy"
+              placeholder="Wpisz nazwę"
+              noPadding
+            />
+          </View>
+        </>
+      )}
+
+      <View style={styles.agreementFormInputContainer}>
+        <FormInput
+          name="ulica"
+          control={control}
+          label="Ulica"
+          placeholder="Wpisz ulicę"
+          noPadding
+        />
+      </View>
+
+      <View style={styles.agreementFormRowInputContainer}>
+        <FormInput
+          name="numer_budynku"
+          control={control}
+          label="Numer budynku"
+          placeholder="Wpisz ulicę"
+          noPadding
+          customPercentWidth={48}
+        />
+        <FormInput
+          name="numer_lokalu"
+          control={control}
+          label="Numer lokalu"
+          placeholder="Wpisz ulicę"
+          noPadding
+          customPercentWidth={48}
+        />
+      </View>
+
+      <View style={styles.agreementFormRowInputContainer}>
+        <FormInput
+          name="kod_pocztowy"
+          control={control}
+          label="Kod pocztowy"
+          placeholder="Wpisz ulicę"
+          noPadding
+          customPercentWidth={48}
+        />
+        <FormInput
+          name="miasto"
+          control={control}
+          label="Miasto"
+          placeholder="Wpisz ulicę"
+          noPadding
+          customPercentWidth={48}
+        />
+      </View>
+
+      {/* Sekcja: Informacje kontaktowe */}
+      <Text style={styles.agreementFormSectionTitle}>
+        Informacje kontaktowe
+      </Text>
+
+      <View style={styles.agreementFormInputContainer}>
+        <FormInput
+          name="imie"
+          control={control}
+          label="Imię"
+          placeholder="Wpisz imię"
+          noPadding
+        />
+      </View>
+
+      <View style={styles.agreementFormInputContainer}>
+        <FormInput
+          name="nazwisko"
+          control={control}
+          label="Nazwisko"
+          placeholder="Wpisz nazwisko"
+          noPadding
+        />
+      </View>
+
+      <View style={styles.agreementFormInputContainer}>
+        <FormInput
+          name="email"
+          control={control}
+          label="E-mail"
+          placeholder="Wpisz e-mail"
+          noPadding
+        />
+      </View>
+
+      <View style={styles.agreementFormInputContainer}>
+        <Dropdown
+          label="Stanowisko klienta"
+          name="stanowisko_klienta"
+          control={control}
+          options={[
+            {
+              label: 'Właściciel instalacji',
+              value: 'Właściciel instalacji',
+            },
+            { label: 'Przedstawiciel', value: 'Przedstawiciel' },
+            { label: 'Inne', value: 'Inne' },
+          ]}
+          isBordered={false}
+        />
+      </View>
+
+      {/* Sekcja: Umowa */}
+      <Text style={styles.agreementFormSectionTitle}>Umowa</Text>
+
+      <View style={styles.agreementFormFileUploadContainer}>
+        <FilePicker
+          name="umowa_file"
+          control={control}
+          label=""
+          type="file"
+          variant="gray"
+          title="Prześlij umowę"
+          subtitle="Plik powinien być w formacie PDF"
+          acceptedFileTypes={['application/pdf']}
+          initialValue={
+            existingAgreement?.pdf_file_url || existingAgreement?.pdf_file
+          }
+        />
+      </View>
+
+      {/* Przyciski */}
+      <View style={styles.agreementFormButtonsContainer}>
+        <ButtonGroup
+          cancelTitle="Anuluj"
+          submitTitle="Wyślij umowę"
+          onCancel={onCancel}
+          onSubmitPress={handleSubmit(onSubmit)}
+          cancelStyle={styles.agreementFormCancelButton}
+          cancelTitleStyle={styles.agreementFormCancelButtonTitle}
+          submitStyle={styles.agreementFormSubmitButton}
+          submitTitleStyle={styles.agreementFormSubmitButtonTitle}
+          stretch
+          groupStyle={styles.agreementFormButtonGroup}
+        />
+      </View>
+    </ScrollView>
+  );
+}
+
+// Komponent widoku "Umowa"
+function AgreementsView({
+  installation,
+  installationId,
+  clientId,
+  navigation,
+}: {
+  installation: ClientsInstallationListItem | undefined;
+  installationId: string;
+  clientId: string;
+  navigation: any;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [agreement, setAgreement] = useState<Agreement | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const {
+    result: agreementsResult,
+    execute: fetchAgreements,
+    loading: apiLoading,
+  } = useApi<AgreementListResponse>({
+    path: 'agreement_list',
+  });
+
+  useEffect(() => {
+    if (fetchAgreements && installationId) {
+      fetchAgreements({ data: { instalacja_id: installationId } });
+    }
+  }, [fetchAgreements, installationId]);
+
+  useEffect(() => {
+    if (agreementsResult !== undefined) {
+      if (agreementsResult?.umowy && agreementsResult.umowy.length > 0) {
+        // Każda instalacja ma tylko jedną umowę, więc bierzemy pierwszą
+        setAgreement(agreementsResult.umowy[0]);
+      } else {
+        setAgreement(null);
+      }
+      setLoading(false);
+    }
+  }, [agreementsResult]);
+
+  const handleAgreementPress = () => {
+    setShowForm(true);
+  };
+
+  const handleCancel = () => {
+    setShowForm(false);
+    // Odśwież umowę po zamknięciu formularza
+    if (fetchAgreements && installationId) {
+      fetchAgreements({ data: { instalacja_id: installationId } });
+    }
+  };
+
+  if (showForm) {
+    return (
+      <View style={styles.umowaContentView}>
+        <AgreementFormContent
+          installationId={installationId}
+          clientId={clientId}
+          existingAgreement={agreement}
+          onCancel={handleCancel}
+        />
+      </View>
+    );
+  }
+
+  // Zawsze pokazujemy komponent umowy, nawet jeśli nie ma jej w bazie
+  // Jeśli umowa jest w bazie, używamy jej danych, w przeciwnym razie danych instalacji
+  let title: string;
+  let date: string;
+
+  if (agreement) {
+    // Umowa jest w bazie - używamy danych umowy
+    title = `Umowa montażu numer ${agreement.id}`;
+    date = agreement.created_date
+      ? format(parseISO(agreement.created_date), 'dd/MM/yyyy')
+      : 'Brak daty';
+  } else if (installation) {
+    // Umowy nie ma w bazie - używamy danych instalacji
+    title = `Umowa montażu numer ${installation.id}`;
+    date = installation.created_date
+      ? format(parseISO(installation.created_date), 'dd/MM/yyyy')
+      : 'Brak daty';
+  } else {
+    // Fallback jeśli nie ma danych instalacji
+    title = 'Umowa montażu';
+    date = 'Brak daty';
+  }
+
+  return (
+    <View style={styles.umowaContentView}>
+      <View style={styles.umowaList}>
+        <AgreementCard
+          key={agreement?.id || installationId}
+          title={title}
+          date={date}
+          onPress={handleAgreementPress}
+        />
+      </View>
     </View>
   );
 }
@@ -697,8 +1211,9 @@ function InstallationOfferRow({
     ? format(parseISO(offer.created_date), 'dd/MM/yyyy')
     : 'Brak daty';
 
-  // Tytuł oferty: "Oferta nr X"
-  const offerTitle = `Oferta nr ${offer.id}`;
+  // Tytuł oferty: użyj nazwa_oferty jeśli istnieje, w przeciwnym razie "Oferta nr X"
+  const offerTitle =
+    offer.nazwa_oferty || offer.nazwa || `Oferta nr ${offer.id}`;
 
   return (
     <TouchableOpacity
@@ -1046,7 +1561,7 @@ function MontageDeleteOverlay({
 
 function ClientSettings({
   route: {
-    params: { installationId, clientId, activeTab, returnTab },
+    params: { installationId, clientId, activeTab, returnTab, selectedDevice },
   },
 }: {
   route: Route<
@@ -1056,6 +1571,7 @@ function ClientSettings({
       clientId: string;
       activeTab?: TabType;
       returnTab?: TabType;
+      selectedDevice?: any;
     }
   >;
 }) {
@@ -1248,7 +1764,14 @@ function ClientSettings({
           />
         );
       case 'umowa':
-        return <UmowaView />;
+        return (
+          <AgreementsView
+            installation={currentInstallation}
+            installationId={installationId}
+            clientId={clientId}
+            navigation={navigate}
+          />
+        );
       case 'montaz':
         return (
           <MontazView
@@ -1262,6 +1785,7 @@ function ClientSettings({
             onSave={() => {
               fetchMontageList();
             }}
+            selectedDevice={selectedDevice}
             onCancel={() => {
               if (returnTab) {
                 navigate('ClientsMenu', {
@@ -1360,6 +1884,9 @@ function ClientSettings({
           onTabChange={(tabId: string) => setCurrentTab(tabId as TabType)}
         />
 
+        {/* Poziomy border oddzielający zakładki od reszty treści */}
+        <Divider style={styles.divider} />
+
         {/* Zawartość aktywnej zakładki */}
         <View style={styles.contentScroll}>{renderActiveView()}</View>
 
@@ -1391,6 +1918,11 @@ function ClientSettings({
 }
 
 const styles = StyleSheet.create({
+  divider: {
+    paddingTop: 10,
+    borderBottomColor: Colors.green,
+    borderBottomWidth: 2,
+  },
   linearGradient: {
     flex: 1,
     display: 'flex',
@@ -1419,7 +1951,6 @@ const styles = StyleSheet.create({
   contentScroll: {
     flex: 1,
     height: '100%',
-    paddingTop: 20,
   },
   contentView: {
     flex: 1,
@@ -1859,6 +2390,144 @@ const styles = StyleSheet.create({
     fontFamily: 'Archivo_600SemiBold',
     color: Colors.black,
     marginBottom: 16,
+  },
+  // Style dla widoku Umowy
+  umowaContentView: {
+    flex: 1,
+    backgroundColor: Colors.homeScreenBackground,
+  },
+  umowaList: {
+    paddingHorizontal: 14,
+    paddingTop: 20,
+    paddingBottom: 20,
+  },
+  agreementCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    marginBottom: 12,
+    padding: 16,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  agreementContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  agreementIconContainer: {
+    marginRight: 12,
+  },
+  agreementIconCircle: {
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    backgroundColor: '#E6F7D9', // Light green background matching the header
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  agreementTextContainer: {
+    flex: 1,
+  },
+  agreementTitle: {
+    fontSize: 16,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+    marginBottom: 4,
+  },
+  agreementDate: {
+    fontSize: 12,
+    fontFamily: 'Archivo_400Regular',
+    color: '#616161', // Medium grey
+  },
+  // Style dla formularza umowy
+  agreementFormScrollContainer: {
+    flex: 1,
+  },
+  agreementFormScrollContent: {
+    paddingHorizontal: 14,
+    paddingBottom: 20,
+  },
+  agreementFormSectionTitle: {
+    fontSize: 16,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+    marginTop: 20,
+    marginBottom: 12,
+  },
+  agreementFormSegmentedControlContainer: {
+    backgroundColor: Colors.white,
+    padding: 10,
+    marginBottom: 16,
+    borderRadius: 10,
+  },
+  agreementFormInputContainer: {
+    marginBottom: 0,
+  },
+  agreementFormRowInputContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 0,
+    gap: 12,
+  },
+  agreementFormGusButtonContainer: {
+    marginBottom: 16,
+  },
+  agreementFormGusButton: {
+    backgroundColor: Colors.white,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.borderButton,
+    minHeight: 48,
+  },
+  agreementFormGusButtonTitle: {
+    color: Colors.black,
+    fontFamily: 'Archivo_600SemiBold',
+    fontSize: 14,
+  },
+  agreementFormFileUploadContainer: {
+    marginBottom: 20,
+  },
+  agreementFormFileUploadSubtext: {
+    fontSize: 12,
+    fontFamily: 'Archivo_400Regular',
+    color: Colors.grayText,
+    marginTop: 8,
+    paddingLeft: 4,
+  },
+  agreementFormButtonsContainer: {
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  agreementFormButtonGroup: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  agreementFormCancelButton: {
+    flex: 1,
+    backgroundColor: Colors.transparent,
+    borderRadius: 60,
+    borderWidth: 1,
+    borderColor: Colors.borderButton,
+    minHeight: 48,
+  },
+  agreementFormCancelButtonTitle: {
+    color: Colors.black,
+    fontFamily: 'Archivo_600SemiBold',
+    fontSize: 12,
+  },
+  agreementFormSubmitButton: {
+    flex: 1,
+    backgroundColor: Colors.green,
+    borderRadius: 60,
+    minHeight: 48,
+  },
+  agreementFormSubmitButtonTitle: {
+    color: Colors.white,
+    fontFamily: 'Archivo_600SemiBold',
+    fontSize: 12,
   },
 });
 

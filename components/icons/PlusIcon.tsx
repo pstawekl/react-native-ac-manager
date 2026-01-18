@@ -1,20 +1,20 @@
-import { ColorValue } from 'react-native/Libraries/StyleSheet/StyleSheet';
 import Svg, { Path } from 'react-native-svg';
+import { ColorValue } from 'react-native/Libraries/StyleSheet/StyleSheet';
+import Colors from '../../consts/Colors';
 
-function PlusIcon({ color, size = 24 }: { color: ColorValue; size?: number }) {
+function PlusIcon({
+  color = Colors.black,
+  size = 24,
+}: {
+  color: ColorValue;
+  size?: number;
+}) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
-        d="M12 5V19"
+        d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10ZM12 8v8M8 12h8"
         stroke={color}
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M5 12H19"
-        stroke={color}
-        strokeWidth="2"
+        strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />

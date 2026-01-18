@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import { Route, useNavigation } from '@react-navigation/native';
+import { Route, useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Divider } from '@rneui/base';
 import { Text } from '@rneui/themed';
 import { useCallback, useEffect, useState } from 'react';
@@ -159,9 +159,7 @@ export function InstallationToolForm(props: {
               label: `${index + 1}`,
               value: index + 1,
             }))}
-            isBordered
-            isThin
-            customWidth="48%"
+            isBordered={false}
             zIndex={10}
           />
         </View>
@@ -174,7 +172,7 @@ export function InstallationToolForm(props: {
               label: String(index + 1),
               value: index + 1,
             }))}
-            isBordered
+            isBordered={false}
             isThin
             customWidth="48%"
             zIndex={9}
@@ -948,11 +946,13 @@ export function MontageProtocolForm({
   montage,
   onSave,
   onCancel,
+  selectedDevice: initialSelectedDevice,
 }: {
   installationId: string;
   montage: Montage | null;
   onSave?: () => void;
   onCancel?: () => void;
+  selectedDevice?: Device;
 }) {
   const navigation = useNavigation();
   const { control, handleSubmit, setValue } = useForm<MontageData>({
@@ -973,6 +973,12 @@ export function MontageProtocolForm({
   >();
   const [deviceType, setDeviceType] = useState<string | undefined>(undefined);
   const [devicesList, setDevicesList] = useState<Device[]>([]);
+  // Stany dla pól tylko do odczytu
+  const [unitName, setUnitName] = useState<string>('');
+  const [indoorUnitName, setIndoorUnitName] = useState<string>('');
+  const [outdoorUnitName, setOutdoorUnitName] = useState<string>('');
+  const [nominalCoolingCapacity, setNominalCoolingCapacity] = useState<string>('');
+  const [nominalHeatingCapacity, setNominalHeatingCapacity] = useState<string>('');
 
   const { execute: fetchMontageData } = useApi<MontageData>({
     path: 'montaz_data',
@@ -1350,10 +1356,147 @@ export function MontageProtocolForm({
         if (foundDevice) {
           setSplitManufacturer(foundDevice.producent);
           setDeviceType(foundDevice.typ);
+          // Zaktualizuj pola tylko do odczytu
+          setUnitName(foundDevice.nazwa_modelu || '');
+          setIndoorUnitName(foundDevice.nazwa_jedn_wew || '');
+          setOutdoorUnitName(foundDevice.nazwa_jedn_zew || '');
+          setNominalCoolingCapacity(
+            foundDevice.moc_chlodnicza
+              ? `${foundDevice.moc_chlodnicza.toFixed(2)} kW`
+              : '',
+          );
+          setNominalHeatingCapacity(
+            foundDevice.moc_grzewcza
+              ? `${foundDevice.moc_grzewcza.toFixed(2)} kW`
+              : '',
+          );
         }
       }
     }
   }, [montage, type, devicesList]);
+
+  // Obsługa powrotu z ekranu wyboru urządzenia
+  useEffect(() => {
+    if (initialSelectedDevice) {
+      try {
+        // Zaktualizuj formularz z wybranym urządzeniem
+        const device = initialSelectedDevice;
+
+        if (!device || typeof device !== 'object') {
+          console.error('Invalid device object:', device);
+          return;
+        }
+
+        // Ustaw typ na split
+        if (typeof setType === 'function') {
+          setType('split');
+        }
+        if (typeof setValue === 'function') {
+          setValue('split_multisplit', false);
+        }
+
+        // Ustaw wartości formularza
+        if (device.id && typeof setValue === 'function') {
+          setValue('device_split', device.id);
+        }
+        if (device.producent) {
+          if (typeof setValue === 'function') {
+            setValue('deviceManufacturer', device.producent);
+          }
+          if (typeof setSplitManufacturer === 'function') {
+            setSplitManufacturer(device.producent);
+          }
+        }
+        if (device.typ) {
+          if (typeof setValue === 'function') {
+            setValue('deviceType', device.typ);
+          }
+          if (typeof setDeviceType === 'function') {
+            setDeviceType(device.typ);
+          }
+        }
+
+        // Zaktualizuj pola tylko do odczytu
+        if (typeof setUnitName === 'function') {
+          setUnitName(device.nazwa_modelu || '');
+        }
+        if (typeof setIndoorUnitName === 'function') {
+          setIndoorUnitName(device.nazwa_jedn_wew || '');
+        }
+        if (typeof setOutdoorUnitName === 'function') {
+          setOutdoorUnitName(device.nazwa_jedn_zew || '');
+        }
+        
+        // Bezpieczne formatowanie mocy
+        const coolingPower = device.moc_chlodnicza;
+        const heatingPower = device.moc_grzewcza;
+        
+        if (coolingPower !== undefined && coolingPower !== null) {
+          let coolingValue: string;
+          try {
+            if (typeof coolingPower === 'number' && !isNaN(coolingPower)) {
+              coolingValue = coolingPower.toFixed(2);
+            } else if (typeof coolingPower === 'string') {
+              const numValue = parseFloat(coolingPower);
+              coolingValue = !isNaN(numValue) ? numValue.toFixed(2) : coolingPower;
+            } else {
+              coolingValue = String(coolingPower);
+            }
+            if (typeof setNominalCoolingCapacity === 'function') {
+              setNominalCoolingCapacity(`${coolingValue} kW`);
+            }
+          } catch (err) {
+            console.error('Error formatting cooling power:', err);
+            if (typeof setNominalCoolingCapacity === 'function') {
+              setNominalCoolingCapacity(String(coolingPower) + ' kW');
+            }
+          }
+        } else {
+          if (typeof setNominalCoolingCapacity === 'function') {
+            setNominalCoolingCapacity('');
+          }
+        }
+        
+        if (heatingPower !== undefined && heatingPower !== null) {
+          let heatingValue: string;
+          try {
+            if (typeof heatingPower === 'number' && !isNaN(heatingPower)) {
+              heatingValue = heatingPower.toFixed(2);
+            } else if (typeof heatingPower === 'string') {
+              const numValue = parseFloat(heatingPower);
+              heatingValue = !isNaN(numValue) ? numValue.toFixed(2) : heatingPower;
+            } else {
+              heatingValue = String(heatingPower);
+            }
+            if (typeof setNominalHeatingCapacity === 'function') {
+              setNominalHeatingCapacity(`${heatingValue} kW`);
+            }
+          } catch (err) {
+            console.error('Error formatting heating power:', err);
+            if (typeof setNominalHeatingCapacity === 'function') {
+              setNominalHeatingCapacity(String(heatingPower) + ' kW');
+            }
+          }
+        } else {
+          if (typeof setNominalHeatingCapacity === 'function') {
+            setNominalHeatingCapacity('');
+          }
+        }
+
+        // Pobierz urządzenia jeśli jeszcze nie są załadowane
+        if (typeof getDevicesSplit === 'function' && !devicesSplit) {
+          try {
+            getDevicesSplit();
+          } catch (err) {
+            console.error('Error fetching devices:', err);
+          }
+        }
+      } catch (error) {
+        console.error('Error updating form with selected device:', error);
+        Alert.alert('Błąd', 'Nie udało się zaktualizować formularza z wybranym urządzeniem');
+      }
+    }
+  }, [initialSelectedDevice, setValue, getDevicesSplit, devicesSplit]);
 
   const uploadPhoto = async (
     photo: File | undefined,
@@ -1563,7 +1706,11 @@ export function MontageProtocolForm({
             <TouchableOpacity
               style={protocolStyles.editIconButton}
               onPress={() => {
-                // TODO: Implementacja edycji urządzenia
+                // Nawiguj do ekranu wyboru urządzenia
+                (navigation as any).navigate('DeviceSelector', {
+                  installationId,
+                  montageId: montage?.id,
+                });
               }}
             >
               <EditIcon color={Colors.black} size={20} />
@@ -1578,7 +1725,7 @@ export function MontageProtocolForm({
               { label: 'Split', value: 'split' },
               { label: 'Multisplit', value: 'multi_split' },
             ]}
-            isBordered
+            isBordered={false}
             onChange={setType}
           />
 
@@ -1594,7 +1741,7 @@ export function MontageProtocolForm({
                   label: item,
                   value: item,
                 }))}
-                isBordered
+                isBordered={false}
                 onChange={setSplitManufacturer}
               />
               {splitManufacturer && (
@@ -1612,7 +1759,7 @@ export function MontageProtocolForm({
                     label: item,
                     value: item,
                   }))}
-                  isBordered
+                  isBordered={false}
                   onChange={setDeviceType}
                 />
               )}
@@ -1634,7 +1781,7 @@ export function MontageProtocolForm({
                       label: item.nazwa_modelu_producenta,
                       value: item.id,
                     }))}
-                    isBordered
+                    isBordered={false}
                   />
                   <FormInput
                     name="devicePower"
@@ -1663,7 +1810,7 @@ export function MontageProtocolForm({
                   label: item,
                   value: item,
                 }))}
-                isBordered
+                isBordered={false}
               />
               <FormInput
                 name="deviceType"
@@ -1691,35 +1838,43 @@ export function MontageProtocolForm({
         <View style={protocolStyles.readOnlySection}>
           <View style={protocolStyles.readOnlyRow}>
             <Text style={protocolStyles.readOnlyLabel}>Nazwa jednostki:</Text>
-            <Text style={protocolStyles.readOnlyValue}>CO18</Text>
+            <Text style={protocolStyles.readOnlyValue}>{unitName || '-'}</Text>
           </View>
           <Divider style={protocolStyles.readOnlyDivider} />
           <View style={protocolStyles.readOnlyRow}>
             <Text style={protocolStyles.readOnlyLabel}>
               Nazwa jednostki wewnętrznej:
             </Text>
-            <Text style={protocolStyles.readOnlyValue} />
+            <Text style={protocolStyles.readOnlyValue}>
+              {indoorUnitName || '-'}
+            </Text>
           </View>
           <Divider style={protocolStyles.readOnlyDivider} />
           <View style={protocolStyles.readOnlyRow}>
             <Text style={protocolStyles.readOnlyLabel}>
               Nazwa jednostki zewnętrznej:
             </Text>
-            <Text style={protocolStyles.readOnlyValue} />
+            <Text style={protocolStyles.readOnlyValue}>
+              {outdoorUnitName || '-'}
+            </Text>
           </View>
           <Divider style={protocolStyles.readOnlyDivider} />
           <View style={protocolStyles.readOnlyRow}>
             <Text style={protocolStyles.readOnlyLabel}>
               Moc nominalna chłodzenia:
             </Text>
-            <Text style={protocolStyles.readOnlyValue} />
+            <Text style={protocolStyles.readOnlyValue}>
+              {nominalCoolingCapacity || '-'}
+            </Text>
           </View>
           <Divider style={protocolStyles.readOnlyDivider} />
           <View style={protocolStyles.readOnlyRow}>
             <Text style={protocolStyles.readOnlyLabel}>
               Moc nominalna grzania:
             </Text>
-            <Text style={protocolStyles.readOnlyValue}>5,33 kW</Text>
+            <Text style={protocolStyles.readOnlyValue}>
+              {nominalHeatingCapacity || '-'}
+            </Text>
           </View>
         </View>
 
@@ -1733,7 +1888,7 @@ export function MontageProtocolForm({
               label: `${index + 1}`,
               value: index + 1,
             }))}
-            isBordered
+            isBordered={false}
           />
           <Dropdown
             name="liczba_przegladow"
@@ -1743,7 +1898,7 @@ export function MontageProtocolForm({
               label: String(index + 1),
               value: index + 1,
             }))}
-            isBordered
+            isBordered={false}
           />
         </View>
 
