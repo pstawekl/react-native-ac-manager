@@ -19,6 +19,7 @@ import HorizontalTabs, { TabItem } from '../../components/HorizontalTabs';
 import { Dropdown, FormInput, Textarea } from '../../components/Input';
 import Photo from '../../components/Photo';
 import SegmentedControl from '../../components/SegmentedControl';
+import FilesIcon from '../../components/icons/FilesIcon';
 import InfoCircle from '../../components/icons/InfoCircle';
 import MoneyReciveIcon from '../../components/icons/MoneyReciveIcon';
 import NoteTextIcon from '../../components/icons/NoteTextIcon';
@@ -1493,7 +1494,14 @@ function ClientOfferRow({
     });
   };
 
-  const offerTitle = offer.nazwa_oferty || offer.nazwa || `Oferta ${offer.id}`;
+  // Formatuj datę w formacie DD/MM/YYYY
+  const formattedDate = offer.created_date
+    ? format(parseISO(offer.created_date), 'dd/MM/yyyy')
+    : 'Brak daty';
+
+  // Tytuł oferty: użyj nazwa_oferty jeśli istnieje, w przeciwnym razie "Oferta nr X"
+  const offerTitle =
+    offer.nazwa_oferty || offer.nazwa || `Oferta nr ${offer.id}`;
 
   return (
     <TouchableOpacity
@@ -1504,28 +1512,12 @@ function ClientOfferRow({
       <View style={styles.clientOfferContent}>
         <View style={styles.clientOfferIconContainer}>
           <View style={styles.clientOfferIcon}>
-            <Text style={styles.clientOfferIconText}>📄</Text>
+            <FilesIcon color={Colors.teal} size={20} />
           </View>
         </View>
         <View style={styles.clientOfferDetails}>
           <Text style={styles.clientOfferTitle}>{offerTitle}</Text>
-          <Text style={styles.clientOfferSubtitle}>
-            {offer.offer_type === 'split' ? 'Split' : 'Multisplit'}
-          </Text>
-        </View>
-        <View style={styles.clientOfferRight}>
-          <View
-            style={[
-              styles.clientOfferStatusBadge,
-              {
-                backgroundColor: offer.is_accepted ? Colors.green : Colors.red,
-              },
-            ]}
-          >
-            <Text style={styles.clientOfferStatusText}>
-              {offer.is_accepted ? 'Zaakceptowana' : 'Nie zaakceptowana'}
-            </Text>
-          </View>
+          <Text style={styles.clientOfferDate}>{formattedDate}</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -2268,16 +2260,14 @@ const styles = StyleSheet.create({
   },
   clientOfferItem: {
     backgroundColor: Colors.white,
-    borderRadius: 8,
+    borderRadius: 10,
     marginBottom: 12,
     padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.grayBorder,
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.1,
     shadowRadius: 2,
-    elevation: 1,
+    elevation: 2,
   },
   clientOfferContent: {
     flexDirection: 'row',
@@ -2287,15 +2277,12 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   clientOfferIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: Colors.offersTeal,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    backgroundColor: Colors.backgroundTeal,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  clientOfferIconText: {
-    fontSize: 20,
   },
   clientOfferDetails: {
     flex: 1,
@@ -2307,26 +2294,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Archivo_600SemiBold',
     marginBottom: 4,
   },
-  clientOfferSubtitle: {
+  clientOfferDate: {
     fontSize: 12,
-    color: Colors.grayerText,
+    color: '#616161',
     fontFamily: 'Archivo_400Regular',
-  },
-  clientOfferRight: {
-    alignItems: 'flex-end',
-  },
-  clientOfferStatusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    minWidth: 120,
-    alignItems: 'center',
-  },
-  clientOfferStatusText: {
-    fontSize: 11,
-    color: Colors.white,
-    fontFamily: 'Archivo_600SemiBold',
-    fontWeight: '700',
   },
 });
 

@@ -1211,8 +1211,9 @@ function InstallationOfferRow({
     ? format(parseISO(offer.created_date), 'dd/MM/yyyy')
     : 'Brak daty';
 
-  // Tytuł oferty: "Oferta nr X"
-  const offerTitle = `Oferta nr ${offer.id}`;
+  // Tytuł oferty: użyj nazwa_oferty jeśli istnieje, w przeciwnym razie "Oferta nr X"
+  const offerTitle =
+    offer.nazwa_oferty || offer.nazwa || `Oferta nr ${offer.id}`;
 
   return (
     <TouchableOpacity
@@ -1883,6 +1884,9 @@ function ClientSettings({
           onTabChange={(tabId: string) => setCurrentTab(tabId as TabType)}
         />
 
+        {/* Poziomy border oddzielający zakładki od reszty treści */}
+        <Divider style={styles.divider} />
+
         {/* Zawartość aktywnej zakładki */}
         <View style={styles.contentScroll}>{renderActiveView()}</View>
 
@@ -1914,6 +1918,11 @@ function ClientSettings({
 }
 
 const styles = StyleSheet.create({
+  divider: {
+    paddingTop: 10,
+    borderBottomColor: Colors.green,
+    borderBottomWidth: 2,
+  },
   linearGradient: {
     flex: 1,
     display: 'flex',
@@ -1942,7 +1951,6 @@ const styles = StyleSheet.create({
   contentScroll: {
     flex: 1,
     height: '100%',
-    paddingTop: 20,
   },
   contentView: {
     flex: 1,
