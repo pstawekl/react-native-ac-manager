@@ -9,13 +9,14 @@ import {
 
 import useApi from '../hooks/useApi';
 
-type Catalog = {
+export type Catalog = {
   ac_user: number;
   created_date: string;
   file: string;
   id: number;
   is_active: boolean;
   name: string;
+  od?: string; // Data ważności od (format: YYYY-MM-DD lub podobny)
 };
 
 export type PriceListItem = {

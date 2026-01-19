@@ -88,7 +88,7 @@ function Categories() {
           <>
             <Category
               screen="Catalogs"
-              title="Katalogi"
+              title="Dokumentacja"
               icon={Book2Icon}
               iconBackgroundColor="#7C18B226"
               iconColor="#7C18B2"

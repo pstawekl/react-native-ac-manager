@@ -102,11 +102,14 @@ function PriceListElement({
   );
 }
 
-export default function PriceList() {
+type PriceListProps = {
+  searchQuery?: string;
+};
+
+export default function PriceList({ searchQuery = '' }: PriceListProps) {
   const navigation = useNavigation<CatalogsMenuScreenProps['navigation']>();
   const { hasAccess } = usePermission();
 
-  const [searchValue, setSearchValue] = useState<string>('');
   const [filteredPriceList, setFilteredPriceList] = useState<
     PriceListItem[] | null
   >(null);
@@ -151,21 +154,27 @@ export default function PriceList() {
   }, [getPriceList, isUserAssembler, user]);
 
   useEffect(() => {
-    if (priceList) {
-      setFilteredPriceList(priceList);
+    if (!priceList) {
+      setFilteredPriceList(null);
+      return;
     }
-  }, [priceList]);
 
-  useEffect(() => {
-    // TODO
-  }, [searchValue]);
+    if (!searchQuery.trim()) {
+      setFilteredPriceList(priceList);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+    const filtered = priceList.filter(item =>
+      item.name.toLowerCase().includes(query),
+    );
+    setFilteredPriceList(filtered);
+  }, [priceList, searchQuery]);
 
   return (
     <View style={styles.container}>
       <ButtonsHeader
-        // onBackPress={navigation.goBack}
-        searchValue={searchValue}
-        onChangeSearchValue={setSearchValue}
+      // onBackPress={navigation.goBack}
       />
 
       <ScrollView>
@@ -213,6 +222,7 @@ export default function PriceList() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    marginTop: -50,
   },
   itemInnerContainer: {
     paddingVertical: 0,

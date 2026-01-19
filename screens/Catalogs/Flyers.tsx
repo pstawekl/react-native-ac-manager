@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { ListItem } from '@rneui/base';
 import { Avatar, Button, Text } from '@rneui/themed';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import Spinner from 'react-native-loading-spinner-overlay/lib';
@@ -38,7 +38,11 @@ function RowRightContent({ onDelete }: { onDelete: () => void }) {
   );
 }
 
-export default function Flyers() {
+type FlyersProps = {
+  searchQuery?: string;
+};
+
+export default function Flyers({ searchQuery = '' }: FlyersProps) {
   const navigation = useNavigation<CatalogsMenuScreenProps['navigation']>();
   const { hasAccess } = usePermission();
 
@@ -82,15 +86,31 @@ export default function Flyers() {
     }
   }, [getFlyers, isUserAssembler, user]);
 
+  // Filtrowanie ulotek według zapytania wyszukiwania
+  const filteredFlyers = useMemo(() => {
+    if (!flyers || flyers.length === 0) return [];
+
+    if (!searchQuery.trim()) {
+      return flyers;
+    }
+
+    const query = searchQuery.toLowerCase().trim();
+    return flyers.filter(
+      item =>
+        item?.name?.toLowerCase().includes(query) ||
+        item?.file?.toLowerCase().includes(query),
+    );
+  }, [flyers, searchQuery]);
+
   return (
     <View style={styles.container}>
       <ButtonsHeader
-        // onBackPress={navigation.goBack}
+      // onBackPress={navigation.goBack}
       />
 
       <ScrollView>
-        {flyers && flyers.length > 0 ? (
-          flyers?.map(item => {
+        {filteredFlyers && filteredFlyers.length > 0 ? (
+          filteredFlyers.map(item => {
             // Sprawdź czy item nie jest null/undefined
             if (!item) return null;
 
@@ -165,6 +185,7 @@ export default function Flyers() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    marginTop: -50,
   },
   itemContainer: {
     marginBottom: -8,
