@@ -5,7 +5,7 @@ import { Provider as ReduxProvider } from 'react-redux';
 import { useEffect, useState } from 'react';
 import store from './store';
 
-import 'react-native-gesture-handler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import RootNavigation from './navigation/RootNavigation';
 import { AuthProvider } from './providers/AuthProvider';
 import { LicenseProvider } from './providers/LicenseProvider';
@@ -14,6 +14,7 @@ import { OfferSettingsProvider } from './providers/OfferSettingsProvider';
 import { LicenseGuard } from './components/LicenseGuard';
 import theme from './theme';
 import useLoadFonts from './utils/fontUtils';
+
 // Tymczasowo wyłączone - inicjalizacja bazy w tle
 // import { setupDatabase } from './database';
 // import { networkService } from './services/NetworkService';
@@ -109,7 +110,11 @@ function AppContent() {
 }
 
 function App() {
-  return <AppContent />;
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AppContent />
+    </GestureHandlerRootView>
+  );
 }
 
 export default App;

@@ -1,799 +1,553 @@
 import { Button, Text } from '@rneui/themed';
-import { parseISO } from 'date-fns';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { format, parseISO } from 'date-fns';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
-import { Alert, Modal, StyleSheet, TextInput, View } from 'react-native';
-import { ScrollView } from 'react-native-gesture-handler';
+import {
+  Alert,
+  Modal,
+  StyleSheet,
+  TextInput,
+  View,
+  TouchableOpacity,
+  ScrollView,
+  Platform,
+} from 'react-native';
 
-import { LinearGradient } from 'expo-linear-gradient';
-import { ButtonGroup } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
-import Container from '../../components/Container';
-import DatePicker from '../../components/DatePicker';
 import { Dropdown } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import useClients from '../../providers/ClientsProvider';
 import useStaff from '../../providers/StaffProvider';
 import useTasks from '../../providers/TasksProvider';
-import { ClientInstallationsListResponse } from '../../types/clients.types';
+
+/* -------------------------------------------------------------------------- */
+/*                                   TYPES                                    */
+/* -------------------------------------------------------------------------- */
 
 type TaskData = {
   nazwa: string;
-  miejsce_adres?: string;
   status: string;
   typ: string;
+  tytul: string;
   task_date: Date;
   task_time: Date;
-  klient_id: number;
-  instalacja_id: number | null;
-  grupa: number | null;
-  notatki?: string;
+
+  klient_id?: number;
+  typ_klienta: 'firma' | 'prywatny';
+
+  nazwa_firmy?: string;
+  nip_firmy?: string;
+
+  klient_ulica?: string;
+  klient_numer_domu?: string;
+  klient_numer_mieszkania?: string;
+  klient_kod_pocztowy?: string;
+  klient_miasto?: string;
+
+  instalacja_id?: number | null;
+  montaz_ulica?: string;
+  montaz_numer_domu?: string;
+  montaz_numer_mieszkania?: string;
+  montaz_miasto?: string;
+
+  grupa?: number | null;
+  telefon_pracownika?: string;
+
+  faktura_wystawiona?: string;
+  forma_rozliczenia?: string;
 };
 
-function AddTaskForm({ navigation, route }: any) {
-  const task = route?.params?.task;
-  const fromClient = route?.params?.fromClient;
-  const fromInstallation = route?.params?.fromInstallation;
-  const fromClientId = route?.params?.clientId;
-  const fromInstallationId = route?.params?.installationId;
+/* -------------------------------------------------------------------------- */
+/*                               COMPONENT                                    */
+/* -------------------------------------------------------------------------- */
 
-  const [filteredClients, setFilteredClients] =
-    useState<{ label: string; value: number }[]>();
-  const [filteredInstallations, setFilteredInstallations] =
-    useState<{ label: string; value: number }[]>();
-  const [filteredTeams, setFilteredTeams] =
-    useState<{ label: string; value: number }[]>();
-  const [filteredEmployees, setFilteredEmployees] =
-    useState<{ label: string; value: number }[]>();
-  const [clientId, setClientId] = useState<number | null>(
-    task?.klient_id ?? null,
-  );
-  const [installationId, setInstallationId] = useState<number | null>(
-    task?.instalacja_id ?? null,
-  );
-  const [taskType, setTaskType] = useState<string | null>(task?.typ ?? null);
-  const [taskTypes, setTaskTypes] = useState<
-    { label: string; value: string }[]
-  >([
-    { label: 'Oględziny', value: 'oględziny' },
-    { label: 'Montaż', value: 'montaż' },
-    { label: 'Szkolenie', value: 'szkolenie' },
-  ]);
-  const [addTaskTypeModalVisible, setAddTaskTypeModalVisible] = useState(false);
-  const [newTaskTypeName, setNewTaskTypeName] = useState('');
-  const [selectedClient, setSelectedClient] = useState<any>(null);
+export default function AddTaskForm({ navigation, route }: any) {
+  const task = route?.params?.task;
 
   const { clients, getClients } = useClients();
+  const { teams, getTeams } = useStaff();
   const { execute: getTasks } = useTasks();
-  const { getTeams, teams, employees, getEmployees } = useStaff();
-  const { result, execute, loading } = useApi<any>({
-    path: 'zadanie_create',
-  });
-  const { result: editResult, execute: editTask } = useApi<any>({
-    path: 'zadanie_edit',
-  });
-  const { result: installationsRes, execute: getInstallations } =
-    useApi<ClientInstallationsListResponse>({
-      path: 'installation_list',
-    });
+  const { execute, loading } = useApi({ path: 'zadanie_create' });
 
-  // Funkcja nawigacji wstecz zależna od kontekstu
-  const handleGoBack = useCallback(() => {
-    if (fromInstallation && fromInstallationId && fromClientId) {
-      // Jeśli przyszliśmy z modułu instalacji, wracamy do TaskDetails (jeśli edytowaliśmy)
-      // lub do zakładki Zadania tej instalacji
-      if (task?.id) {
-        // Jeśli edytowaliśmy istniejące zadanie z modułu instalacji, wracamy do TaskDetails
-        navigation.navigate('TaskDetails', {
-          task,
-          fromInstallation,
-          installationId: fromInstallationId,
-          clientId: fromClientId,
-        });
-      } else {
-        // Jeśli dodawaliśmy nowe zadanie, wracamy do zakładki Zadania instalacji
-        navigation.navigate('Clients', {
-          screen: 'Settings',
-          params: {
-            installationId: fromInstallationId.toString(),
-            clientId: fromClientId.toString(),
-            activeTab: 'zadania',
-          },
-        });
-      }
-    } else if (fromClient && fromClientId) {
-      // Jeśli przyszliśmy z modułu klientów, wracamy do TaskDetails (jeśli edytowaliśmy)
-      // lub do zakładki Zadania tego klienta
-      if (task?.id) {
-        // Jeśli edytowaliśmy istniejące zadanie z modułu klientów, wracamy do TaskDetails
-        navigation.navigate('TaskDetails', {
-          task,
-          fromClient,
-          clientId: fromClientId,
-        });
-      } else {
-        // Jeśli dodawaliśmy nowe zadanie, wracamy do zakładki Zadania klienta
-        navigation.navigate('Clients', {
-          screen: 'Menu',
-          params: { clientId: fromClientId, activeTab: 'zadania' },
-        });
-      }
-    } else {
-      // Standardowy powrót (do listy zadań w module Zadań)
-      navigation.navigate('Menu');
-    }
-  }, [fromInstallation, fromClient, fromInstallationId, fromClientId, task, navigation]);
+  const taskDate = task ? parseISO(task.start_date) : new Date();
+  const taskTime = task ? parseISO(task.start_date) : new Date();
 
-  const taskDate = task ? parseISO(task?.start_date) : new Date();
-  const taskTime = task ? parseISO(task?.start_date) : new Date();
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   const { control, handleSubmit, setValue } = useForm<TaskData>({
     defaultValues: {
-      nazwa: task?.nazwa ?? '',
-      miejsce_adres: task?.miejsce_adres ?? '',
-      status: task?.status ?? 'Zaplanowane',
-      typ: task?.typ ?? 'szkolenie',
+      nazwa: '',
+      status: 'Zaplanowane',
+      typ: 'montaż',
+      tytul: '',
       task_date: taskDate,
       task_time: taskTime,
-      klient_id: task?.klient_id ?? undefined,
-      instalacja_id: task?.instalacja_id ?? undefined,
-      grupa: task?.grupa ?? undefined,
-      notatki: task?.notatki ?? '',
+      typ_klienta: 'prywatny',
+      forma_rozliczenia: 'faktura',
     },
   });
-  const notatkiValue = useWatch({ control, name: 'notatki' });
-  const nazwaValue = useWatch({ control, name: 'nazwa' });
-  const miejsceAdresValue = useWatch({ control, name: 'miejsce_adres' });
-  const klientIdValue = useWatch({ control, name: 'klient_id' });
 
-  // Effect to clear client and installation when task type changes to 'szkolenie'
-  useEffect(() => {
-    if (taskType === 'szkolenie') {
-      setClientId(null);
-      setInstallationId(null);
-      setValue('klient_id', null as any);
-      setValue('instalacja_id', null);
-      setFilteredInstallations([]);
-    }
-  }, [taskType, setValue]);
+  const watchedDate = useWatch({ control, name: 'task_date' });
+  const watchedTime = useWatch({ control, name: 'task_time' });
+  const clientType = useWatch({ control, name: 'typ_klienta' });
 
-  // Initialize taskType from form when component loads
-  useEffect(() => {
-    if (task?.typ) {
-      setTaskType(task.typ);
-    }
-  }, [task?.typ]);
+  /* ------------------------------------------------------------------------ */
+  /*                                EFFECTS                                   */
+  /* ------------------------------------------------------------------------ */
 
   useEffect(() => {
-    if (teams) {
-      let teamsToDisplay: { label: string; value: number }[] = [];
+    getClients();
+    getTeams();
+  }, []);
 
-      teams.forEach(item => {
-        teamsToDisplay = [
-          ...teamsToDisplay,
-          { label: item.nazwa, value: item.id },
-        ];
-      });
-
-      setFilteredTeams(teamsToDisplay);
-    } else if (getTeams) {
-      getTeams();
-    }
-  }, [teams, getTeams]);
-
+  // 🔥 KLUCZ: przełącznik klienta
   useEffect(() => {
-    if (employees) {
-      let employeesToDisplay: { label: string; value: number }[] = [];
-
-      // Process teams of employees if they exist
-      Object.keys(employees).forEach(key => {
-        const possibleTeam = employees[key];
-        if (Array.isArray(possibleTeam) && key !== 'employees') {
-          possibleTeam.forEach(employee => {
-            if (employee.first_name && employee.last_name && employee.id) {
-              employeesToDisplay = [
-                ...employeesToDisplay,
-                {
-                  label: `${employee.first_name} ${employee.last_name}`,
-                  value: employee.id,
-                },
-              ];
-            }
-          });
-        }
-      });
-
-      employees.employees?.forEach(item => {
-        employeesToDisplay = [
-          ...employeesToDisplay,
-          { label: `${item.first_name} ${item.last_name}`, value: item.id },
-        ];
-      });
-
-      setFilteredEmployees(employeesToDisplay);
-    } else if (getEmployees) {
-      getEmployees();
+    if (clientType === 'prywatny') {
+      setValue('nazwa_firmy', '');
+      setValue('nip_firmy', '');
     }
-  }, [employees, getEmployees, setFilteredEmployees]);
+  }, [clientType, setValue]);
 
-  useEffect(() => {
-    if (clients) {
-      let clientsToDisplay: { label: string; value: number }[] = [];
-
-      clients.forEach(item => {
-        clientsToDisplay = [
-          ...clientsToDisplay,
-          {
-            label: `${
-              item.rodzaj_klienta === 'firma' ? 'Firma:' : 'Osoba prywatna:'
-            } ${
-              item.rodzaj_klienta === 'firma'
-                ? item.nazwa_firmy
-                : `${item.first_name} ${item.last_name}`
-            }`,
-            value: item.id,
-          },
-        ];
-      });
-
-      setFilteredClients(clientsToDisplay);
-    } else if (getClients) {
-      getClients();
-    }
-  }, [clients, getClients]);
-
-  // Ustaw wybranego klienta gdy zmienia się klient_id
-  useEffect(() => {
-    if (klientIdValue && clients) {
-      const foundClient = clients.find(c => c.id === klientIdValue);
-      setSelectedClient(foundClient || null);
-    } else {
-      setSelectedClient(null);
-    }
-  }, [klientIdValue, clients]);
-
-  // Sprawdź czy powinno być widoczne pole Miejsce/Adres
-  const shouldShowMiejsceAdres = useMemo(() => {
-    if (!klientIdValue) return true; // Brak klienta - pokaż pole
-    if (!selectedClient) return false; // Klient nie załadowany jeszcze
-    // Sprawdź czy klient ma adres
-    const hasAddress =
-      selectedClient.ulica &&
-      selectedClient.numer_domu &&
-      selectedClient.miasto;
-    return !hasAddress; // Jeśli nie ma adresu - pokaż pole
-  }, [klientIdValue, selectedClient]);
-
-  useEffect(() => {
-    if (installationsRes) {
-      let installationsToDisplay: { label: string; value: number }[] = [];
-
-      installationsRes.installation_list.forEach(item => {
-        installationsToDisplay = [
-          ...installationsToDisplay,
-          { label: `Instalacja ${item.id}`, value: item.id },
-        ];
-      });
-
-      setFilteredInstallations(installationsToDisplay);
-    }
-  }, [installationsRes, setFilteredInstallations]);
-
-  useEffect(() => {
-    if (getInstallations && clientId) {
-      getInstallations({
-        method: 'POST',
-        data: { klient_id: clientId },
-      });
-    } else {
-      setFilteredInstallations([]);
-    }
-  }, [getInstallations, clientId]);
-
-  // Nowy useEffect do obsługi edycji istniejącego zadania
-  useEffect(() => {
-    if (task) {
-      // Jeśli zadanie ma instalacja_info (z rozszerzonej serializacji)
-      if (task.instalacja_info && task.instalacja_info.klient_id) {
-        setClientId(task.instalacja_info.klient_id);
-        setValue('klient_id', task.instalacja_info.klient_id);
-
-        setInstallationId(task.instalacja_info.id);
-        setValue('instalacja_id', task.instalacja_info.id);
-      }
-      // Fallback - jeśli mamy tylko instalacja ID
-      else if (task.instalacja) {
-        setInstallationId(task.instalacja);
-        setValue('instalacja_id', task.instalacja);
-      }
-    }
-  }, [task, setValue]);
-
-  useEffect(() => {
-    if (result) {
-      if (result.id) {
-        Alert.alert('Zadanie dodane');
-      } else {
-        Alert.alert('Wystąpił błąd przy dodawaniu zadania');
-      }
-    }
-    if (editResult) {
-      if (editResult.id) {
-        Alert.alert('Zmiany zapisane');
-      } else {
-        Alert.alert('Wystąpił błąd przy edycji');
-      }
-    }
-  }, [result, editResult]);
+  /* ------------------------------------------------------------------------ */
+  /*                                 SUBMIT                                   */
+  /* ------------------------------------------------------------------------ */
 
   const onSubmit = (data: TaskData) => {
-    // Walidacja: dla szkoleń nie powinno być klienta ani instalacji
-    let klientId = data.klient_id;
-    let instalacjaId = data.instalacja_id;
+    const combined = new Date(data.task_date);
+    combined.setHours(data.task_time.getHours());
+    combined.setMinutes(data.task_time.getMinutes());
+    combined.setSeconds(0);
 
-    if (data.typ === 'szkolenie') {
-      klientId = null as any;
-      instalacjaId = null;
-    }
-
-    // Walidacja: dla oględzin i montażu wymagany jest klient
-    if ((data.typ === 'oględziny' || data.typ === 'montaż') && !klientId) {
-      Alert.alert('Błąd', 'Dla tego typu zadania wymagany jest wybór klienta.');
-      return;
-    }
-
-    // Łączenie daty i czasu w jeden obiekt Date
-    const combinedDate = new Date(data.task_date);
-    const timeDate = new Date(data.task_time);
-    combinedDate.setHours(timeDate.getHours());
-    combinedDate.setMinutes(timeDate.getMinutes());
-    combinedDate.setSeconds(0);
-    combinedDate.setMilliseconds(0);
-
-    // Przygotowanie danych dla backendu
     const backendData = {
-      nazwa: data.nazwa || null,
+      nazwa: data.tytul || data.nazwa || null,
       status: data.status,
       typ: data.typ,
-      grupa: data.grupa,
+
+      klient: data.klient_id ?? null,
+      instalacja: data.instalacja_id ?? null,
+
+      grupa: data.grupa ?? null,
+
+      telefon_pracownika: data.telefon_pracownika ?? null,
+
+      faktura_wystawiona: data.faktura_wystawiona ?? null,
+      forma_rozliczenia: data.forma_rozliczenia ?? null,
+
       notatki:
-        data.notatki && data.notatki.trim() !== '' ? data.notatki.trim() : null,
-      // Konwertuj połączoną datę na ISO string format wymagany przez Django
-      start_date: combinedDate.toISOString(),
-      end_date: combinedDate.toISOString(), // Używamy tej samej daty dla start i end
-      // Przemapuj instalacja_id na instalacja jeśli istnieje (tylko dla montażu i oględzin)
-      ...(instalacjaId &&
-        data.typ !== 'szkolenie' && { instalacja: instalacjaId }),
+        data.notatki && data.notatki.trim() !== ''
+          ? data.notatki.trim()
+          : null,
+
+      start_date: combined.toISOString(),
+      end_date: combined.toISOString(),
     };
 
-    if (task?.id) {
-      editTask({
-        data: { zadanie_id: task?.id, ...backendData },
-      });
-    } else {
-      execute({
-        data: backendData,
-      });
-    }
+    execute({ data: backendData });
+
     getTasks();
-    handleGoBack();
+    navigation.goBack();
   };
 
+  /* ------------------------------------------------------------------------ */
+  /*                                  RENDER                                  */
+  /* ------------------------------------------------------------------------ */
+
   return (
-    <LinearGradient
-      colors={['#FF0C01', '#FF9C04']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 0 }}
-      style={styles.linearGradient}
-    >
-      <Container style={styles.container}>
-        <ScrollView>
-          <ButtonsHeader onBackPress={handleGoBack} />
+    <View style={styles.container}>
+      <ButtonsHeader
+        title="Nowe zadanie"
+        onBackPress={() => navigation.goBack()}
+      />
 
-          <View style={styles.formContainer}>
-            {/* Pole Tytuł */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Tytuł</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Tytuł zadania (opcjonalnie)"
-                onChangeText={text => setValue('nazwa', text)}
-                value={nazwaValue || ''}
-              />
-            </View>
+      <ScrollView contentContainerStyle={styles.scroll}>
+        <Text style={styles.title}>Stwórz nowe zadanie</Text>
 
-            {/* Typ zadania z możliwością dodania własnego */}
-            <View style={styles.taskTypeContainer}>
-              <View style={styles.taskTypeHeader}>
-                <Text style={styles.label}>Typ zadania</Text>
-                <Button
-                  title="+ Dodaj typ"
-                  buttonStyle={styles.addTypeButton}
-                  titleStyle={styles.addTypeButtonTitle}
-                  onPress={() => setAddTaskTypeModalVisible(true)}
-                />
-              </View>
-              <Dropdown
-                name="typ"
-                control={control}
-                label=""
-                options={taskTypes}
-                isBordered
-                isThin
-                zIndex={9}
-                onChange={setTaskType}
-              />
-            </View>
+        {/* ------------------------- TYP / TYTUŁ ------------------------- */}
 
-            {taskType === 'szkolenie' && (
-              <View style={styles.infoContainer}>
-                <Text style={styles.infoText}>
-                  ℹ️ Szkolenia nie wymagają przypisania klienta ani instalacji
-                </Text>
-              </View>
-            )}
-            {/* <FormInput
-              label="Nazwa zadania"
-              name="nazwa"
-              control={control}
-              noPadding
-            /> */}
+        <Text style={styles.label}>Typ zadania</Text>
+        <Dropdown
+          name="typ"
+          control={control}
+          options={[
+            { label: 'Montaż', value: 'montaż' },
+            { label: 'Oględziny', value: 'oględziny' },
+            { label: 'Szkolenie', value: 'szkolenie' },
+          ]}
+          isBordered
+          containerStyle={styles.formControl}
+        />
 
-            {/* Data i czas jako dwie osobne kontrolki */}
-            <View style={styles.pickerContainer}>
-              <View style={styles.pickerControl}>
-                <Text style={styles.label}>Data</Text>
-                <DatePicker
-                  name="task_date"
-                  control={control}
-                  mode="date"
-                  color={Colors.red}
-                />
-              </View>
-              <View style={styles.pickerControl}>
-                <Text style={styles.label}>Godzina</Text>
-                <DatePicker
-                  name="task_time"
-                  control={control}
-                  mode="time"
-                  color={Colors.red}
-                />
-              </View>
-            </View>
+        <Text style={styles.label}>Tytuł</Text>
+        <TextInput
+          style={styles.formControl}
+          placeholder="Wpisz tytuł zadania"
+          onChangeText={t => setValue('tytul', t)}
+        />
 
-            {/* Pole Miejsce/Adres - widoczne tylko gdy nie ma klienta lub klient nie ma adresu */}
-            {shouldShowMiejsceAdres && (
-              <View style={styles.inputContainer}>
-                <Text style={styles.label}>Miejsce/Adres</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="Miejsce/Adres zadania"
-                  onChangeText={text => setValue('miejsce_adres', text)}
-                  value={miejsceAdresValue || ''}
-                  multiline
-                  numberOfLines={2}
-                />
-              </View>
-            )}
-            <Dropdown
-              name="status"
-              control={control}
-              label="Status"
-              options={[
-                { label: 'Zaplanowane', value: 'Zaplanowane' },
-                { label: 'Wykonane', value: 'wykonane' },
-                { label: 'Niewykonane', value: 'niewykonane' },
-              ]}
-              isBordered
-              isThin
-              zIndex={8}
-            />
-            {filteredTeams && (
-              <Dropdown
-                name="grupa"
-                control={control}
-                label={
-                  taskType === 'szkolenie'
-                    ? 'Przydzielony pracownik'
-                    : 'Przydzielona ekipa'
-                }
-                options={
-                  taskType === 'szkolenie'
-                    ? filteredEmployees ?? []
-                    : filteredTeams ?? []
-                }
-                isBordered
-                isThin
-                zIndex={7}
-              />
-            )}
-            {(taskType === 'montaż' || taskType === 'oględziny') &&
-              filteredClients && (
-                <Dropdown
-                  label="Klient"
-                  name="klient_id"
-                  control={control}
-                  options={filteredClients}
-                  isBordered
-                  isThin
-                  zIndex={6}
-                  onChange={(id: number) => {
-                    setClientId(id);
-                    setInstallationId(null);
-                    setValue('instalacja_id', null);
-                  }}
-                />
-              )}
-            {(taskType === 'montaż' || taskType === 'oględziny') &&
-              clientId &&
-              filteredInstallations && (
-                <Dropdown
-                  label="Instalacja"
-                  name="instalacja_id"
-                  control={control}
-                  options={filteredInstallations}
-                  isBordered
-                  isThin
-                  zIndex={5}
-                  onChange={setInstallationId}
-                />
-              )}
-            <View style={styles.notesContainer}>
-              <Text style={styles.label}>Notatki</Text>
-              <TextInput
-                multiline
-                numberOfLines={3}
-                style={styles.notesInput}
-                placeholder="Notatki (opcjonalnie)"
-                onChangeText={text => setValue('notatki', text)}
-                value={notatkiValue || ''}
-              />
-            </View>
-          </View>
-        </ScrollView>
-        <View style={styles.footer}>
-          <ButtonGroup
-            loading={loading}
-            submitTitle="Zapisz"
-            submitStyle={styles.submitButton}
-            cancelTitle="Anuluj"
-            cancelTitleStyle={styles.cancelButtonTitle}
-            cancelStyle={styles.cancelButton}
-            onSubmitPress={handleSubmit(onSubmit)}
-            onCancel={handleGoBack}
-          />
+        {/* ------------------------- DATA / GODZINA ------------------------- */}
+
+        <Text style={styles.label}>Data</Text>
+        <TouchableOpacity
+          style={styles.formControl}
+          onPress={() => setShowDatePicker(true)}
+        >
+          <Text style={styles.value}>
+            {format(watchedDate, 'dd.MM.yyyy')}
+          </Text>
+        </TouchableOpacity>
+
+        <Text style={styles.label}>Godzina</Text>
+        <TouchableOpacity
+          style={styles.formControl}
+          onPress={() => setShowTimePicker(true)}
+        >
+          <Text style={styles.value}>{format(watchedTime, 'HH:mm')}</Text>
+        </TouchableOpacity>
+
+        {/* ------------------------- DANE KLIENTA ------------------------- */}
+
+        <Text style={styles.sectionHeader}>Dane klienta</Text>
+
+        <Text style={styles.label}>Klient</Text>
+        <Dropdown
+          name="klient_id"
+          control={control}
+          options={
+            clients?.map(c => ({
+              label:
+                c.rodzaj_klienta === 'firma'
+                  ? `Firma: ${c.nazwa_firmy}`
+                  : `Osoba prywatna: ${c.first_name} ${c.last_name}`,
+              value: c.id,
+            })) ?? []
+          }
+          isBordered
+          containerStyle={styles.formControl}
+        />
+
+        {/* ------------------------- SWITCH ------------------------- */}
+
+        <Text style={styles.label}>Typ klienta</Text>
+        <View style={styles.switchContainer}>
+          <TouchableOpacity
+            style={[
+              styles.switchBtn,
+              clientType === 'firma' && styles.switchActive,
+            ]}
+            onPress={() => setValue('typ_klienta', 'firma')}
+          >
+            <Text>Firma</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.switchBtn,
+              clientType === 'prywatny' && styles.switchActive,
+            ]}
+            onPress={() => setValue('typ_klienta', 'prywatny')}
+          >
+            <Text>Klient prywatny</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Modal do dodawania nowego typu zadania */}
-        <Modal
-          visible={addTaskTypeModalVisible}
-          transparent
-          animationType="slide"
-          onRequestClose={() => {
-            setAddTaskTypeModalVisible(false);
-            setNewTaskTypeName('');
-          }}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Dodaj nowy typ zadania</Text>
-              <Text style={styles.label}>Nazwa typu</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={newTaskTypeName}
-                onChangeText={setNewTaskTypeName}
-                placeholder="Wpisz nazwę typu zadania..."
-                placeholderTextColor={Colors.gray}
-              />
-              <View style={styles.modalButtonGroup}>
-                <Button
-                  title="Dodaj"
-                  buttonStyle={[styles.modalSaveButton, styles.modalButton]}
-                  onPress={() => {
-                    if (newTaskTypeName.trim()) {
-                      const newType = {
-                        label: newTaskTypeName.trim(),
-                        value: newTaskTypeName.trim().toLowerCase(),
-                      };
-                      setTaskTypes([...taskTypes, newType]);
-                      setNewTaskTypeName('');
-                      setAddTaskTypeModalVisible(false);
-                      setValue('typ', newType.value);
-                      setTaskType(newType.value);
-                    }
-                  }}
-                  titleStyle={styles.modalButtonText}
-                />
-                <Button
-                  title="Anuluj"
-                  buttonStyle={[styles.modalCancelButton, styles.modalButton]}
-                  onPress={() => {
-                    setAddTaskTypeModalVisible(false);
-                    setNewTaskTypeName('');
-                  }}
-                  titleStyle={styles.modalButtonText}
-                />
-              </View>
-            </View>
+        {/* ------------------------- FIRMA (WARUNKOWO) ------------------------- */}
+
+        {clientType === 'firma' && (
+          <>
+            <Text style={styles.label}>Nazwa firmy</Text>
+            <TextInput
+              style={styles.formControl}
+              onChangeText={t => setValue('nazwa_firmy', t)}
+            />
+
+            <Text style={styles.label}>NIP firmy</Text>
+            <TextInput
+              style={styles.formControl}
+              onChangeText={t => setValue('nip_firmy', t)}
+            />
+          </>
+        )}
+
+        {/* ------------------------- ADRES KLIENTA ------------------------- */}
+
+        <Text style={styles.label}>Ulica</Text>
+        <TextInput
+          style={styles.formControl}
+          onChangeText={t => setValue('klient_ulica', t)}
+        />
+
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <Text style={styles.label}>Numer domu</Text>
+            <TextInput
+              style={styles.formControl}
+              onChangeText={t => setValue('klient_numer_domu', t)}
+            />
           </View>
-        </Modal>
-      </Container>
-    </LinearGradient>
+          <View style={styles.half}>
+            <Text style={styles.label}>Numer mieszkania*</Text>
+            <TextInput
+              style={styles.formControl}
+              onChangeText={t => setValue('klient_numer_mieszkania', t)}
+            />
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <Text style={styles.label}>Kod pocztowy</Text>
+            <TextInput
+              style={styles.formControl}
+              onChangeText={t => setValue('klient_kod_pocztowy', t)}
+            />
+          </View>
+          <View style={styles.half}>
+            <Text style={styles.label}>Miasto</Text>
+            <TextInput
+              style={styles.formControl}
+              onChangeText={t => setValue('klient_miasto', t)}
+            />
+          </View>
+        </View>
+
+        {/* ------------------------- ADRES MONTAŻU ------------------------- */}
+
+        <Text style={styles.sectionHeader}>Adres montażu</Text>
+
+        <Text style={styles.label}>Instalacja</Text>
+        <Dropdown
+          name="instalacja_id"
+          control={control}
+          options={[]}
+          isBordered
+          containerStyle={styles.formControl}
+        />
+
+        <Text style={styles.label}>Ulica</Text>
+        <TextInput
+          style={styles.formControl}
+          onChangeText={t => setValue('montaz_ulica', t)}
+        />
+
+        <View style={styles.row}>
+          <View style={styles.half}>
+            <Text style={styles.label}>Numer domu</Text>
+            <TextInput
+              style={styles.formControl}
+              onChangeText={t => setValue('montaz_numer_domu', t)}
+            />
+          </View>
+          <View style={styles.half}>
+            <Text style={styles.label}>Numer mieszkania*</Text>
+            <TextInput
+              style={styles.formControl}
+              onChangeText={t => setValue('montaz_numer_mieszkania', t)}
+            />
+          </View>
+        </View>
+
+        <Text style={styles.label}>Miasto</Text>
+        <TextInput
+          style={styles.formControl}
+          onChangeText={t => setValue('montaz_miasto', t)}
+        />
+
+        {/* ------------------------- EKIPA ------------------------- */}
+
+        <Text style={styles.sectionHeader}>Adres montażu</Text>
+
+        <Text style={styles.label}>Przydziel ekipę</Text>
+        <Dropdown
+          name="grupa"
+          control={control}
+          options={teams?.map(t => ({ label: t.nazwa, value: t.id })) ?? []}
+          isBordered
+          containerStyle={styles.formControl}
+        />
+
+        <Text style={styles.label}>Numer telefonu do firmy/pracownika</Text>
+        <TextInput
+          style={styles.formControl}
+          onChangeText={t => setValue('telefon_pracownika', t)}
+        />
+
+        <Text style={styles.label}>Czy została wystawiona faktura</Text>
+        <Dropdown
+          name="faktura_wystawiona"
+          control={control}
+          options={[
+            { label: 'Wybierz', value: '' },
+            { label: 'Tak', value: 'tak' },
+            { label: 'Nie', value: 'nie' },
+          ]}
+          isBordered
+          containerStyle={styles.formControl}
+        />
+
+        <Text style={styles.label}>Forma rozliczenia</Text>
+        <Dropdown
+          name="forma_rozliczenia"
+          control={control}
+          options={[
+            { label: 'Faktura', value: 'faktura' },
+            { label: 'Gotówka', value: 'gotowka' },
+            { label: 'Przelew', value: 'przelew' },
+          ]}
+          isBordered
+          containerStyle={styles.formControl}
+        />
+
+        {/* ------------------------- NOTATKI ------------------------- */}
+
+        <Text style={styles.sectionHeader}>Uwagi</Text>
+
+        <TextInput
+          style={styles.notesInput}
+          placeholder="Uwagi / notatki do zadania"
+          multiline
+          numberOfLines={4}
+          onChangeText={t => setValue('notatki', t)}
+        />
+
+      </ScrollView>
+
+      {/* ------------------------- FOOTER ------------------------- */}
+
+      <View style={styles.footer}>
+        <TouchableOpacity
+          style={styles.cancelBtn}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.cancelText}>Anuluj</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.saveBtn}
+          disabled={loading}
+          onPress={handleSubmit(onSubmit)}
+        >
+          <Text style={styles.saveText}>Zastosuj</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ------------------------- PICKERS ------------------------- */}
+
+      {showDatePicker && (
+        <DateTimePicker
+          value={watchedDate}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(_, d) => {
+            setShowDatePicker(false);
+            if (d) setValue('task_date', d);
+          }}
+        />
+      )}
+
+      {showTimePicker && (
+        <DateTimePicker
+          value={watchedTime}
+          mode="time"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(_, t) => {
+            setShowTimePicker(false);
+            if (t) setValue('task_time', t);
+          }}
+        />
+      )}
+    </View>
   );
 }
 
-export default AddTaskForm;
+/* -------------------------------------------------------------------------- */
+/*                                   STYLES                                   */
+/* -------------------------------------------------------------------------- */
 
 const styles = StyleSheet.create({
-  linearGradient: {
-    flex: 1,
+  container: { flex: 1, backgroundColor: '#F4F4F4' },
+  scroll: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 140 },
+  title: { fontSize: 20, fontFamily: 'Poppins_600SemiBold', marginBottom: 16 },
+  sectionHeader: {
+    fontSize: 17,
+    fontFamily: 'Poppins_600SemiBold',
+    marginTop: 16,
+    marginBottom: 6,
   },
-  container: {
-    flex: 1,
-    display: 'flex',
-    justifyContent: 'space-between',
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: 35,
-    borderTopRightRadius: 35,
-  },
-  formContainer: {
-    paddingTop: 10,
+  label: { fontSize: 12, marginBottom: 4 },
+  formControl: {
+    height: 56,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F2F2F2',
     paddingHorizontal: 16,
-    gap: -18,
-  },
-  footer: {
-    marginBottom: 30,
-    paddingTop: 20,
-    paddingHorizontal: 16,
-  },
-  submitButton: {
-    padding: 0,
-    borderRadius: 15,
-    backgroundColor: Colors.red,
-    height: 48,
-  },
-  label: {
-    fontSize: 12,
-    fontFamily: 'Poppins_400Regular',
-    color: Colors.black,
-    fontWeight: '400',
-  },
-  pickerContainer: {
-    marginTop: 10,
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'flex-start',
-    gap: 12,
-    width: '100%',
-    marginBottom: 30,
-  },
-  pickerControl: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 4,
-  },
-  notesContainer: {
-    marginTop: 10,
-  },
-  notesInput: {
-    minHeight: 60,
-    borderColor: Colors.black,
-    borderWidth: 1,
-    borderRadius: 6,
-    padding: 8,
-    fontSize: 14,
-    backgroundColor: Colors.white,
-  },
-  cancelButtonTitle: {
-    color: Colors.black,
-    fontFamily: 'Archivo_600SemiBold',
-    fontSize: 13,
-    lineHeight: 18,
-    overflow: 'visible',
-  },
-  cancelButton: {
-    height: 48,
-    borderRadius: 15,
-    borderWidth: 1,
-    backgroundColor: Colors.white,
-    borderColor: Colors.black,
-  },
-  infoContainer: {
-    backgroundColor: Colors.orange,
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  infoText: {
-    fontSize: 14,
-    color: Colors.white,
-    fontFamily: 'Poppins_400Regular',
-    textAlign: 'center',
-  },
-  inputContainer: {
-    marginTop: 10,
-    marginBottom: 30,
-  },
-  textInput: {
-    minHeight: 40,
-    borderColor: Colors.black,
-    borderWidth: 1,
-    borderRadius: 6,
-    padding: 8,
-    fontSize: 14,
-    backgroundColor: Colors.white,
-    marginTop: 4,
-  },
-  taskTypeContainer: {
-    marginTop: 10,
-  },
-  taskTypeHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  addTypeButton: {
-    backgroundColor: Colors.teal,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 4,
-  },
-  addTypeButtonTitle: {
-    fontSize: 12,
-    fontFamily: 'Archivo_600SemiBold',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: Colors.blackHalfOpacity,
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
+    marginBottom: 12,
+  },
+  value: { fontSize: 14 },
+  row: { flexDirection: 'row', gap: 12 },
+  half: { flex: 1 },
+
+  switchContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#ECECEC',
+    borderRadius: 16,
+    padding: 4,
+    marginBottom: 12,
+  },
+  switchBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  modalContent: {
-    backgroundColor: Colors.white,
-    borderRadius: 8,
-    padding: 20,
-    width: '90%',
-    maxWidth: 500,
+  switchActive: {
+    backgroundColor: '#FFFFFF',
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 20,
+
+  footer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    padding: 16,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#ECECEC',
+    backgroundColor: '#fff',
   },
-  modalInput: {
+  cancelBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 20,
-    backgroundColor: Colors.white,
-    fontFamily: 'Archivo_400Regular',
-    fontSize: 14,
-    color: Colors.black,
-  },
-  modalButtonGroup: {
-    flexDirection: 'column',
-    gap: 10,
-  },
-  modalButton: {
-    padding: 10,
-    borderRadius: 5,
-    minWidth: 100,
+    borderColor: '#E0E0E0',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  modalSaveButton: {
-    backgroundColor: Colors.red,
+  cancelText: { fontSize: 16 },
+  saveBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FF6B35',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  modalCancelButton: {
-    backgroundColor: Colors.gray,
+  saveText: { fontSize: 16, color: '#fff' },
+  notesInput: {
+    minHeight: 80,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F2F2F2',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    textAlignVertical: 'top',
+    marginBottom: 12,
   },
-  modalButtonText: {
-    color: Colors.white,
-    fontWeight: 'bold',
-  },
+
 });
