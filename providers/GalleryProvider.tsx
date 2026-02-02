@@ -41,7 +41,9 @@ type GalleryContext = {
   tags: Tag[] | null;
   photosLoading: boolean;
   tagsLoading: boolean;
-  getPhotos?: () => Promise<PhotosResponse | undefined>;
+  getPhotos?: (params?: {
+    gallery_type?: string;
+  }) => Promise<PhotosResponse | undefined>;
   getTags?: () => Promise<TagsResponse | undefined>;
   deletePhoto?: (photoId: number) => Promise<void>;
 };
@@ -62,24 +64,34 @@ export function GalleryProvider({ children }: { children: ReactElement }) {
     result: photosResponse,
     execute: getPhotosRaw,
     loading: photosLoading,
-  } = useApi<PhotosResponse>({
+  } = useApi<PhotosResponse, { gallery_type?: string }>({
     path: 'photo_list',
   });
 
   // Wrapper, zawsze POST
-  const getPhotos = useCallback((): Promise<PhotosResponse | undefined> => {
-    return getPhotosRaw({ method: 'POST' })
-      .then(res => {
-        if (res?.zdjecia) {
-          setPhotos(res.zdjecia);
-        }
-        return res;
-      })
-      .catch(error => {
-        setError(error?.toString() || 'Unknown error');
-        throw error;
-      });
-  }, [getPhotosRaw]);
+  const getPhotos = useCallback(
+    (params?: {
+      gallery_type?: string;
+    }): Promise<PhotosResponse | undefined> => {
+      const requestData = params ? { gallery_type: params.gallery_type } : {};
+
+      // Wyczyść poprzednie zdjęcia przed nowym wywołaniem
+      setPhotos(null);
+
+      return getPhotosRaw({ method: 'POST', data: requestData })
+        .then(res => {
+          if (res?.zdjecia) {
+            setPhotos(res.zdjecia);
+          }
+          return res;
+        })
+        .catch(error => {
+          setError(error?.toString() || 'Unknown error');
+          throw error;
+        });
+    },
+    [getPhotosRaw],
+  );
 
   // Reaguj na zmiany w photosResponse
   useEffect(() => {

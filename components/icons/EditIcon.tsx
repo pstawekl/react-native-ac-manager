@@ -5,7 +5,7 @@ import { ColorValue } from 'react-native/Libraries/StyleSheet/StyleSheet';
 function EditIcon({
   color = '#fff',
   size = 24,
-  viewBox = '0 0 22 22',
+  viewBox = '0 0 24 24',
   stroke = 1.5,
   style,
 }: {

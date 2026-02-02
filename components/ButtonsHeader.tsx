@@ -100,6 +100,7 @@ function ButtonsHeader({
             withoutBackground
             onPress={onFilterPress}
             icon={<FilterIcon color={Colors.black} />}
+            style={styles.filterButton}
           />
         )}
         {onAddPress && !searchActive && (
@@ -168,6 +169,12 @@ const styles = StyleSheet.create({
     height: 40,
     width: 40,
     backgroundColor: Colors.buttons.cancelBg,
+  },
+  filterButton: {
+    borderRadius: 70,
+    height: 40,
+    width: 40,
+    backgroundColor: '#EDEDED',
   },
 });
 

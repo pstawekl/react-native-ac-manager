@@ -27,6 +27,8 @@ type TabsProps = {
   headerContent?: React.ReactNode;
   headerDividerColor?: string;
   fabBgColor?: string;
+  fabIconColor?: string;
+  onFilterPress?: () => void;
 };
 
 type TabMeasurement = {
@@ -46,6 +48,8 @@ export default function Tabs({
   headerContent,
   headerDividerColor,
   fabBgColor,
+  fabIconColor,
+  onFilterPress,
 }: TabsProps): JSX.Element {
   const [index, setIndex] = useState(
     defaultTab ? items.findIndex(item => item.id === defaultTab) : 0,
@@ -81,7 +85,11 @@ export default function Tabs({
         <ButtonsHeader
           onBackPress={onBackPress || navigation.goBack}
           title={title}
+          onFilterPress={onFilterPress}
         />
+      )}
+      {headerContent && (
+        <View style={styles.headerContent}>{headerContent}</View>
       )}
       {headerContent && (
         <View style={styles.headerContent}>{headerContent}</View>
@@ -121,6 +129,17 @@ export default function Tabs({
         />
       )}
 
+      {headerDividerColor && (
+        <Divider
+          style={[
+            styles.headerDivider,
+            {
+              borderBottomColor: headerDividerColor || Colors.blue,
+            },
+          ]}
+        />
+      )}
+
       <TabView
         value={index}
         onChange={handleIndexChange}
@@ -143,6 +162,7 @@ export default function Tabs({
         <FloatingActionButton
           onPress={items[index]!.onAddPress!}
           backgroundColor={fabBgColor || Colors.offersTeal}
+          iconColor={fabIconColor || Colors.white}
         />
       )}
     </View>
@@ -169,6 +189,9 @@ const styles = StyleSheet.create({
     flex: 1,
     display: 'flex',
     justifyContent: 'flex-start',
+  },
+  headerDivider: {
+    borderBottomWidth: 2,
   },
   headerDivider: {
     borderBottomWidth: 2,
@@ -221,6 +244,9 @@ const styles = StyleSheet.create({
   },
   indicator: {
     height: 0,
+  },
+  headerContent: {
+    paddingBottom: 0,
   },
   headerContent: {
     paddingBottom: 0,

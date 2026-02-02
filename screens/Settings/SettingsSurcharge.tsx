@@ -3,7 +3,7 @@
 /* eslint-disable react-native/no-inline-styles */
 import { useNavigation } from '@react-navigation/native';
 import { Text } from '@rneui/themed';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import {
   Alert,
@@ -16,9 +16,6 @@ import {
 import DraggableFlatList from 'react-native-draggable-flatlist';
 import { Swipeable } from 'react-native-gesture-handler';
 
-import { ButtonGroup } from '../../components/Button';
-import ButtonsHeader from '../../components/ButtonsHeader';
-import ConfirmationOverlay from '../../components/ConfirmationOverlay';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import DraggableGroupIcon from '../../components/icons/DraggableGroupIcon';
 import TrashIcon from '../../components/icons/TrashIcon';
@@ -41,7 +38,7 @@ type EditModalProps = {
   visible: boolean;
   onClose: () => void;
   onDelete: () => void;
-  onSave: (data: { name: string; cost: string }) => void;
+  onSave: (data: { name: string; cost: string }) => Promise<void>;
   initialData: { name: string; cost: string | null };
 };
 
@@ -68,8 +65,8 @@ const EditSurchargeModal = memo(function EditSurchargeModal({
   }, [initialData, reset]);
 
   const handleSave = useCallback(
-    (data: { name: string; cost: string }) => {
-      onSave(data);
+    async (data: { name: string; cost: string }) => {
+      await onSave(data);
       onClose();
     },
     [onSave, onClose],
@@ -288,17 +285,7 @@ const SurchargeItem = memo(function SurchargeItem({
 function SettingsSurcharge() {
   const navigation = useNavigation();
 
-  const [surchages, setSurcharges] = useState<
-    {
-      id: number;
-      name: string;
-      owner: number;
-      value: number;
-      order: number;
-    }[]
-  >([]);
-  const [removedIds, setRemovedIds] = useState<number[]>([]);
-  const { control, handleSubmit, setValue } = useForm<FormData>();
+  const { control, setValue } = useForm<FormData>();
   const { fields, append, remove, move } = useFieldArray<FormData>({
     control,
     name: 'surcharges',
@@ -318,7 +305,6 @@ function SettingsSurcharge() {
     path: 'narzut_list',
   });
 
-  const [visible, setVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<{
     index: number;
@@ -329,10 +315,6 @@ function SettingsSurcharge() {
   // Track if surcharges have been loaded to prevent duplicates
   const surchargesLoadedRef = useRef(false);
   const loadedSurchargeIdsRef = useRef<Set<number>>(new Set());
-
-  const toggleOverlay = useCallback(() => {
-    setVisible(prev => !prev);
-  }, []);
 
   // Fetch surcharges only once on mount
   useEffect(() => {
@@ -374,36 +356,10 @@ function SettingsSurcharge() {
         itemsToAdd.forEach(item => {
           append(item);
         });
-
-        setSurcharges(prev => {
-          const existingIds = new Set(prev.map(s => s.id));
-          const uniqueNewSurcharges = newSurcharges.filter(
-            s => !existingIds.has(s.id),
-          );
-          return [...prev, ...uniqueNewSurcharges];
-        });
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [surchargesList]);
-
-  const moveItemUp = useCallback(
-    (currentIndex: number) => {
-      if (currentIndex > 0) {
-        move(currentIndex, currentIndex - 1);
-      }
-    },
-    [move],
-  );
-
-  const moveItemDown = useCallback(
-    (currentIndex: number) => {
-      if (currentIndex < fields.length - 1) {
-        move(currentIndex, currentIndex + 1);
-      }
-    },
-    [move, fields.length],
-  );
 
   const handleEditPress = useCallback(
     (index: number) => {
@@ -414,108 +370,99 @@ function SettingsSurcharge() {
   );
 
   const handleEditSave = useCallback(
-    (data: { name: string; cost: string }) => {
+    async (data: { name: string; cost: string }) => {
       if (editingItem) {
-        const updatedFields = [...fields];
-        updatedFields[editingItem.index] = {
-          ...updatedFields[editingItem.index],
-          name: data.name,
-          cost: data.cost,
-        };
-        setValue('surcharges', updatedFields);
+        try {
+          const response = await editSurcharge({
+            data: {
+              narzut_id: editingItem.data.itemId,
+              name: data.name,
+              value: data.cost,
+              order: editingItem.data.order,
+            },
+          });
+
+          if (response) {
+            const updatedFields = [...fields];
+            updatedFields[editingItem.index] = {
+              ...updatedFields[editingItem.index],
+              name: data.name,
+              cost: data.cost,
+            };
+            setValue('surcharges', updatedFields);
+          } else {
+            Alert.alert('Błąd', 'Nie udało się zaktualizować narzutu.');
+          }
+        } catch (error) {
+          Alert.alert('Błąd', 'Wystąpił błąd podczas aktualizacji narzutu.');
+        }
       }
     },
-    [editingItem, fields, setValue],
+    [editingItem, fields, setValue, editSurcharge],
   );
 
   const handleAddSurcharge = useCallback(
     async (data: { name: string; cost: string }) => {
-      const response = await addSurcharge({
-        name: data.name,
-        value: data.cost,
-        order: fields.length + 1,
-      });
-
-      if (response) {
-        append({
-          name: data.name,
-          cost: data.cost,
-          itemId: response.id,
-          order: fields.length + 1,
+      try {
+        const response = await addSurcharge({
+          data: {
+            name: data.name,
+            value: data.cost,
+            order: fields.length + 1,
+          },
         });
-        loadedSurchargeIdsRef.current.add(response.id);
+
+        if (
+          response &&
+          typeof response === 'object' &&
+          'id' in response &&
+          response.id
+        ) {
+          append({
+            name: data.name,
+            cost: data.cost,
+            itemId: response.id,
+            order: fields.length + 1,
+          });
+          loadedSurchargeIdsRef.current.add(response.id);
+        } else {
+          Alert.alert('Błąd', 'Nie udało się dodać narzutu.');
+        }
+      } catch (error) {
+        console.error('Add surcharge error:', error);
+        Alert.alert('Błąd', 'Wystąpił błąd podczas dodawania narzutu.');
       }
     },
     [addSurcharge, fields.length, append],
   );
 
   const removeItem = useCallback(
-    (index: number) => {
+    async (index: number) => {
       if (index !== -1 && index >= 0) {
         const field = fields[index];
         if (field?.itemId) {
-          setRemovedIds(prev => [...prev, field.itemId!]);
-          loadedSurchargeIdsRef.current.delete(field.itemId);
+          try {
+            await deleteSurcharge({ data: { narzut_id: field.itemId } });
+            loadedSurchargeIdsRef.current.delete(field.itemId);
+            remove(index);
+          } catch (error) {
+            Alert.alert('Błąd', 'Nie udało się usunąć narzutu.');
+          }
         }
-        remove(index);
       }
     },
-    [fields, remove],
+    [fields, remove, deleteSurcharge],
   );
-
-  const onSubmit = async (data: FormData) => {
-    const uniqueOrders = new Set(data.surcharges.map(item => item.order));
-    if (uniqueOrders.size !== data.surcharges.length) {
-      return;
-    }
-
-    if (removedIds.length !== 0) {
-      removedIds.forEach(itemId => {
-        deleteSurcharge({ narzut_id: itemId });
-      });
-    }
-
-    data.surcharges.forEach((item, index) => {
-      const existingItem = surchages
-        ? surchages.find(s => s.id === item.itemId)
-        : null;
-
-      if (!item.itemId) {
-        addSurcharge({
-          name: item.name,
-          value: item.cost,
-          order: index + 1,
-        });
-      }
-      if (
-        existingItem &&
-        (existingItem.name !== item.name ||
-          String(existingItem.value) !== item.cost ||
-          existingItem.order !== index + 1)
-      ) {
-        editSurcharge({
-          narzut_id: item.itemId,
-          name: item.name,
-          value: item.cost,
-          order: index + 1,
-        });
-      }
-    });
-    Alert.alert('Narzuty zaktualizowane.');
-    navigation.goBack();
-  };
 
   return (
     <View style={styles.container}>
-      <ButtonsHeader
-        onBackPress={navigation.goBack}
-      />
-
       <AddSurchargeModal
         visible={addModalVisible}
         onClose={() => setAddModalVisible(false)}
         onSave={handleAddSurcharge}
       />
+
+      <Text style={styles.title}>Podstawowe informacje</Text>
 
       <View style={styles.scrollContainer}>
         {fields.length ? (
@@ -554,14 +501,20 @@ function SettingsSurcharge() {
             setEditModalVisible(false);
             setEditingItem(null);
           }}
-          onDelete={() => {
+          onDelete={async () => {
             if (editingItem.data.itemId) {
-              setRemovedIds(prev => [...prev, editingItem.data.itemId!]);
-              loadedSurchargeIdsRef.current.delete(editingItem.data.itemId);
+              try {
+                await deleteSurcharge({
+                  data: { narzut_id: editingItem.data.itemId },
+                });
+                loadedSurchargeIdsRef.current.delete(editingItem.data.itemId);
+                remove(editingItem.index);
+                setEditModalVisible(false);
+                setEditingItem(null);
+              } catch (error) {
+                Alert.alert('Błąd', 'Nie udało się usunąć narzutu.');
+              }
             }
-            remove(editingItem.index);
-            setEditModalVisible(false);
-            setEditingItem(null);
           }}
           onSave={handleEditSave}
           initialData={{
@@ -570,21 +523,6 @@ function SettingsSurcharge() {
           }}
         />
       )}
-
-      <View style={styles.footer}>
-        <ButtonGroup
-          cancelTitle="Anuluj"
-          submitTitle="Zapisz"
-          onCancel={navigation.goBack}
-          onSubmitPress={toggleOverlay}
-        />
-      </View>
-      <ConfirmationOverlay
-        visible={visible}
-        onBackdropPress={toggleOverlay}
-        onSubmit={handleSubmit(onSubmit)}
-        title="Czy chcesz wprowadzić zmiany ?"
-      />
 
       <FloatingActionButton
         onPress={() => setAddModalVisible(true)}
@@ -597,17 +535,21 @@ function SettingsSurcharge() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.deviceBackground,
   },
   scrollContainer: {
     paddingHorizontal: 6,
   },
-  footer: {
-    marginBottom: 30,
-    paddingTop: 20,
-    paddingHorizontal: 16,
-  },
   noDataText: {
     textAlign: 'center',
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: '400',
+    marginBottom: 10,
+    marginTop: 20,
+    textAlign: 'left',
+    paddingHorizontal: 16,
   },
   itemContent: {
     flex: 1,
@@ -616,7 +558,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: Colors.draggableBackground,
+    backgroundColor: Colors.white,
     borderRadius: 6,
     marginVertical: 4,
     marginHorizontal: 8,

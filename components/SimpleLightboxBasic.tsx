@@ -1,4 +1,4 @@
-import { Text } from '@rneui/themed';
+import { CheckBox, Text } from '@rneui/themed';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -26,11 +26,14 @@ import Animated, {
 import Colors from '../consts/Colors';
 import useApi from '../hooks/useApi';
 import useGallery from '../providers/GalleryProvider';
+import { Employee } from '../providers/StaffProvider';
 import DefaultSaveResponse from '../types/DefaultSaveResponse';
 import { IconButton } from './Button';
 import PhotoCropperModal, { PhotoCropResult } from './PhotoCropperModal';
+import ArrowLeftIcon from './icons/ArrowLeftIcon';
 import CloseIcon from './icons/CloseIcon';
 import EditIcon from './icons/EditIcon';
+import ImageIcon from './icons/ImageIcon';
 import TrashIcon from './icons/TrashIcon';
 
 type Photo = {
@@ -50,13 +53,14 @@ type SimpleLightboxBasicProps = {
   imageUri: string;
   onClose: () => void;
   photo?: Photo;
+  photoOwner?: Employee;
   tags?: Tag[];
   onDeletePhoto?: (photoId: number) => Promise<void> | void;
   hideTagsSection?: boolean;
   hideEditButton?: boolean;
 };
 
-const { width: screenWidth } = Dimensions.get('window');
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const MIN_SCALE = 1;
 const MAX_SCALE = 4;
 
@@ -74,6 +78,7 @@ export default function SimpleLightboxBasic({
   imageUri,
   onClose,
   photo,
+  photoOwner,
   tags,
   onDeletePhoto,
   hideTagsSection = false,
@@ -96,6 +101,8 @@ export default function SimpleLightboxBasic({
     photo?.tags ?? [],
   );
   const [newTagName, setNewTagName] = useState('');
+  const [isEditEnabled, setIsTagInputVisible] = useState(false);
+  const [isPublic, setIsPublic] = useState(photo?.is_public ?? false);
 
   const [currentImageUri, setCurrentImageUri] = useState(imageUri);
   const [cropperVisible, setCropperVisible] = useState(false);
@@ -106,22 +113,27 @@ export default function SimpleLightboxBasic({
       return null;
     }
 
-    const maxWidth = screenWidth * 0.9;
+    const maxHeight = screenHeight * 0.5; // Half of screen height
     const aspectRatio = imageDimensions.width / imageDimensions.height;
 
     if (aspectRatio <= 0 || !Number.isFinite(aspectRatio)) {
       return null;
     }
 
-    const calculatedHeight = maxWidth / aspectRatio;
+    const calculatedWidth = maxHeight * aspectRatio;
 
-    if (calculatedHeight <= 0 || !Number.isFinite(calculatedHeight)) {
-      return null;
+    // If calculated width exceeds screen width, scale down proportionally
+    if (calculatedWidth > screenWidth * 0.9) {
+      const maxWidth = screenWidth * 3;
+      return {
+        width: maxWidth,
+        height: maxWidth / aspectRatio,
+      };
     }
 
     return {
-      width: maxWidth,
-      height: calculatedHeight,
+      width: calculatedWidth,
+      height: maxHeight,
     };
   }, [imageDimensions]);
 
@@ -242,18 +254,18 @@ export default function SimpleLightboxBasic({
           const limitedX =
             boundX > 0
               ? clampValue(
-                  baseTranslateX.value + event.translationX,
-                  -boundX,
-                  boundX,
-                )
+                baseTranslateX.value + event.translationX,
+                -boundX,
+                boundX,
+              )
               : 0;
           const limitedY =
             boundY > 0
               ? clampValue(
-                  baseTranslateY.value + event.translationY,
-                  -boundY,
-                  boundY,
-                )
+                baseTranslateY.value + event.translationY,
+                -boundY,
+                boundY,
+              )
               : 0;
 
           translateX.value = limitedX;
@@ -274,9 +286,19 @@ export default function SimpleLightboxBasic({
     ],
   );
 
+  const tapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .maxDuration(250)
+        .onStart(() => {
+          onClose();
+        }),
+    [onClose],
+  );
+
   const combinedGesture = useMemo(
-    () => Gesture.Simultaneous(pinchGesture, panGesture),
-    [panGesture, pinchGesture],
+    () => Gesture.Race(pinchGesture, panGesture, tapGesture),
+    [pinchGesture, panGesture, tapGesture],
   );
 
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -367,8 +389,13 @@ export default function SimpleLightboxBasic({
   }, [photo?.id, photo?.tags]);
 
   useEffect(() => {
+    setIsPublic(photo?.is_public ?? false);
+  }, [photo?.id, photo?.is_public]);
+
+  useEffect(() => {
     if (!visible) {
       setNewTagName('');
+      setIsTagInputVisible(false);
     }
   }, [visible]);
 
@@ -513,6 +540,38 @@ export default function SimpleLightboxBasic({
     }
   };
 
+  const handlePublicChange = async (newIsPublic: boolean) => {
+    if (!photo?.id || isSavingTags) {
+      return;
+    }
+
+    try {
+      const result = await updatePhoto({
+        data: {
+          photo_id: photo.id,
+          is_public: newIsPublic,
+        },
+      });
+
+      if (!result) {
+        // Wróć do poprzedniej wartości w przypadku błędu
+        setIsPublic(!newIsPublic);
+        return;
+      }
+
+      // Aktualizuj stan tylko jeśli API się powiodło
+      setIsPublic(newIsPublic);
+
+      if (getPhotos) {
+        await getPhotos();
+      }
+    } catch (error) {
+      // Wróć do poprzedniej wartości w przypadku błędu
+      setIsPublic(!newIsPublic);
+      Alert.alert('Błąd', 'Nie udało się zmienić ustawień publiczności.');
+    }
+  };
+
   const handleImageLoad = (event: any) => {
     try {
       const { width, height } = event.nativeEvent.source;
@@ -543,36 +602,15 @@ export default function SimpleLightboxBasic({
       <GestureHandlerRootView style={styles.gestureRoot}>
         <View style={styles.container}>
           <View style={styles.headerButtons}>
-            <View style={styles.headerLeftGroup}>
-              {deletePhotoAvailable && (
-                <IconButton
-                  withoutBackground
-                  onPress={handleDeletePhoto}
-                  icon={<TrashIcon color={Colors.white} size={24} />}
-                />
-              )}
-              {photo?.id && !hideEditButton ? (
-                <IconButton
-                  withoutBackground
-                  onPress={() => setCropperVisible(true)}
-                  icon={<EditIcon color={Colors.white} size={24} />}
-                  disabled={isUploadingCropped}
-                />
-              ) : null}
-            </View>
             <IconButton
               withoutBackground
               onPress={onClose}
-              icon={<CloseIcon color={Colors.white} size={24} />}
+              icon={<ArrowLeftIcon color={Colors.white} size={24} />}
             />
           </View>
 
           <View style={styles.body}>
-            <TouchableOpacity
-              style={styles.imageContainer}
-              activeOpacity={1}
-              onPress={onClose}
-            >
+            <View style={styles.imageContainer}>
               {imageUri ? (
                 <GestureDetector gesture={combinedGesture}>
                   <Animated.View
@@ -580,9 +618,9 @@ export default function SimpleLightboxBasic({
                       styles.pinchContainer,
                       displaySize
                         ? {
-                            width: displaySize.width,
-                            height: displaySize.height,
-                          }
+                          width: displaySize.width,
+                          height: displaySize.height,
+                        }
                         : null,
                       animatedImageStyle,
                     ]}
@@ -593,9 +631,9 @@ export default function SimpleLightboxBasic({
                         styles.image,
                         displaySize
                           ? {
-                              width: displaySize.width,
-                              height: displaySize.height,
-                            }
+                            width: displaySize.width,
+                            height: displaySize.height,
+                          }
                           : null,
                       ]}
                       resizeMode="contain"
@@ -610,42 +648,57 @@ export default function SimpleLightboxBasic({
                   </Animated.View>
                 </GestureDetector>
               ) : null}
-            </TouchableOpacity>
+            </View>
 
             {!hideTagsSection && (
               <View style={styles.tagsWrapper}>
                 <View style={styles.tagsContainer}>
-                  <Text style={styles.tagsTitle}>Tagi:</Text>
-                  <View style={styles.addTagContainer}>
-                    <TextInput
-                      value={newTagName}
-                      onChangeText={setNewTagName}
-                      placeholder="Wpisz nazwę tagu"
-                      placeholderTextColor={Colors.lightGray}
-                      style={styles.tagInput}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      editable={!isSavingTags}
-                      returnKeyType="done"
-                      onSubmitEditing={handleAddTag}
-                    />
-                    <TouchableOpacity
-                      style={[
-                        styles.addTagButton,
-                        (!newTagName.trim() || isSavingTags || !photo?.id) &&
-                          styles.addTagButtonDisabled,
-                      ]}
-                      onPress={handleAddTag}
-                      disabled={!newTagName.trim() || isSavingTags || !photo?.id}
-                      activeOpacity={0.8}
-                    >
-                      {isSavingTags ? (
-                        <ActivityIndicator size="small" color={Colors.white} />
-                      ) : (
-                        <Text style={styles.addTagButtonText}>Dodaj</Text>
+                  <View style={styles.tagsHeader}>
+                    <View style={styles.tagsHeaderLeft}>
+                      {photo?.id && !hideEditButton ? (
+                        <View style={styles.tagsHeaderLeftItem}>
+                          <IconButton
+                            withoutBackground
+                            onPress={() => setIsTagInputVisible(!isEditEnabled)}
+                            icon={
+                              isEditEnabled ? (
+                                <CloseIcon color={Colors.black} size={24} />
+                              ) : (
+                                <EditIcon color={Colors.black} size={24} />
+                              )
+                            }
+                          />
+                        </View>
+                      ) : null}
+                    </View>
+                    <View style={styles.tagsHeaderRight}>
+                      {photo?.id && isEditEnabled ? (
+                        <IconButton
+                          withoutBackground
+                          onPress={() => setCropperVisible(true)}
+                          icon={<ImageIcon color={Colors.black} size={24} />}
+                          disabled={isUploadingCropped}
+                        />
+                      ) : null}
+                      {photo?.id && isEditEnabled && deletePhotoAvailable && (
+                        <View style={styles.tagsHeaderRightItem}>
+                          <IconButton
+                            withoutBackground
+                            onPress={handleDeletePhoto}
+                            icon={<TrashIcon color={Colors.red} size={24} />}
+                          />
+                        </View>
                       )}
-                    </TouchableOpacity>
+                    </View>
                   </View>
+
+                  <View style={styles.ownerInfo}>
+                    <Text style={styles.ownerText}>
+                      Zdjęcie użytkownika {photoOwner?.first_name}{' '}
+                      {photoOwner?.last_name}
+                    </Text>
+                  </View>
+
                   {currentPhotoTags.length > 0 ? (
                     <ScrollView
                       horizontal
@@ -656,21 +709,80 @@ export default function SimpleLightboxBasic({
                       {currentPhotoTags.map(tag => (
                         <View key={tag.id} style={styles.tagChip}>
                           <Text style={styles.tagText}>{tag.name}</Text>
-                          <TouchableOpacity
-                            style={[
-                              styles.removeTagButton,
-                              isSavingTags && styles.removeTagButtonDisabled,
-                            ]}
-                            onPress={() => handleRemoveTag(tag.id)}
-                            disabled={isSavingTags}
-                          >
-                            <Text style={styles.removeTagButtonText}>x</Text>
-                          </TouchableOpacity>
+                          {isEditEnabled && (
+                            <TouchableOpacity
+                              style={[
+                                styles.removeTagButton,
+                                isSavingTags && styles.removeTagButtonDisabled,
+                              ]}
+                              onPress={() => handleRemoveTag(tag.id)}
+                              disabled={isSavingTags}
+                            >
+                              <Text style={styles.removeTagButtonText}>x</Text>
+                            </TouchableOpacity>
+                          )}
                         </View>
                       ))}
                     </ScrollView>
                   ) : (
                     <Text style={styles.noTagsText}>Brak tagów</Text>
+                  )}
+
+                  {isEditEnabled && (
+                    <View style={styles.publicCheckboxContainer}>
+                      <CheckBox
+                        title="Publiczne"
+                        checked={isPublic}
+                        onPress={() => handlePublicChange(!isPublic)}
+                        containerStyle={styles.checkboxContainer}
+                        textStyle={styles.checkboxText}
+                        checkedColor={Colors.primary}
+                        uncheckedColor={Colors.gray}
+                      />
+                    </View>
+                  )}
+
+                  {isEditEnabled && (
+                    <View>
+                      <Text style={styles.tagsTitle}>Tagi:</Text>
+                      <View style={styles.addTagContainer}>
+                        <TextInput
+                          value={newTagName}
+                          onChangeText={setNewTagName}
+                          placeholder="Wpisz nazwę tagu"
+                          placeholderTextColor={Colors.lightGray}
+                          style={styles.tagInput}
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          editable={!isSavingTags}
+                          returnKeyType="done"
+                          onSubmitEditing={handleAddTag}
+                        />
+                        <TouchableOpacity
+                          style={[
+                            styles.addTagButton,
+                            (!newTagName.trim() ||
+                              isSavingTags ||
+                              !photo?.id) &&
+                            styles.addTagButtonDisabled,
+                          ]}
+                          onPress={handleAddTag}
+                          disabled={
+                            !newTagName.trim() || isSavingTags || !photo?.id
+                          }
+                          activeOpacity={0.8}
+                        >
+                          {isSavingTags ? (
+                            <ActivityIndicator
+                              size="small"
+                              color={Colors.white}
+                            />
+                          ) : (
+                            <Text style={styles.addTagButtonText}>Dodaj</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
                   )}
                 </View>
               </View>
@@ -733,34 +845,30 @@ export default function SimpleLightboxBasic({
 const styles = StyleSheet.create({
   gestureRoot: {
     flex: 1,
+    width: '100%',
   },
   container: {
-    backgroundColor: Colors.blackMoreOpacity,
+    backgroundColor: Colors.transparent,
     justifyContent: 'center',
     alignItems: 'center',
     flex: 1,
+    width: '100%',
   },
   headerButtons: {
+    backgroundColor: Colors.transparent,
     position: 'absolute',
-    top: 50,
-    right: 20,
-    left: 20,
+    top: 10,
+    right: 0,
+    left: 10,
     zIndex: 1000,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
   },
-  headerLeftGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
   body: {
     flex: 1,
     width: '100%',
-    paddingHorizontal: 20,
-    paddingBottom: 40,
   },
   imageContainer: {
     justifyContent: 'center',
@@ -771,9 +879,11 @@ const styles = StyleSheet.create({
   pinchContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    color: Colors.black,
+    width: screenWidth,
   },
   image: {
-    top: 100,
+    top: 0,
     borderRadius: 25,
   },
   tagsWrapper: {
@@ -781,13 +891,63 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tagsContainer: {
-    borderRadius: 15,
-    padding: 15,
+    backgroundColor: Colors.white,
     width: '100%',
-    maxWidth: screenWidth * 0.9,
+    maxWidth: screenWidth,
+    padding: 15,
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
+  },
+  tagsHeader: {
+    marginBottom: 10,
+    width: '100%',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexDirection: 'row',
+  },
+  tagsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 12,
+    left: 0,
+  },
+  tagsHeaderLeftItem: {
+    backgroundColor: Colors.deviceBackground,
+    borderRadius: 70,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tagsHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 12,
+    right: 0,
+  },
+  tagsHeaderRightItem: {
+    backgroundColor: Colors.trashIconBackground,
+    borderRadius: 70,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ownerInfo: {
+    marginBottom: 15,
+  },
+  ownerText: {
+    color: Colors.black,
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'left',
+    paddingLeft: 10,
   },
   tagsTitle: {
-    color: Colors.white,
+    color: Colors.black,
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 10,
@@ -801,10 +961,8 @@ const styles = StyleSheet.create({
     paddingRight: 12,
   },
   tagChip: {
-    backgroundColor: Colors.transparent,
-    borderColor: Colors.primary,
-    borderWidth: 1,
-    borderRadius: 16,
+    backgroundColor: Colors.deviceBackground,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 6,
     marginRight: 8,
@@ -812,9 +970,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    height: 34,
   },
   tagText: {
-    color: Colors.white,
+    color: Colors.black,
     fontSize: 12,
   },
   noTagsText: {
@@ -835,11 +994,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: Colors.grayBorder,
   },
   addTagButton: {
     backgroundColor: Colors.primary,
     paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingVertical: 15,
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
@@ -857,12 +1018,15 @@ const styles = StyleSheet.create({
     height: 20,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 70,
+    borderWidth: 1,
+    borderColor: Colors.black,
   },
   removeTagButtonDisabled: {
     opacity: 0.6,
   },
   removeTagButtonText: {
-    color: Colors.white,
+    color: Colors.black,
     fontSize: 16,
     lineHeight: 16,
   },
@@ -875,5 +1039,20 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.blackHalfOpacity,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  publicCheckboxContainer: {
+    marginBottom: 15,
+    paddingHorizontal: 5,
+  },
+  checkboxContainer: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    padding: 0,
+    margin: 0,
+  },
+  checkboxText: {
+    color: Colors.black,
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

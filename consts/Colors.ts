@@ -25,8 +25,18 @@ const Colors = {
   transparent: 'transparent',
   newPurple: '#8829BC',
   newPurpleWithOpacity: '#8829BC26',
+  newPurple: '#8829BC',
+  newPurpleWithOpacity: '#8829BC26',
 
   backgroundTeal: '#0F7A7A1A',
+
+  galleryBlue: '#195EDF',
+  galleryFabButtonBackground: '#DBDBDB',
+
+  invoiceRose: '#CF4F8D',
+
+  floatingActionButtonBackground: '#CE177D1A',
+  trashIconBackground: '#FF010126',
 
   menuIconBackground: '#F6F6F6',
   settingsAvatarBackground: '#4CBF241A',

@@ -44,7 +44,12 @@ type ExecuteOptions<TRequest> = {
 export default function useApi<
   TResponse extends object = object,
   TRequest extends object = object,
->({ path, authorized = true, autoLogout = true, offlineEnabled = true }: useApiParams) {
+>({
+  path,
+  authorized = true,
+  autoLogout = true,
+  offlineEnabled = true,
+}: useApiParams) {
   const [result, setResult] = useState<TResponse>();
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>();
@@ -80,7 +85,9 @@ export default function useApi<
   /**
    * Pobiera dane z lokalnej bazy danych (fallback offline)
    */
-  const getFromLocalDB = useCallback(async (): Promise<TResponse | undefined> => {
+  const getFromLocalDB = useCallback(async (): Promise<
+    TResponse | undefined
+  > => {
     // Tymczasowo wyłączone
     return undefined;
     // const mapping = await getRepositoryForPath(path);
@@ -95,7 +102,7 @@ export default function useApi<
     // }
     // try {
     //   const localData = await mapping.repo.findAll();
-    //   
+    //
     //   // Przekształć dane do formatu oczekiwanego przez aplikację
     //   if (path === 'klient_list') {
     //     return {
@@ -234,7 +241,7 @@ export default function useApi<
           // Check if it's an authentication error
           // TYLKO wyloguj jeśli to JEDNOZNACZNIE błąd tokenu AUTORYZACYJNEGO (nie push tokena)
           const errorMessage = (json.error as string)?.toLowerCase() || '';
-          
+
           // Lista endpointów, które NIE powinny wylogowywać użytkownika przy błędach tokenu
           // (np. push notifications, rejestracja tokenów, itp.)
           const nonCriticalPaths = [
@@ -243,18 +250,22 @@ export default function useApi<
             'notification',
             'register',
           ];
-          const isNonCriticalPath = nonCriticalPaths.some(nonCritical => 
-            path.toLowerCase().includes(nonCritical.toLowerCase())
+          const isNonCriticalPath = nonCriticalPaths.some(nonCritical =>
+            path.toLowerCase().includes(nonCritical.toLowerCase()),
           );
-          
+
           // Sprawdź czy to błąd tokenu AUTORYZACYJNEGO (nie push tokena)
           // "invalid token" w kontekście push tokena NIE powinien wylogowywać użytkownika
-          const isAuthTokenError = 
+          const isAuthTokenError =
             (errorMessage.includes('invalid token') && !isNonCriticalPath) ||
             (errorMessage.includes('wrong token') && !isNonCriticalPath) ||
             errorMessage.includes('user not found') ||
-            (response.status === 401 && errorMessage.includes('token') && !isNonCriticalPath) ||
-            (response.status === 403 && errorMessage.includes('token') && !isNonCriticalPath);
+            (response.status === 401 &&
+              errorMessage.includes('token') &&
+              !isNonCriticalPath) ||
+            (response.status === 403 &&
+              errorMessage.includes('token') &&
+              !isNonCriticalPath);
 
           if (isAuthTokenError) {
             // TYLKO wyloguj jeśli to JEDNOZNACZNIE błąd tokenu AUTORYZACYJNEGO
@@ -272,7 +283,8 @@ export default function useApi<
               'Twoja sesja wygasła. Zaloguj się ponownie.',
             );
             return undefined;
-          } else if (response.status === 401 || response.status === 403) {
+          }
+          if (response.status === 401 || response.status === 403) {
             // Status 401/403 ale BEZ komunikatu o tokenie - może być problem z siecią/proxy
             // NIE wylogowuj - może być problem z siecią na Bluestacks
             // Zwróć błąd, ale nie wylogowuj
@@ -303,7 +315,7 @@ export default function useApi<
           );
         } else {
           setError(e?.toString());
-          
+
           // Tymczasowo wyłączone - obsługa offline
           // if (offlineEnabled && (e.message?.includes('Network') || e.message?.includes('fetch'))) { ... }
         }
@@ -312,7 +324,16 @@ export default function useApi<
       }
       return undefined;
     },
-    [addApiToken, authorized, path, token, autoLogout, logoutWithRedirect, offlineEnabled, getFromLocalDB],
+    [
+      addApiToken,
+      authorized,
+      path,
+      token,
+      autoLogout,
+      logoutWithRedirect,
+      offlineEnabled,
+      getFromLocalDB,
+    ],
   );
 
   return useMemo(

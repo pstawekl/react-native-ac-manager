@@ -670,18 +670,61 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
   };
 
   const onSubmit = async (data: FormData) => {
-    let hasUndefValues = Object.entries(data).some(([key, value]) => {
+    const fieldLabels: Record<string, string> = {
+      type: 'Typ faktury',
+      number: 'Numer',
+      issueDate: 'Data wystawienia',
+      issuePlace: 'Miejsce sprzedaży',
+      sellDate: 'Data sprzedaży',
+      sellerName: 'Imię i nazwisko (Sprzedawca)',
+      sellerNip: 'NIP (Sprzedawca)',
+      sellerAddress: 'Ulica i nr (Sprzedawca)',
+      sellerCode: 'Kod pocztowy (Sprzedawca)',
+      sellerCity: 'Miejscowość (Sprzedawca)',
+      sellerAccount: 'Numer konta IBAN (Sprzedawca)',
+      buyer: 'Typ nabywcy',
+      buyerName: 'Firma / Imię i nazwisko (Nabywca)',
+      buyerNip: 'NIP (Nabywca)',
+      buyerStreet: 'Adres (Nabywca)',
+      buyerCode: 'Kod pocztowy (Nabywca)',
+      buyerCity: 'Miasto (Nabywca)',
+      paymentMethod: 'Płatność',
+      paymentDate: 'Termin płatności',
+      status: 'Status',
+      prepaid: 'Kwota opłacona',
+      issuedBy: 'Imię i nazwisko wystawcy',
+      receivedBy: 'Imię i nazwisko odbiorcy',
+      currency: 'Waluta',
+      productName: 'Nazwa pozycji',
+      productQuantity: 'Ilość',
+      productUnit: 'Jednostka',
+      nettoPrice: 'Cena netto',
+      vat: 'Stawka VAT',
+    };
+
+    const missingFields: string[] = [];
+
+    Object.entries(data).forEach(([key, value]) => {
+      if (key === 'positions') {
+        return;
+      }
       if (key === 'buyerNip' && data.buyer === 'private') {
-        return false;
+        return;
       }
-      if (key === 'comment' || key === 'payment' || key === 'client') {
-        return false;
+      if (
+        key === 'comment' ||
+        key === 'payment' ||
+        key === 'client' ||
+        key === 'sellerAccount'
+      ) {
+        return;
       }
-      return value === undefined || value === '';
+      if (value === undefined || value === '' || value === null) {
+        missingFields.push(fieldLabels[key] || key);
+      }
     });
 
-    data.positions.forEach(item => {
-      // Sprawdź tylko wymagane pola pozycji (pomijamy productBrutto, bo jest obliczane)
+    data.positions.forEach((item, index) => {
       const requiredFields = [
         'productName',
         'productQuantity',
@@ -691,14 +734,18 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
       ];
       requiredFields.forEach(field => {
         if (!item[field] || item[field] === '') {
-          hasUndefValues = true;
+          const label = fieldLabels[field] || field;
+          missingFields.push(`${label} (Pozycja ${index + 1})`);
         }
       });
     });
 
-    if (hasUndefValues) {
+    if (missingFields.length > 0) {
       toggleOverlay();
-      Alert.alert('Wypełnij wszystkie pola przed zapisaniem faktury.');
+      Alert.alert(
+        'Wypełnij wymagane pola',
+        `Proszę uzupełnić następujące pola:\n- ${missingFields.join('\n- ')}`,
+      );
       return;
     }
 
@@ -947,7 +994,7 @@ const styles = StyleSheet.create({
   },
   submitButtonStyle: {
     flex: 1,
-    backgroundColor: Colors.lightRose,
+    backgroundColor: Colors.invoiceRose,
     borderRadius: 60,
     height: 48,
   },

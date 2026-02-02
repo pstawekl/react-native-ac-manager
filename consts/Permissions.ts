@@ -70,6 +70,7 @@ export const Permissions: {
     Scopes.viewInvoices,
     Scopes.addInvoices,
     Scopes.chat,
+    Scopes.discounts,
   ],
   [Roles.client]: [Scopes.viewInvoices, Scopes.viewOffers, Scopes.viewCatalogs, Scopes.chat],
 };
