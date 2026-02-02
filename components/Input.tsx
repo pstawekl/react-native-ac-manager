@@ -62,6 +62,11 @@ type DropdownProps<
   customHeight?: number;
   dropDownDirection?: 'AUTO' | 'TOP' | 'BOTTOM' | 'DEFAULT';
   disabled?: boolean;
+  grayBackground?: boolean;
+  borderColor?: string;
+  containerStyle?: object;
+  textStyle?: object;
+  placeholderStyle?: object;
 };
 
 type FormColorPickerProps<T extends FieldValues> = {
@@ -320,6 +325,11 @@ export function Dropdown<
   control,
   onChange,
   zIndex = 1,
+  grayBackground,
+  borderColor,
+  containerStyle,
+  textStyle,
+  placeholderStyle,
   ...props
 }: DropdownProps<TFieldValues, TName>) {
   const [open, setOpen] = useState(false);
@@ -337,13 +347,12 @@ export function Dropdown<
         <Text
           /* eslint-disable-next-line react-native/no-inline-styles */
           style={{
-            fontFamily: 'Archivo_600SemiBold',
+            fontFamily: 'Poppins_400Regular',
             marginTop: 0,
-            marginBottom: 6,
-            color: props.disabled ? Colors.gray : Colors.black,
-            fontSize: 10,
-            letterSpacing: 0.3,
-            fontWeight: 'normal',
+            marginBottom: 4,
+            color: props.disabled ? Colors.gray : '#111',
+            fontSize: 12,
+            letterSpacing: 0,
           }}
         >
           {label}
@@ -394,25 +403,25 @@ export function Dropdown<
               dropDownDirection={dropDownDirection}
               /* eslint-disable-next-line react-native/no-inline-styles */
               style={{
-                borderWidth: isBordered ? 1 : 0,
-                borderRadius: isBordered ? 4 : 9,
-                backgroundColor: Colors.white,
-                minHeight: customHeight || (isThin ? 34 : 54),
-                marginBottom: 20,
-                ...(isBordered === false
-                  ? {
-                    borderWidth: 1,
-                    borderColor: Colors.grayBorder,
-                  }
-                  : {}),
+                borderWidth: grayBackground ? 0 : 1,
+                borderColor: borderColor || '#E8E8E8',
+                borderRadius: 8,
+                backgroundColor: grayBackground ? '#F4F4F4' : Colors.white,
+                minHeight: customHeight || (isThin ? 34 : 44),
+                marginBottom: 12,
+                ...containerStyle,
               }}
               /* eslint-disable-next-line react-native/no-inline-styles */
               textStyle={{
-                fontFamily: isThin
-                  ? 'Archivo_400Regular'
-                  : 'Archivo_600SemiBold',
-                fontSize: isThin ? 12 : 14,
-                color: Colors.black,
+                fontFamily: 'Poppins_400Regular',
+                fontSize: 14,
+                color: '#111',
+                ...textStyle,
+              }}
+              /* eslint-disable-next-line react-native/no-inline-styles */
+              placeholderStyle={{
+                color: '#ADADAD',
+                ...placeholderStyle,
               }}
               placeholder=""
               /* eslint-disable-next-line react-native/no-inline-styles */

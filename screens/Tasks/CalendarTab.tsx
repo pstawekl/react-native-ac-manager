@@ -1,7 +1,9 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { useNavigation } from '@react-navigation/native';
+import Svg, { Path } from 'react-native-svg';
 import { Button, Chip, Text } from '@rneui/themed';
 import { format } from 'date-fns';
+import { pl } from 'date-fns/locale';
 import React, {
   memo,
   useCallback,
@@ -18,6 +20,7 @@ import {
   StyleSheet,
   TextInput,
   View,
+  TouchableOpacity as RNTouchableOpacity,
 } from 'react-native';
 import {
   Calendar,
@@ -35,12 +38,12 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
+  withSpring,
 } from 'react-native-reanimated';
 
 import { useForm, useWatch } from 'react-hook-form';
 import { useDispatch, useSelector } from 'react-redux';
 import ButtonsHeader from '../../components/ButtonsHeader';
-// import CalendarModeSelector from '../../components/CalendarModeSelector'; // Zakomentowane - może się przydać później
 import FloatingActionButton from '../../components/FloatingActionButton';
 import { Dropdown } from '../../components/Input';
 import MultiSelectModal from '../../components/MultiSelectModal';
@@ -57,11 +60,108 @@ import {
   setTaskType,
 } from '../../store/calendarFiltersSlice';
 import { Filter } from './TasksMenu';
+import { BlurView } from 'expo-blur';
+
 import { filtersStateToFilterArray } from './filterUtils';
+import ExpandableCalendarModeSelector from '../../components/ExpandableCalendarModeSelector';
+import ScheduleWithDatePicker from '../../components/ScheduleWithDatePicker';
+
+// ===== TYPY I STAŁE =====
+
+type FilterOption = {
+  label: string;
+  value: string;
+};
+
+type FilterTypes =
+  | 'dateSort'
+  | 'dateFilter'
+  | 'taskType'
+  | 'taskStatus'
+  | 'taskGroup';
+
+type Filters = {
+  dateFilter: string;
+  dateSort: string;
+  taskType: (string | number)[];
+  taskStatus: string;
+  taskGroup: (string | number)[];
+};
+
+type CalendarTabProps = {
+  appliedFilters: Filter[];
+  setAppliedFilters: (filters: Filter[]) => void;
+  showHeader?: boolean;
+};
+
+const MENU_HEIGHT = 100;
+const TIMELINE_START_HOUR = 8;
+const TIMELINE_END_HOUR = 23;
+const TIMELINE_HOURS_COUNT = TIMELINE_END_HOUR - TIMELINE_START_HOUR + 1;
+const MAX_VISIBLE_TASKS_PER_CELL = 2;
+
+// Kolory dla ekip - zgodne ze screenem
+const TEAM_COLORS = [
+  '#FFB3D9', // Jasnoróżowy dla Ekipa 1
+  '#B3F5D1', // Jasnozielony dla Ekipa 2
+  '#FFD4B3', // Jasnopomarańczowy dla Ekipa 3
+  '#B5D3F7',
+  '#FFE4B5',
+  '#DDA0DD',
+];
+
+const YearMonth = memo(({ year, month, onSelect }: any) => {
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDay = new Date(year, month, 1).getDay();
+  const offset = firstDay === 0 ? 6 : firstDay - 1;
+
+  return (
+    <View>
+      <Text style={{ fontWeight: '600' }}>
+        {formatPolishMonthNominative(new Date(year, month))}
+      </Text>
+
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+        {Array.from({ length: offset }).map((_, i) => (
+          <View key={i} style={{ width: '14.28%', height: 18 }} />
+        ))}
+
+        {Array.from({ length: daysInMonth }).map((_, i) => {
+          const day = i + 1;
+          return (
+            <TouchableOpacity
+              key={day}
+              style={{ width: '14.28%', alignItems: 'center' }}
+              onPress={() =>
+                onSelect(
+                  `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                )
+              }
+            >
+              <Text style={{ fontSize: 11 }}>{day}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </View>
+  );
+});
+
+
+// Funkcja do ściemniania koloru dla lewej ramki
+const darkenColor = (color: string, percent: number = 30): string => {
+  const hex = color.replace('#', '');
+  const r = Math.max(0, parseInt(hex.substr(0, 2), 16) - Math.round(255 * percent / 100));
+  const g = Math.max(0, parseInt(hex.substr(2, 2), 16) - Math.round(255 * percent / 100));
+  const b = Math.max(0, parseInt(hex.substr(4, 2), 16) - Math.round(255 * percent / 100));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+};
+
+// ===== KOMPONENTY POMOCNICZE =====
 
 const EventItem = memo(function EventItem({
-  event,
-}: {
+                                            event,
+                                          }: {
   event: PackedEvent & { notatki?: string };
 }) {
   const statusColor = useMemo(() => {
@@ -99,20 +199,8 @@ const EventItem = memo(function EventItem({
   );
 });
 
-type FilterOption = {
-  label: string;
-  value: string;
-};
+// ===== FUNKCJE POMOCNICZE =====
 
-type FilterTypes =
-  | 'dateSort'
-  | 'dateFilter'
-  // | 'yearFilter'
-  | 'taskType'
-  | 'taskStatus'
-  | 'taskGroup';
-
-// Funkcje pomocnicze do generowania opcji daty
 const generateDayOptions = (year: number): FilterOption[] => {
   const options: FilterOption[] = [];
   const startDate = new Date(year, 0, 1);
@@ -134,17 +222,14 @@ const generateDayOptions = (year: number): FilterOption[] => {
 const generateWeekOptions = (year: number): FilterOption[] => {
   const options: FilterOption[] = [];
   const startDate = new Date(year, 0, 1);
-  // Znajdź pierwszy poniedziałek roku
   const firstMonday = new Date(startDate);
   const dayOfWeek = firstMonday.getDay();
   const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
   firstMonday.setDate(startDate.getDate() + diff);
 
-  // Generuj tygodnie do końca roku
   for (
     let weekStart = new Date(firstMonday);
     weekStart.getFullYear() <= year;
-
   ) {
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
@@ -187,7 +272,6 @@ const generateMonthOptions = (year: number): FilterOption[] => {
   });
 };
 
-// Funkcje pomocnicze do formatowania dat - przeniesione poza komponent dla lepszej wydajności
 const formatPolishDate = (date: Date) => {
   const polishMonths = [
     'styczeń',
@@ -223,7 +307,30 @@ const formatWeekDay = (date: Date) => {
   return days[date.getDay() === 0 ? 6 : date.getDay() - 1];
 };
 
+const formatWeekDayShort = (date: Date) => {
+  const days = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Niedz'];
+  return days[date.getDay() === 0 ? 6 : date.getDay() - 1];
+};
+
 const formatPolishMonth = (date: Date) => {
+  const polishMonths = [
+    'Stycznia',
+    'Lutego',
+    'Marca',
+    'Kwietnia',
+    'Maja',
+    'Czerwca',
+    'Lipca',
+    'Sierpnia',
+    'Września',
+    'Października',
+    'Listopada',
+    'Grudnia',
+  ];
+  return polishMonths[date.getMonth()];
+};
+
+const formatPolishMonthNominative = (date: Date) => {
   const polishMonths = [
     'Styczeń',
     'Luty',
@@ -257,6 +364,331 @@ const getWeekDays = (date: string) => {
   return weekDays;
 };
 
+const getWeekRange = (date: Date) => {
+  const monday = new Date(date);
+  const day = monday.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  monday.setDate(date.getDate() + diff);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+
+  return { start: monday, end: sunday };
+};
+
+// ===== KOMPONENT TIMELINE DLA DNIA =====
+
+interface DayTimelineProps {
+  currentDate: string;
+  eventTasks: Record<string, any[]>;
+  tasks: Task[] | null;
+  teams: any[] | null;
+  navigation: any;
+}
+
+const DayTimeline = memo(function DayTimeline({
+                                                currentDate,
+                                                eventTasks,
+                                                tasks,
+                                                teams,
+                                                navigation,
+                                              }: DayTimelineProps) {
+  const { tasksByHourAndTeam, teamIds, teamColors } = useMemo(() => {
+    const dayTasks = eventTasks?.[currentDate] || [];
+    const tasksByHourAndTeam: Record<number, Record<string, any[]>> = {};
+    const allTeamIds = new Set<string>();
+
+    dayTasks.forEach((task: any) => {
+      if (task.start) {
+        const taskHour = new Date(task.start).getHours();
+        const originalTask = tasks?.find(t => t.id === task.id);
+        const teamId = originalTask?.grupa?.toString() || 'unassigned';
+
+        allTeamIds.add(teamId);
+
+        if (!tasksByHourAndTeam[taskHour]) {
+          tasksByHourAndTeam[taskHour] = {};
+        }
+        if (!tasksByHourAndTeam[taskHour][teamId]) {
+          tasksByHourAndTeam[taskHour][teamId] = [];
+        }
+        tasksByHourAndTeam[taskHour][teamId].push(task);
+      }
+    });
+
+    const teamIds = Array.from(allTeamIds).sort((a, b) => {
+      if (a === 'unassigned') return 1;
+      if (b === 'unassigned') return -1;
+      return parseInt(a) - parseInt(b);
+    });
+
+    const teamColors: Record<string, string> = {};
+    teamIds.forEach((id, index) => {
+      teamColors[id] = TEAM_COLORS[index % TEAM_COLORS.length];
+    });
+
+    return { tasksByHourAndTeam, teamIds, teamColors };
+  }, [currentDate, eventTasks, tasks]);
+
+  const hours = useMemo(
+    () => Array.from({ length: TIMELINE_HOURS_COUNT }, (_, i) => i + TIMELINE_START_HOUR),
+    []
+  );
+
+  const getTeamName = useCallback(
+    (teamId: string) => {
+      const team = teams?.find(t => t.id.toString() === teamId);
+      if (team) return team.nazwa;
+      if (teamId === 'unassigned') return 'Nieprzydzielone';
+      return `Ekipa ${teamId}`;
+    },
+    [teams]
+  );
+
+  const renderTask = useCallback(
+    (task: any, teamColor: string, index: number) => {
+      const originalTask = tasks?.find(t => t.id === task.id);
+
+      return (
+        <RNTouchableOpacity
+          key={task.id || index}
+          style={[styles.columnTaskCard, { backgroundColor: teamColor, borderLeftColor: darkenColor(teamColor) }]}
+          onPress={() => {
+            if (originalTask) {
+              navigation.navigate('TaskDetails', { task: originalTask });
+            } else {
+              Alert.alert('Błąd', 'Nie znaleziono oryginalnego zadania');
+            }
+          }}
+        >
+          <Text style={styles.columnTaskType}>{task.type}</Text>
+          <Text style={styles.columnTaskTitle} numberOfLines={1}>
+            {task.title}
+          </Text>
+        </RNTouchableOpacity>
+      );
+    },
+    [tasks, navigation]
+  );
+
+  const renderGroupedTask = useCallback(
+    (teamId: string, hour: number, teamColor: string, hiddenCount: number, totalCount: number) => {
+      const hourString = `${hour.toString().padStart(2, '0')}:00`;
+      const teamName = getTeamName(teamId);
+
+      return (
+        <RNTouchableOpacity
+          style={[
+            styles.columnTaskCard,
+            styles.groupedTaskCard,
+            { backgroundColor: teamColor, borderLeftColor: darkenColor(teamColor) },
+          ]}
+          onPress={() => {
+            Alert.alert(
+              'Zadania',
+              `${totalCount} zadań dla ${teamName} o godzinie ${hourString}`
+            );
+          }}
+        >
+          <Text style={styles.groupedTaskText}>+{hiddenCount} Zadania</Text>
+        </RNTouchableOpacity>
+      );
+    },
+    [getTeamName]
+  );
+
+  if (teamIds.length === 0) {
+    return (
+      <View style={styles.emptyTimelineContainer}>
+        <Text style={styles.emptyTimelineText}>Brak zadań na ten dzień</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.horizontalScrollContent}
+    >
+      <View style={styles.columnTimelineContainer}>
+        <View style={styles.timelineHeaderRow}>
+          <View style={styles.timeColumnHeader} />
+          {teamIds.map(teamId => (
+            <View key={teamId} style={styles.ekipaColumnHeader}>
+              <Text
+                style={[
+                  styles.ekipaHeaderText,
+                  { color: teamColors[teamId] },
+                ]}
+              >
+                {getTeamName(teamId)}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {hours.map(hour => {
+          const hourString = `${hour.toString().padStart(2, '0')}:00`;
+
+          return (
+            <View key={hour} style={styles.columnTimelineRow}>
+              <View style={styles.columnTimeCell}>
+                <Text style={styles.columnTimeText}>{hourString}</Text>
+              </View>
+
+              {teamIds.map(teamId => {
+                const teamTasks = tasksByHourAndTeam[hour]?.[teamId] || [];
+                const taskColor = teamColors[teamId];
+                const visibleTasks = teamTasks.slice(0, MAX_VISIBLE_TASKS_PER_CELL);
+                const hiddenCount = Math.max(0, teamTasks.length - MAX_VISIBLE_TASKS_PER_CELL);
+
+                return (
+                  <View key={teamId} style={styles.ekipaTaskColumn}>
+                    {visibleTasks.map((task, index) =>
+                      renderTask(task, taskColor, index)
+                    )}
+
+                    {hiddenCount > 0 &&
+                      renderGroupedTask(teamId, hour, taskColor, hiddenCount, teamTasks.length)}
+                  </View>
+                );
+              })}
+            </View>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+});
+
+// ===== KOMPONENT SIMPLE TIMELINE (BEZ GODZIN) DLA TYGODNIA/MIESIĄCA =====
+
+const SimpleTimeline = memo(function SimpleTimeline({
+                                                      currentDate,
+                                                      eventTasks,
+                                                      tasks,
+                                                      teams,
+                                                      navigation,
+                                                    }: DayTimelineProps) {
+  const { tasksByTeam, teamIds, teamColors } = useMemo(() => {
+    const dayTasks = eventTasks?.[currentDate] || [];
+    const tasksByTeam: Record<string, any[]> = {};
+    const allTeamIds = new Set<string>();
+
+    dayTasks.forEach((task: any) => {
+      const originalTask = tasks?.find(t => t.id === task.id);
+      const teamId = originalTask?.grupa?.toString() || 'unassigned';
+
+      allTeamIds.add(teamId);
+
+      if (!tasksByTeam[teamId]) {
+        tasksByTeam[teamId] = [];
+      }
+      tasksByTeam[teamId].push(task);
+    });
+
+    const teamIds = Array.from(allTeamIds).sort((a, b) => {
+      if (a === 'unassigned') return 1;
+      if (b === 'unassigned') return -1;
+      return parseInt(a) - parseInt(b);
+    });
+
+    const teamColors: Record<string, string> = {};
+    teamIds.forEach((id, index) => {
+      teamColors[id] = TEAM_COLORS[index % TEAM_COLORS.length];
+    });
+
+    return { tasksByTeam, teamIds, teamColors };
+  }, [currentDate, eventTasks, tasks]);
+
+  const getTeamName = useCallback(
+    (teamId: string) => {
+      const team = teams?.find(t => t.id.toString() === teamId);
+      if (team) return team.nazwa;
+      if (teamId === 'unassigned') return 'Nieprzydzielone';
+      return `Ekipa ${teamId}`;
+    },
+    [teams]
+  );
+
+  const renderTask = useCallback(
+    (task: any, teamColor: string, index: number) => {
+      const originalTask = tasks?.find(t => t.id === task.id);
+
+      return (
+        <RNTouchableOpacity
+          key={task.id || index}
+          style={[styles.columnTaskCard, { backgroundColor: teamColor, borderLeftColor: darkenColor(teamColor) }]}
+          onPress={() => {
+            if (originalTask) {
+              navigation.navigate('TaskDetails', { task: originalTask });
+            } else {
+              Alert.alert('Błąd', 'Nie znaleziono oryginalnego zadania');
+            }
+          }}
+        >
+          <Text style={styles.columnTaskType}>{task.type}</Text>
+          <Text style={styles.columnTaskTitle} numberOfLines={1}>
+            {task.title}
+          </Text>
+        </RNTouchableOpacity>
+      );
+    },
+    [tasks, navigation]
+  );
+
+  if (teamIds.length === 0) {
+    return (
+      <View style={styles.emptyTimelineContainer}>
+        <Text style={styles.emptyTimelineText}>Brak zadań na ten dzień</Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.horizontalScrollContent}
+    >
+      <View style={styles.columnTimelineContainer}>
+        <View style={styles.timelineHeaderRow}>
+          {teamIds.map(teamId => (
+            <View key={teamId} style={styles.ekipaColumnHeaderSimple}>
+              <Text
+                style={[
+                  styles.ekipaHeaderText,
+                  { color: teamColors[teamId] },
+                ]}
+              >
+                {getTeamName(teamId)}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.simpleTimelineRow}>
+          {teamIds.map(teamId => {
+            const teamTasks = tasksByTeam[teamId] || [];
+            const taskColor = teamColors[teamId];
+
+            return (
+              <View key={teamId} style={styles.ekipaTaskColumnSimple}>
+                {teamTasks.map((task, index) =>
+                  renderTask(task, taskColor, index)
+                )}
+              </View>
+            );
+          })}
+        </View>
+      </View>
+    </ScrollView>
+  );
+});
+
+// ===== MODAL FILTRÓW =====
+
 const calendarClientStyles = StyleSheet.create({
   modalContent: {
     height: '80%',
@@ -280,20 +712,20 @@ const calendarClientStyles = StyleSheet.create({
 });
 
 const CalendarFiltersModal = memo(function CalendarFiltersModal({
-  filters,
-  visible,
-  onClose,
-  onFilterPress,
-  control,
-  calendarType,
-  setValue,
-}: {
+                                                                  filters,
+                                                                  visible,
+                                                                  onClose,
+                                                                  onFilterPress,
+                                                                  control,
+                                                                  calendarType,
+                                                                  setValue,
+                                                                }: {
   filters: Filter[];
   visible: boolean;
   onClose: () => void;
   onFilterPress: (filters: Filter[]) => void;
   control: any;
-  calendarType: 'day' | 'week' | 'month';
+  calendarType: 'day' | 'week' | 'month' | 'year';
   setValue: any;
 }) {
   const dispatch = useDispatch();
@@ -316,7 +748,6 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
   const taskTypeValue = useWatch({ control, name: 'taskType' });
   const currentYear = new Date().getFullYear();
 
-  // Konwertuj taskTypeValue na tablicę jeśli nie jest tablicą
   const selectedTaskTypes = useMemo(() => {
     if (Array.isArray(taskTypeValue)) {
       return taskTypeValue;
@@ -327,7 +758,6 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
     return [];
   }, [taskTypeValue]);
 
-  // Generuj opcje daty w zależności od typu kalendarza
   const dateOptions = useMemo(() => {
     switch (calendarType) {
       case 'day':
@@ -335,23 +765,23 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
       case 'week':
         return generateWeekOptions(currentYear);
       case 'month':
+      case 'year':
         return generateMonthOptions(currentYear);
       default:
         return [];
     }
   }, [calendarType, currentYear]);
 
-  // Ustaw wartość filtra daty gdy modal się otwiera lub zmienia się typ kalendarza
-  // Użyj wartości z Redux jeśli istnieje, w przeciwnym razie użyj domyślnej
   useEffect(() => {
     if (visible) {
-      const getDefaultDateFilter = (mode: 'day' | 'week' | 'month'): string => {
+      const getDefaultDateFilter = (
+        mode: 'day' | 'week' | 'month' | 'year',
+      ): string => {
         const today = new Date();
         switch (mode) {
           case 'day':
             return format(today, 'yyyy-MM-dd');
           case 'week': {
-            // Znajdź pierwszy dzień tygodnia (poniedziałek)
             const monday = new Date(today);
             const day = monday.getDay();
             const diff = day === 0 ? -6 : 1 - day;
@@ -359,18 +789,16 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
             return format(monday, 'yyyy-MM-dd');
           }
           case 'month':
+          case 'year':
             return format(today, 'yyyy-MM');
           default:
             return '';
         }
       };
 
-      // Użyj wartości z Redux jeśli istnieje, w przeciwnym razie użyj domyślnej
       const dateFilterValue =
         calendarFilters.dateFilter || getDefaultDateFilter(calendarType);
       setValue('dateFilter', dateFilterValue);
-
-      // Ustaw również pozostałe wartości z Redux
       setValue('dateSort', calendarFilters.dateSort || 'nearest');
       setValue('taskType', calendarFilters.taskType || []);
       setValue('taskStatus', calendarFilters.taskStatus || 'wszystkie');
@@ -378,7 +806,6 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
     }
   }, [visible, calendarType, calendarFilters, setValue]);
 
-  // Load teams and employees only once when modal becomes visible
   useEffect(() => {
     if (visible && !hasLoadedData) {
       if (getTeams) {
@@ -414,19 +841,16 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
     }
   }, [employees]);
 
-  // Compute ekipa options directly based on selectedTaskTypes
   const ekipaOptions = useMemo(() => {
     const unassignedOption = {
       label: 'Nieprzydzielone',
       value: 'nieprzydzielone',
     };
 
-    // Jeśli nie wybrano żadnego typu lub wybrano wszystkie typy
     if (selectedTaskTypes.length === 0) {
       return [unassignedOption, ...teamOptions, ...employeeOptions];
     }
 
-    // Sprawdź czy wybrane typy zawierają typy wymagające ekip lub pracowników
     const hasTeamTypes = selectedTaskTypes.some(
       type =>
         type.toString().toLowerCase() === 'oględziny' ||
@@ -451,11 +875,9 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
     return [unassignedOption];
   }, [selectedTaskTypes, teamOptions, employeeOptions]);
 
-  // Memoizuj handleSubmit
   const handleSubmit = useCallback(() => {
     const formValues = control._formValues;
 
-    // Aktualizuj Redux state bezpośrednio
     if (formValues.dateFilter) {
       dispatch(setDateFilter(formValues.dateFilter as string));
     }
@@ -480,7 +902,6 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
       );
     }
 
-    // Dla kompatybilności wstecznej - konwertuj na Filter[] i wywołaj callback
     const newFilters: Filter[] = [
       {
         name: 'dateFilter',
@@ -537,23 +958,15 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
                 ? 'Dzień'
                 : calendarType === 'week'
                   ? 'Tydzień'
-                  : 'Miesiąc'}
+                  : calendarType === 'year'
+                    ? 'Rok'
+                    : 'Miesiąc'}
             </Text>
             <Dropdown
               name="dateFilter"
               control={control}
               options={dateOptions}
             />
-            {/* Ukryty filtr "Sortuj wg." - zakomentowany na żądanie */}
-            {/* <Text style={calendarClientStyles.label}>Sortuj wg.</Text>
-            <Dropdown
-              name="dateSort"
-              control={control}
-              options={[
-                { label: 'Data (Najbliższa)', value: 'nearest' },
-                { label: 'Data (Najdalsza)', value: 'farthest' },
-              ]}
-            /> */}
             <View
               style={{
                 flexDirection: 'row',
@@ -620,7 +1033,6 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
         </View>
       </View>
 
-      {/* Modal do dodawania nowego typu zadania */}
       <Modal
         visible={addTaskTypeModalVisible}
         transparent
@@ -654,7 +1066,6 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
                     setTaskTypes([...taskTypes, newType]);
                     setNewTaskTypeName('');
                     setAddTaskTypeModalVisible(false);
-                    // TODO: Wywołać API backend do zapisania nowego typu
                   }
                 }}
                 titleStyle={styles.buttonText}
@@ -676,21 +1087,9 @@ const CalendarFiltersModal = memo(function CalendarFiltersModal({
   );
 });
 
-type Filters = {
-  dateFilter: string;
-  dateSort: string;
-  // yearFilter: string | null;
-  taskType: (string | number)[];
-  taskStatus: string;
-  taskGroup: (string | number)[];
-};
+// ===== GŁÓWNY KOMPONENT =====
 
-type CalendarTabProps = {
-  appliedFilters: Filter[];
-  setAppliedFilters: (filters: Filter[]) => void;
-};
-
-function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
+function CalendarTab({ appliedFilters, setAppliedFilters, showHeader = true }: CalendarTabProps) {
   const dispatch = useDispatch();
   const calendarFilters = useSelector(
     (state: RootState) => state.calendarFilters,
@@ -698,21 +1097,32 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
   const viewMode = calendarFilters.calendarMode;
   const navigation = useNavigation();
   const [calendarFiltersVisible, setCalendarFiltersVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState<'calendar' | 'tasks' | 'schedule'>('calendar');
   const [currentDate, setCurrentDate] = useState(
     format(new Date(), 'yyyy-MM-dd'),
   );
   const [eventTasks, setEventTasks] = useState<any>();
   const { result: tasks, loading, execute } = useTasks();
+  const { teams } = useStaff();
   const prevEventTasksByDateRef = useRef<string>('');
 
-  // Funkcja do generowania domyślnej wartości filtra daty w zależności od typu kalendarza
-  const getDefaultDateFilter = (mode: 'day' | 'week' | 'month'): string => {
+  const [isModeMenuExpanded, setIsModeMenuExpanded] = useState(false);
+  const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
+
+  const modeMenuHeight = useSharedValue(0);
+  const modeMenuOpacity = useSharedValue(0);
+
+  const calendarHeight = useSharedValue(0);
+  const calendarOpacity = useSharedValue(0);
+
+  const getDefaultDateFilter = (
+    mode: 'day' | 'week' | 'month' | 'year',
+  ): string => {
     const today = new Date();
     switch (mode) {
       case 'day':
         return format(today, 'yyyy-MM-dd');
       case 'week': {
-        // Znajdź pierwszy dzień tygodnia (poniedziałek)
         const monday = new Date(today);
         const day = monday.getDay();
         const diff = day === 0 ? -6 : 1 - day;
@@ -720,6 +1130,7 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
         return format(monday, 'yyyy-MM-dd');
       }
       case 'month':
+      case 'year':
         return format(today, 'yyyy-MM');
       default:
         return '';
@@ -730,14 +1141,12 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
     defaultValues: {
       dateFilter: calendarFilters.dateFilter || getDefaultDateFilter(viewMode),
       dateSort: calendarFilters.dateSort || 'nearest',
-      // yearFilter: undefined,
       taskType: calendarFilters.taskType || [],
       taskStatus: calendarFilters.taskStatus || 'wszystkie',
       taskGroup: calendarFilters.taskGroup || [],
     },
   });
 
-  // Synchronizuj formularz z Redux state
   useEffect(() => {
     setValue(
       'dateFilter',
@@ -747,7 +1156,6 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
     setValue('taskType', calendarFilters.taskType || []);
     setValue('taskStatus', calendarFilters.taskStatus || 'wszystkie');
     setValue('taskGroup', calendarFilters.taskGroup || []);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     calendarFilters.dateFilter,
     calendarFilters.dateSort,
@@ -757,16 +1165,15 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
     viewMode,
   ]);
 
-  // Synchronizuj currentDate z dateFilter dla widoku tygodnia
   useEffect(() => {
     if (viewMode === 'week' && calendarFilters.dateFilter) {
-      // dateFilter dla tygodnia to pierwszy dzień tygodnia (poniedziałek)
       setCurrentDate(calendarFilters.dateFilter);
     } else if (viewMode === 'day' && calendarFilters.dateFilter) {
-      // dateFilter dla dnia to konkretna data
       setCurrentDate(calendarFilters.dateFilter);
-    } else if (viewMode === 'month' && calendarFilters.dateFilter) {
-      // dateFilter dla miesiąca to format yyyy-MM, ustawiamy pierwszy dzień miesiąca
+    } else if (
+      (viewMode === 'month' || viewMode === 'year') &&
+      calendarFilters.dateFilter
+    ) {
       const [year, month] = calendarFilters.dateFilter.split('-');
       if (year && month) {
         const firstDayOfMonth = format(
@@ -778,52 +1185,32 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
     }
   }, [viewMode, calendarFilters.dateFilter]);
 
-  // Formularz do zarządzania typem kalendarza przez dropdown
-  const calendarModeForm = useForm<{ calendarMode: 'day' | 'week' | 'month' }>({
-    defaultValues: {
-      calendarMode: 'month',
-    },
-  });
-
-  const selectedCalendarMode = useWatch({
-    control: calendarModeForm.control,
-    name: 'calendarMode',
-  });
-
-  // Synchronizuj viewMode z wartością z formularza i aktualizuj domyślny filtr daty
-  useEffect(() => {
-    if (selectedCalendarMode) {
-      dispatch(setCalendarMode(selectedCalendarMode));
-      // Ustaw domyślną wartość filtra daty dla nowego typu kalendarza
-      const defaultDate = getDefaultDateFilter(selectedCalendarMode);
+  const handleCalendarModeChange = useCallback(
+    (mode: 'day' | 'week' | 'month' | 'year') => {
+      dispatch(setCalendarMode(mode));
+      const defaultDate = getDefaultDateFilter(
+        mode === 'year' ? 'month' : mode,
+      );
       dispatch(setDateFilter(defaultDate));
       setValue('dateFilter', defaultDate);
-    }
-  }, [selectedCalendarMode, setValue, dispatch]);
+    },
+    [dispatch, setValue],
+  );
 
-  // Synchronizuj formularz z viewMode przy inicjalizacji - tylko raz przy mount
-  useEffect(() => {
-    calendarModeForm.setValue('calendarMode', viewMode);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const baseFilters = useMemo<Filter[]>(() => {
     return filtersStateToFilterArray(calendarFilters);
   }, [calendarFilters]);
 
-  // Animowane wartości
   const fadeAnim = useSharedValue(1);
   const slideAnim = useSharedValue(0);
 
-  // Funkcje do zmiany miesiąca z animacją - zmemoizowane
   const changeMonthWithAnimation = useCallback(
     (direction: 'next' | 'prev') => {
-      // Animacja wyjścia - kalendarz znika z małym przesunięciem
       fadeAnim.value = withTiming(0, { duration: 200 });
       slideAnim.value = withTiming(direction === 'next' ? -30 : 30, {
         duration: 200,
       });
 
-      // Po animacji wyjścia, zmień miesiąc i animuj wejście
       setTimeout(() => {
         const currentDateObj = new Date(currentDate);
         if (direction === 'next') {
@@ -832,8 +1219,6 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
           currentDateObj.setMonth(currentDateObj.getMonth() - 1);
         }
 
-        // Upewnij się, że dzień jest prawidłowy dla nowego miesiąca
-        // Jeśli dzień nie istnieje w nowym miesiącu (np. 31 lutego), ustaw na 1
         const maxDaysInMonth = new Date(
           currentDateObj.getFullYear(),
           currentDateObj.getMonth() + 1,
@@ -845,10 +1230,8 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
 
         setCurrentDate(format(currentDateObj, 'yyyy-MM-dd'));
 
-        // Reset pozycji dla animacji wejścia - kalendarz wchodzi z przeciwnej strony
         slideAnim.value = direction === 'next' ? 30 : -30;
 
-        // Animacja wejścia - kalendarz pojawia się płynnie
         fadeAnim.value = withTiming(1, { duration: 200 });
         slideAnim.value = withTiming(0, { duration: 200 });
       }, 200);
@@ -856,37 +1239,27 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
     [currentDate, fadeAnim, slideAnim],
   );
 
-  // Obsługa gestów swipe - zmemoizowane
   const onSwipeGesture = useCallback(
     (event: any) => {
       const { translationX, state } = event.nativeEvent;
 
-      // Sprawdzamy czy gest się zakończył
       if (state === State.END) {
-        const minSwipeDistance = 50;
+        const threshold = 50;
 
-        if (Math.abs(translationX) > minSwipeDistance) {
-          if (translationX > 0) {
-            // Swipe w prawo - poprzedni miesiąc
-            changeMonthWithAnimation('prev');
-          } else {
-            // Swipe w lewo - następny miesiąc
-            changeMonthWithAnimation('next');
-          }
+        if (translationX < -threshold) {
+          changeMonthWithAnimation('next');
+        } else if (translationX > threshold) {
+          changeMonthWithAnimation('prev');
         }
       }
     },
     [changeMonthWithAnimation],
   );
 
-  // Pobierz zadania tylko raz przy mount - nie przy każdej zmianie execute
   useEffect(() => {
     execute();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Zmemoizuj filtrowanie i przetwarzanie zadań
-  // Używamy szczegółowych wartości z calendarFilters zamiast całego obiektu
   const { filteredTasks, eventTasksByDate } = useMemo(() => {
     if (!tasks) {
       return { filteredTasks: [], eventTasksByDate: {} };
@@ -894,24 +1267,20 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
 
     let filteredTasks = [...tasks];
 
-    // Apply filters from Redux - użyj wartości bezpośrednio
     const { dateFilter } = calendarFilters;
     const { dateSort } = calendarFilters;
     const { taskType } = calendarFilters;
     const { taskStatus } = calendarFilters;
     const { taskGroup } = calendarFilters;
 
-    // Apply dateFilter
     if (dateFilter && dateFilter.trim() !== '') {
       const filterDate = dateFilter;
       if (viewMode === 'day') {
-        // Filtruj po konkretnym dniu
         filteredTasks = filteredTasks.filter(task => {
           const taskDate = format(new Date(task.start_date), 'yyyy-MM-dd');
           return taskDate === filterDate;
         });
       } else if (viewMode === 'week') {
-        // Filtruj po tygodniu (zadania w zakresie tygodnia)
         const weekStart = new Date(filterDate);
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + 6);
@@ -919,8 +1288,7 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
           const taskDate = new Date(task.start_date);
           return taskDate >= weekStart && taskDate <= weekEnd;
         });
-      } else if (viewMode === 'month') {
-        // Filtruj po miesiącu
+      } else if (viewMode === 'month' || viewMode === 'year') {
         const [year, month] = filterDate.split('-');
         filteredTasks = filteredTasks.filter(task => {
           const taskDate = new Date(task.start_date);
@@ -932,7 +1300,6 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
       }
     }
 
-    // Apply taskType filter
     if (taskType && taskType.length > 0) {
       filteredTasks = filteredTasks.filter(task =>
         taskType.some(
@@ -942,19 +1309,15 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
       );
     }
 
-    // Apply taskStatus filter
     if (taskStatus && taskStatus !== 'wszystkie') {
       filteredTasks = filteredTasks.filter(task => task.status === taskStatus);
     }
 
-    // Apply taskGroup filter
     if (taskGroup && taskGroup.length > 0) {
       filteredTasks = filteredTasks.filter(task => {
-        // Sprawdź czy zadanie jest nieprzydzielone i czy "nieprzydzielone" jest wybrane
         if (!task.grupa) {
           return taskGroup.includes('nieprzydzielone');
         }
-        // Sprawdź czy grupa zadania jest w wybranej liście
         return taskGroup.some(
           (val: string | number) =>
             val.toString() === task.grupa?.toString() || val === task.grupa,
@@ -962,7 +1325,6 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
       });
     }
 
-    // Apply dateSort
     if (dateSort === 'farthest') {
       filteredTasks.sort(
         (a, b) =>
@@ -982,11 +1344,11 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
           acc[date] = [];
         }
         acc[date].push({
-          id: task.id, // Dodane id
+          id: task.id,
           start: task.start_date,
-          end: task.end_date || task.start_date, // Używaj end_date jeśli istnieje
+          end: task.end_date || task.start_date,
           title: task.nazwa,
-          summary: `${task.typ} - ${task.nazwa}`, // Dodane summary
+          summary: `${task.typ} - ${task.nazwa}`,
           type: task.typ,
           status: task.status,
           notatki: task.notatki,
@@ -1015,7 +1377,6 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
     viewMode,
   ]);
 
-  // Ustaw eventTasks tylko gdy się zmieni - użyj useRef do przechowywania poprzedniej wartości
   useEffect(() => {
     const newEventTasksString = JSON.stringify(eventTasksByDate);
 
@@ -1065,7 +1426,6 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
 
   const screenWidth = useMemo(() => Dimensions.get('window').width, []);
 
-  // Animowany styl dla kalendarza
   const animatedCalendarStyle = useAnimatedStyle(() => {
     'worklet';
 
@@ -1075,432 +1435,1348 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
     };
   });
 
-  // Przygotowanie markedDates dla kalendarza
-  const markedDates = useMemo(() => {
-    if (!eventTasks) return {};
+  const onSwipeDownGesture = useCallback(
+    (event: any) => {
+      const { translationY, state } = event.nativeEvent;
 
-    const marked: any = {};
-
-    Object.keys(eventTasks).forEach(date => {
-      const dayTasks = eventTasks[date];
-      if (dayTasks && dayTasks.length > 0) {
-        // Sprawdź czy jakieś zadanie jest wykonane
-        const hasCompletedTask = dayTasks.some(
-          (task: any) => task.status === 'wykonane',
-        );
-        const hasIncompleteTask = dayTasks.some(
-          (task: any) => task.status === 'niewykonane',
-        );
-
-        marked[date] = {
-          marked: true,
-          // Główna kropka - kolor według statusu najważniejszego zadania
-          dotColor: hasCompletedTask
-            ? Colors.statusDone
-            : hasIncompleteTask
-              ? Colors.statusNotDone
-              : Colors.statusPlanned,
-          // Dla dni z wieloma zadaniami - dodaj wyróżnienie
-          ...(dayTasks.length > 1 && {
-            selected: true,
-            selectedColor: `${Colors.calendarPrimary}20`,
-            selectedTextColor: Colors.calendarPrimary,
-          }),
-        };
+      if (state === State.ACTIVE) {
+        if (translationY > 0 && !isModeMenuExpanded) {
+          modeMenuHeight.value = Math.min(translationY, MENU_HEIGHT);
+          modeMenuOpacity.value = Math.min(translationY / MENU_HEIGHT, 1);
+        } else if (translationY < 0 && isModeMenuExpanded) {
+          modeMenuHeight.value = Math.max(MENU_HEIGHT + translationY, 0);
+          modeMenuOpacity.value = Math.max((MENU_HEIGHT + translationY) / MENU_HEIGHT, 0);
+        }
       }
-    });
+
+      if (state === State.END) {
+        const threshold = 30;
+
+        if (!isModeMenuExpanded && translationY > threshold) {
+          modeMenuHeight.value = withSpring(MENU_HEIGHT, { damping: 18, stiffness: 180 });
+          modeMenuOpacity.value = withSpring(1);
+          setIsModeMenuExpanded(true);
+        } else if (isModeMenuExpanded && translationY < -threshold) {
+          modeMenuHeight.value = withSpring(0, { damping: 18, stiffness: 180 });
+          modeMenuOpacity.value = withSpring(0);
+          setIsModeMenuExpanded(false);
+        } else {
+          if (isModeMenuExpanded) {
+            modeMenuHeight.value = withSpring(MENU_HEIGHT, { damping: 18, stiffness: 180 });
+            modeMenuOpacity.value = withSpring(1);
+          } else {
+            modeMenuHeight.value = withSpring(0, { damping: 18, stiffness: 180 });
+            modeMenuOpacity.value = withSpring(0);
+          }
+        }
+      }
+    },
+    [isModeMenuExpanded, modeMenuHeight, modeMenuOpacity],
+  );
+
+  const onCalendarSwipeGesture = useCallback(
+    (event: any) => {
+      const { translationY, state } = event.nativeEvent;
+      const CALENDAR_HEIGHT = 350;
+
+      if (state === State.ACTIVE) {
+        if (translationY > 0 && !isCalendarExpanded) {
+          calendarHeight.value = Math.min(translationY, CALENDAR_HEIGHT);
+          calendarOpacity.value = Math.min(translationY / CALENDAR_HEIGHT, 1);
+        } else if (translationY < 0 && isCalendarExpanded) {
+          calendarHeight.value = Math.max(CALENDAR_HEIGHT + translationY, 0);
+          calendarOpacity.value = Math.max((CALENDAR_HEIGHT + translationY) / CALENDAR_HEIGHT, 0);
+        }
+      }
+
+      if (state === State.END) {
+        const threshold = 50;
+
+        if (!isCalendarExpanded && translationY > threshold) {
+          calendarHeight.value = withSpring(CALENDAR_HEIGHT, { damping: 18, stiffness: 180 });
+          calendarOpacity.value = withSpring(1);
+          setIsCalendarExpanded(true);
+        } else if (isCalendarExpanded && translationY < -threshold) {
+          calendarHeight.value = withSpring(0, { damping: 18, stiffness: 180 });
+          calendarOpacity.value = withSpring(0);
+          setIsCalendarExpanded(false);
+        } else {
+          if (isCalendarExpanded) {
+            calendarHeight.value = withSpring(CALENDAR_HEIGHT, { damping: 18, stiffness: 180 });
+            calendarOpacity.value = withSpring(1);
+          } else {
+            calendarHeight.value = withSpring(0, { damping: 18, stiffness: 180 });
+            calendarOpacity.value = withSpring(0);
+          }
+        }
+      }
+    },
+    [isCalendarExpanded, calendarHeight, calendarOpacity],
+  );
+
+  const animatedModeMenuStyle = useAnimatedStyle(() => ({
+    height: modeMenuHeight.value,
+    opacity: modeMenuOpacity.value,
+    overflow: 'hidden',
+  }));
+
+  const animatedCalendarExpandStyle = useAnimatedStyle(() => {
+    return {
+      height: calendarHeight.value,
+      opacity: calendarOpacity.value,
+      overflow: 'hidden',
+    };
+  });
+
+  // Funkcja do zaznaczania tygodnia w widoku TYDZIEŃ
+  const getMarkedDatesForWeek = useCallback((weekStartDate: string) => {
+    const marked: any = {};
+    const weekStart = new Date(weekStartDate);
+
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + i);
+      const dateString = format(date, 'yyyy-MM-dd');
+
+      marked[dateString] = {
+        selected: true,
+        selectedColor: Colors.calendarPrimary,
+        selectedTextColor: Colors.white,
+      };
+    }
 
     return marked;
-  }, [eventTasks]);
+  }, []);
+
+  const markedDates = useMemo(() => {
+    if (viewMode !== 'week') return {};
+
+    const base = new Date(currentDate);
+    const day = base.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+
+    const monday = new Date(base);
+    monday.setDate(base.getDate() + diff);
+
+    const result: any = {};
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+
+      const key = format(d, 'yyyy-MM-dd');
+
+      result[key] = {
+        color: Colors.calendarPrimary, // 🔥 TEN PASEK
+        textColor: '#fff',
+        startingDay: i === 0,
+        endingDay: i === 6,
+      };
+    }
+
+    return result;
+  }, [viewMode, currentDate]);
+
+
+  // Tytuł nagłówka w zależności od trybu
+  const headerTitle = useMemo(() => {
+    const date = new Date(currentDate);
+
+    switch (viewMode) {
+      case 'day':
+        // "Piątek, 9 Grudnia"
+        return `${formatWeekDay(date)}, ${format(date, 'd')} ${formatPolishMonth(date)}`;
+
+      case 'week': {
+        const { start, end } = getWeekRange(date);
+
+        const sameMonth = start.getMonth() === end.getMonth();
+
+        return sameMonth
+          ? `${format(start, 'd')} - ${format(end, 'd')} ${formatPolishMonth(start)}`
+          : `${format(start, 'd')} ${formatPolishMonth(start)} – ${format(end, 'd')} ${formatPolishMonth(end)}`;
+      }
+
+
+      case 'month':
+        // "Grudzień 2025"
+        return `${formatPolishMonthNominative(date)} ${format(date, 'yyyy')}`;
+
+      case 'year':
+        // "2025"
+        return format(date, 'yyyy');
+
+      default:
+        return '';
+    }
+  }, [viewMode, currentDate]);
 
   return (
     <View style={styles.container}>
-      <View style={styles.calendarHeader}>
-        <ButtonsHeader
-          // onBackPress={navigation.goBack}
-          onFilterPress={() => setCalendarFiltersVisible(true)}
-        />
-        <View style={styles.calendarModeDropdown}>
-          <Dropdown
-            name="calendarMode"
-            control={calendarModeForm.control}
-            options={[
-              { label: 'Dzień', value: 'day' },
-              { label: 'Tydzień', value: 'week' },
-              { label: 'Miesiąc', value: 'month' },
-            ]}
-            customWidth={150}
-            isSmall
-          />
-        </View>
-        {/* Zakomentowany stary switch - może się przydać później
-        <CalendarModeSelector
-          selectedMode={viewMode}
-          onModeChange={mode => dispatch(setCalendarMode(mode))}
-        />
-        */}
-        {/* Active filters display */}
-        {/* TODO: Uncomment in future if needed
-        {baseFilters.length > 0 && (
-          <View style={styles.filtersContainer}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filtersScrollContainer}
-            >
-              {appliedFilters
-                .filter(filter => filter.value && filter.value !== 'wszystkie' && filter.value !== 'nearest' && filter.value !== '' && filter.value.trim() !== '')
-                .map((filter, index) => (
-                  <Chip
-                    key={index}
-                    title={`${getFilterLabel(filter.type)}: ${getFilterValueLabel(filter.type, filter.value)}`}
-                    size="sm"
-                    buttonStyle={styles.filterChip}
-                    titleStyle={styles.filterChipText}
-                    onPress={() => removeFilter(filter)}
-                  />
-                ))}
-            </ScrollView>
-          </View>
-        )}
-        */}
-      </View>
-      {/* Renderuj kalendarz tylko gdy dane są załadowane */}
-      {!loading && tasks !== null && (
+      <View style={styles.orangeTopBorder} />
+
+      {/* ZAWARTOŚĆ - TYLKO KALENDARZ */}
+      {activeTab === 'calendar' && !loading && tasks !== null && (
         <>
+          {/* WIDOK DZIEŃ - pokazuje TYDZIEŃ z zaznaczonym dniem */}
           {viewMode === 'day' && (
-            <CalendarProvider date={currentDate} showTodayButton>
-              <>
-                {/* Timeline view dla dziennego widoku - zawsze wyświetlany */}
-                <View style={styles.timelineContainer}>
-                  {/* Header z tygodniem */}
-                  <View style={styles.weekHeader}>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.weekScrollContainer}
-                    >
-                      {getWeekDays(currentDate).map((day, index) => {
-                        const dayString = format(day, 'yyyy-MM-dd');
-                        const isSelected = dayString === currentDate;
-                        const isToday =
-                          dayString === format(new Date(), 'yyyy-MM-dd');
-                        const hasTask =
-                          eventTasks &&
-                          eventTasks[dayString] &&
-                          eventTasks[dayString].length > 0;
+            <View style={styles.dayViewContainer}>
+              {/* Tytuł: "Piątek, 9 Grudnia" */}
+              <View style={styles.dayViewHeader}>
+                <Text style={styles.dayViewDateText}>{headerTitle}</Text>
+              </View>
 
-                        return (
-                          <TouchableOpacity
-                            key={index}
-                            style={[
-                              styles.weekDay,
-                              isSelected && styles.weekDaySelected,
-                              isToday && !isSelected && styles.weekDayToday,
-                            ]}
-                            onPress={() => setCurrentDate(dayString)}
-                          >
-                            <Text
-                              style={[
-                                styles.weekDayName,
-                                isSelected && styles.weekDayNameSelected,
-                              ]}
-                            >
-                              {formatWeekDay(day)}
-                            </Text>
-                            <Text
-                              style={[
-                                styles.weekDayNumber,
-                                isSelected && styles.weekDayNumberSelected,
-                                hasTask &&
-                                !isSelected &&
-                                styles.weekDayNumberWithTask,
-                              ]}
-                            >
-                              {format(day, 'dd')}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
+              <Animated.View style={[styles.modeButtonsAnimated, animatedModeMenuStyle]}>
+
+              {/* PRZYCISKI TRYBU KALENDARZA */}
+              <View style={styles.modeButtonsContainer}>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('day')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'day' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'day' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M8.973 11H9.027" stroke="#fff" strokeWidth={4} strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M8.973 11H9.027" stroke="black" strokeWidth={4} strokeLinecap="round" />
+                    </Svg>}
                   </View>
+                  <Text style={styles.modeButtonText}>Dzień</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('week')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'week' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'week' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.4962 9.41667H11.5052" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M11.4962 13.5837H11.5052" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 9.41667H6.50383" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path
+  d="M6.49484 13.5837H6.50383"
+  stroke="black"
+  strokeWidth={2}
+  strokeLinecap="round"
+/>
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.4962 9.41667H11.5052" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M11.4962 13.5837H11.5052" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 9.41667H6.50383" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 13.5837H6.50383" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Tydzień</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('month')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'month' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'month' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="#fff" strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="black" strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Miesiąc</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('year')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'year' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'year' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="#fff" strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="black" strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Wybierz rok</Text>
+                </RNTouchableOpacity>
+              </View>
 
-                  {/* Timeline z godzinami */}
-                  <ScrollView style={styles.timelineScrollView}>
-                    {Array.from({ length: 24 }, (_, i) => i).map(hour => {
-                      // Znajdź zadania dla tej godziny (jeśli istnieją)
-                      const tasksAtHour =
-                        eventTasks && eventTasks[currentDate]
-                          ? eventTasks[currentDate].filter((task: any) => {
-                            // Sprawdź czy task.start jest prawidłowy
-                            if (
-                              !task.start ||
-                              isNaN(new Date(task.start).getTime())
-                            ) {
-                              console.warn(
-                                'Nieprawidłowa data zadania:',
-                                task,
-                              );
-                              return false;
-                            }
-                            const taskHour = new Date(task.start).getHours();
-                            return taskHour === hour;
-                          })
-                          : [];
+              </Animated.View>
+
+              <View style={styles.modeButtonsDivider} />
+
+
+              {/* Tydzień z datami - JEDEN DZIEŃ zaznaczony */}
+              <PanGestureHandler onHandlerStateChange={onSwipeDownGesture}>
+                <Animated.View>
+                  <View style={styles.dayStrip}>
+                    {getWeekDays(currentDate).map((day, index) => {
+                      const dayString = format(day, 'yyyy-MM-dd');
+                      const isSelected = dayString === currentDate;
 
                       return (
-                        <View key={hour} style={styles.timelineHour}>
-                          {/* Godzina po lewej */}
-                          <View style={styles.timelineHourLabel}>
-                            <Text style={styles.timelineHourText}>
-                              {hour}:00
-                            </Text>
-                          </View>
+                        <RNTouchableOpacity
+                          key={index}
+                          style={[
+                            styles.dayEllipse,
+                            isSelected && styles.dayEllipseActive,
+                          ]}
+                          onPress={() => {
+                            setCurrentDate(dayString);
+                            dispatch(setDateFilter(dayString));
+                            setValue('dateFilter', dayString);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.dayEllipseName,
+                              isSelected && styles.dayEllipseNameActive,
+                            ]}
+                          >
+                            {formatWeekDayShort(day)}.
+                          </Text>
 
-                          {/* Linia czasowa */}
-                          <View style={styles.timelineHourContent}>
-                            <View style={styles.timelineHourLine} />
+                          <Text
+                            style={[
+                              styles.dayEllipseNumber,
+                              isSelected && styles.dayEllipseNumberActive,
+                            ]}
+                          >
+                            {format(day, 'dd')}
+                          </Text>
+                        </RNTouchableOpacity>
 
-                            {/* Zadania w tej godzinie (jeśli istnieją) */}
-                            {tasksAtHour.map((task: any, index: number) => (
-                              <TouchableOpacity
-                                key={`${hour}-${index}`}
-                                style={[
-                                  styles.timelineTask,
-                                  { backgroundColor: `${task.color}20` },
-                                ]}
-                                onPress={() => {
-                                  const originalTask = tasks?.find(
-                                    t => t.id === task.id,
-                                  );
-                                  if (originalTask) {
-                                    (navigation as any).navigate(
-                                      'TaskDetails',
-                                      {
-                                        task: originalTask,
-                                      },
-                                    );
-                                  } else {
-                                    Alert.alert(
-                                      'Błąd',
-                                      'Nie znaleziono oryginalnego zadania',
-                                    );
-                                  }
-                                }}
-                              >
-                                <Text style={styles.timelineTaskTitle}>
-                                  {task.title}
-                                </Text>
-                                <Text style={styles.timelineTaskType}>
-                                  {task.type}
-                                </Text>
-                                <Text style={styles.timelineTaskTime}>
-                                  {task.start &&
-                                    !isNaN(new Date(task.start).getTime())
-                                    ? format(new Date(task.start), 'HH:mm')
-                                    : 'Brak czasu'}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        </View>
                       );
                     })}
-                  </ScrollView>
-                </View>
+                  </View>
 
-                {/* Zachowaj Timeline jako backup
-              <Timeline
-                styles={timelineProps.styles}
-                events={eventTasks[currentDate] || []}
-                showNowIndicator={false}
-                onEventPress={event => {
-                  (navigation as any).navigate('AddForm', { event });
-                  setCurrentDate(event.start);
-                  dispatch(setCalendarMode('day'));
-                }}
-              /> */}
-                {/* <WeekCalendar showScrollIndicator={false} />
-              <TimelineList
-                events={eventTasks}
-                timelineProps={timelineProps}
-                showNowIndicator={false}
-                initialTime={{ hour: 9, minutes: 0 }}
-              /> */}
-              </>
-            </CalendarProvider>
-          )}
-          {viewMode === 'week' && (
-            <View style={styles.weekViewContainer}>
-              {/* Wiersze z dniami tygodnia */}
-              <ScrollView style={styles.weekViewScroll}>
-                {getWeekDays(currentDate).map((day, dayIndex) => {
-                  const dayString = format(day, 'yyyy-MM-dd');
-                  const isToday =
-                    dayString === format(new Date(), 'yyyy-MM-dd');
-                  const dayName = formatWeekDay(day);
-                  const dayNumber = format(day, 'dd');
-                  const monthName = formatPolishMonth(day);
-                  const dayTasks =
-                    eventTasks && eventTasks[dayString]
-                      ? [...eventTasks[dayString]].sort((a: any, b: any) => {
-                        const timeA = a.start
-                          ? new Date(a.start).getTime()
-                          : 0;
-                        const timeB = b.start
-                          ? new Date(b.start).getTime()
-                          : 0;
-                        return timeA - timeB;
-                      })
-                      : [];
+                  <View style={styles.swipeHandleContainer}>
+                    <View style={styles.swipeHandle} />
+                  </View>
+                </Animated.View>
+              </PanGestureHandler>
 
-                  return (
-                    <View
-                      key={dayIndex}
-                      style={[
-                        styles.weekViewDayRow,
-                        isToday && styles.weekViewDayRowToday,
-                      ]}
-                    >
-                      {/* Header dnia */}
-                      <View style={styles.weekViewDayRowHeader}>
-                        <Text style={styles.weekViewDayName}>{dayName}</Text>
-                        <Text style={styles.weekViewDayNumber}>
-                          {dayNumber}
-                        </Text>
-                        <Text style={styles.weekViewDayMonth}>{monthName}</Text>
-                      </View>
-
-                      {/* Zadania dla tego dnia - poziomy scroll */}
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.weekViewDayTasksRow}
-                        contentContainerStyle={
-                          styles.weekViewDayTasksRowContent
-                        }
-                      >
-                        {dayTasks.length > 0 ? (
-                          dayTasks.map((task: Task, taskIndex: number) => (
-                            <TouchableOpacity
-                              key={task.id}
-                              style={styles.weekViewTaskItem}
-                              onPress={() => {
-                                const originalTask = tasks?.find(
-                                  t => t.id === task.id,
-                                );
-                                if (originalTask) {
-                                  (navigation as any).navigate('TaskDetails', {
-                                    task: originalTask,
-                                  });
-                                } else {
-                                  Alert.alert(
-                                    'Błąd',
-                                    'Nie znaleziono oryginalnego zadania',
-                                  );
-                                }
-                              }}
-                            >
-                              <View style={styles.weekViewTaskHeader}>
-                                <Text style={styles.weekViewTaskTime}>
-                                  {task.start &&
-                                    !Number.isNaN(new Date(task.start).getTime())
-                                    ? format(new Date(task.start), 'HH:mm')
-                                    : 'Brak czasu'}
-                                </Text>
-                                <Chip
-                                  title={task.type}
-                                  size="sm"
-                                  buttonStyle={styles.weekViewTaskTypeChip}
-                                  titleStyle={styles.weekViewTaskTypeText}
-                                />
-                              </View>
-                              <Text
-                                style={styles.weekViewTaskTitle}
-                                numberOfLines={2}
-                              >
-                                {task.title}
-                              </Text>
-                              {task.notatki && task.notatki.trim() !== '' && (
-                                <Text
-                                  style={styles.weekViewTaskNotes}
-                                  numberOfLines={2}
-                                >
-                                  {task.notatki}
-                                </Text>
-                              )}
-                            </TouchableOpacity>
-                          ))
-                        ) : (
-                          <View style={styles.weekViewEmptyDay}>
-                            <Text style={styles.weekViewEmptyDayText}>
-                              Brak zadań
-                            </Text>
-                          </View>
-                        )}
-                      </ScrollView>
-                    </View>
-                  );
-                })}
+              {/* Timeline z kolumnami ekip */}
+              <ScrollView style={styles.dayViewTimelineContainer}>
+                <DayTimeline
+                  currentDate={currentDate}
+                  eventTasks={eventTasks}
+                  tasks={tasks}
+                  teams={teams}
+                  navigation={navigation}
+                />
               </ScrollView>
             </View>
           )}
+
+          {/* WIDOK TYDZIEŃ - pokazuje TABELĘ z kolumnami ekip POZIOMO */}
+          {viewMode === 'week' && (
+            <View style={styles.weekViewContainer}>
+              {/* Tytuł z nawigacją: "14 - 20 Grudnia" */}
+              <View style={styles.weekHeaderWithNav}>
+
+                <Text style={styles.dayViewDateText}>{headerTitle}</Text>
+
+              </View>
+
+              {/* PRZYCISKI TRYBU KALENDARZA */}
+              <View style={styles.modeButtonsContainer}>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('day')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'day' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'day' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M8.973 11H9.027" stroke="#fff" strokeWidth={4} strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M8.973 11H9.027" stroke="black" strokeWidth={4} strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Dzień</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('week')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'week' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'week' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.4962 9.41667H11.5052" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M11.4962 13.5837H11.5052" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 9.41667H6.50383" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path
+  d="M6.49484 13.5837H6.50383"
+  stroke="black"
+  strokeWidth={2}
+  strokeLinecap="round"
+/>
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.4962 9.41667H11.5052" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M11.4962 13.5837H11.5052" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 9.41667H6.50383" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 13.5837H6.50383" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Tydzień</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('month')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'month' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'month' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="#fff" strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="black" strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Miesiąc</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('year')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'year' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'year' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="#fff" strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="black" strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Wybierz rok</Text>
+                </RNTouchableOpacity>
+              </View>
+
+              <View style={styles.modeButtonsDivider} />
+
+              {/* Kalendarz miesiąca z zaznaczonym tygodniem - ZWIJANY */}
+              <Animated.View style={animatedCalendarExpandStyle}>
+                <PanGestureHandler onHandlerStateChange={onSwipeGesture}>
+                  <Animated.View style={animatedCalendarStyle}>
+                    <Calendar
+                      current={currentDate}
+                      firstDay={1}
+                      hideArrows
+                      disableMonthChange
+                      markingType="period"
+                      markedDates={markedDates}
+                      onDayPress={(day) => {
+                        if (viewMode === 'week') {
+                          setCurrentDate(day.dateString);
+                          dispatch(setDateFilter(day.dateString));
+                          setValue('dateFilter', day.dateString);
+                        }
+                      }}
+                      theme={{
+                        todayTextColor: '#000',
+
+                        // 🔥 USUWAMY WSZYSTKO CO ROBI KÓŁKA
+                        selectedDayBackgroundColor: 'transparent',
+                        selectedDayTextColor: '#fff',
+                        todayBackgroundColor: 'transparent',
+
+                        textDayFontFamily: 'Poppins_400Regular',
+                        textDayHeaderFontFamily: 'Poppins_600SemiBold',
+                      }}
+                    />
+
+                  </Animated.View>
+                </PanGestureHandler>
+              </Animated.View>
+
+              {/* Szary pasek do chowania kalendarza - TERAZ POD KALENDARZEM */}
+              <PanGestureHandler onHandlerStateChange={onCalendarSwipeGesture}>
+                <Animated.View style={styles.swipeHandleContainer}>
+                  <View style={styles.swipeHandle} />
+                </Animated.View>
+              </PanGestureHandler>
+
+              {/* TABELA Z KOLUMNAMI EKIP */}
+              <ScrollView style={styles.weekTableContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.weekTable}>
+                    {/* Nagłówek tabeli z nazwami ekip */}
+                    {(() => {
+                      // Zbierz wszystkie ekipy z całego tygodnia
+                      const weekDays = getWeekDays(currentDate);
+                      const allTeamIds = new Set<string>();
+
+                      weekDays.forEach(day => {
+                        const dateString = format(day, 'yyyy-MM-dd');
+                        const dayTasks = eventTasks?.[dateString] || [];
+                        dayTasks.forEach((task: any) => {
+                          const originalTask = tasks?.find(t => t.id === task.id);
+                          const teamId = originalTask?.grupa?.toString() || 'unassigned';
+                          allTeamIds.add(teamId);
+                        });
+                      });
+
+                      const teamIds = Array.from(allTeamIds).sort((a, b) => {
+                        if (a === 'unassigned') return 1;
+                        if (b === 'unassigned') return -1;
+                        return parseInt(a) - parseInt(b);
+                      });
+
+                      const teamColors: Record<string, string> = {};
+                      teamIds.forEach((id, index) => {
+                        teamColors[id] = TEAM_COLORS[index % TEAM_COLORS.length];
+                      });
+
+                      const getTeamName = (teamId: string) => {
+                        const team = teams?.find(t => t.id.toString() === teamId);
+                        if (team) return team.nazwa;
+                        if (teamId === 'unassigned') return 'Nieprzydzielone';
+                        return `Ekipa ${teamId}`;
+                      };
+
+                      return (
+                        <>
+                          <View style={styles.weekTableHeaderRow}>
+                            <View style={styles.weekTableDateColumn} />
+                            {teamIds.map(teamId => (
+                              <View key={teamId} style={styles.weekTableTeamColumn}>
+                                <Text style={[styles.weekTableTeamHeader, { color: teamColors[teamId] }]}>
+                                  {getTeamName(teamId)}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+
+                          {/* Wiersze dla każdego dnia */}
+                          {weekDays.map(day => {
+                            const dateString = format(day, 'yyyy-MM-dd');
+                            const date = new Date(dateString);
+                            const dayName = formatWeekDay(date);
+                            const isToday = dateString === format(new Date(), 'yyyy-MM-dd');
+
+                            // Grupuj zadania według ekip dla tego dnia
+                            const dayTasks = eventTasks?.[dateString] || [];
+                            const tasksByTeam: Record<string, any[]> = {};
+
+                            dayTasks.forEach((task: any) => {
+                              const originalTask = tasks?.find(t => t.id === task.id);
+                              const teamId = originalTask?.grupa?.toString() || 'unassigned';
+                              if (!tasksByTeam[teamId]) {
+                                tasksByTeam[teamId] = [];
+                              }
+                              tasksByTeam[teamId].push(task);
+                            });
+
+                            return (
+                              <View key={dateString} style={styles.weekTableRow}>
+                                {/* Kolumna z datą */}
+                                <View style={styles.weekTableDateCell}>
+                                  <Text style={[styles.weekTableDayName, isToday && styles.weekTableDayNameToday]}>
+                                    {dayName}
+                                  </Text>
+                                  <Text style={[styles.weekTableDate, isToday && styles.weekTableDateToday]}>
+                                    {format(date, 'dd.MM.yyyy')}
+                                  </Text>
+                                </View>
+
+                                {/* Kolumny z zadaniami dla każdej ekipy */}
+                                {teamIds.map(teamId => {
+                                  const teamTasks = tasksByTeam[teamId] || [];
+                                  const teamColor = teamColors[teamId];
+
+                                  return (
+                                    <View key={teamId} style={styles.weekTableTaskCell}>
+                                      {teamTasks.map((task, index) => {
+                                        const originalTask = tasks?.find(t => t.id === task.id);
+                                        return (
+                                          <RNTouchableOpacity
+                                            key={task.id || index}
+                                            style={[styles.weekTableTaskCard, { backgroundColor: teamColor, borderLeftColor: darkenColor(teamColor) }]}
+                                            onPress={() => {
+                                              if (originalTask) {
+                                                navigation.navigate('TaskDetails', { task: originalTask });
+                                              }
+                                            }}
+                                          >
+                                            <Text style={styles.weekTableTaskType}>{task.type}</Text>
+                                            <Text style={styles.weekTableTaskTitle} numberOfLines={1}>
+                                              {task.title}
+                                            </Text>
+                                          </RNTouchableOpacity>
+                                        );
+                                      })}
+                                    </View>
+                                  );
+                                })}
+                              </View>
+                            );
+                          })}
+                        </>
+                      );
+                    })()}
+                  </View>
+                </ScrollView>
+              </ScrollView>
+            </View>
+          )}
+
+          {/* WIDOK MIESIĄC - pokazuje TABELĘ z kolumnami ekip POZIOMO */}
           {viewMode === 'month' && (
             <View style={styles.monthlyCalendarContainer}>
-              {/* Tytuł miesiąca - bez przycisków nawigacji */}
+              {/* Tytuł: "Grudzień 2025" */}
               <View style={styles.monthNavigation}>
                 <Animated.Text
                   style={[styles.monthTitle, animatedCalendarStyle]}
                 >
-                  {formatPolishDate(new Date(currentDate))}
+                  {headerTitle}
                 </Animated.Text>
               </View>
 
-              <PanGestureHandler onHandlerStateChange={onSwipeGesture}>
-                <Animated.View style={animatedCalendarStyle}>
-                  <Calendar
-                    key={format(new Date(currentDate), 'yyyy-MM')} // Wymusza re-render przy zmianie miesiąca
-                    current={currentDate}
-                    minDate="2020-01-01"
-                    maxDate="2030-12-31"
-                    markedDates={markedDates}
-                    onDayPress={(day: any) => {
-                      setCurrentDate(day.dateString);
-                      dispatch(setCalendarMode('day'));
-                    }}
-                    theme={{
-                      todayTextColor: Colors.white,
-                      todayBackgroundColor: Colors.calendarPrimary,
-                      selectedDayBackgroundColor: Colors.calendarTimelineTask,
-                      arrowColor: 'transparent', // Ukrywamy strzałki bo mamy własne
-                      monthTextColor: 'transparent', // Ukrywamy tytuł bo mamy własny
-                      textDayFontFamily: 'Poppins_400Regular',
-                      textMonthFontFamily: 'Poppins_600SemiBold',
-                      textDayHeaderFontFamily: 'Poppins_600SemiBold',
-                      weekVerticalMargin: 1,
-                    }}
-                    firstDay={1}
-                    hideArrows
-                    disableMonthChange
-                  />
+              {/* PRZYCISKI TRYBU KALENDARZA */}
+              <View style={styles.modeButtonsContainer}>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('day')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'day' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'day' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M8.973 11H9.027" stroke="#fff" strokeWidth={4} strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M8.973 11H9.027" stroke="black" strokeWidth={4} strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Dzień</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('week')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'week' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'week' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.4962 9.41667H11.5052" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M11.4962 13.5837H11.5052" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 9.41667H6.50383" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path
+  d="M6.49484 13.5837H6.50383"
+  stroke="black"
+  strokeWidth={2}
+  strokeLinecap="round"
+/>
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.4962 9.41667H11.5052" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M11.4962 13.5837H11.5052" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 9.41667H6.50383" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 13.5837H6.50383" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Tydzień</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('month')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'month' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'month' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="#fff" strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="black" strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Miesiąc</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('year')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'year' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'year' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="#fff" strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="black" strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Wybierz rok</Text>
+                </RNTouchableOpacity>
+              </View>
+
+              <View style={styles.modeButtonsDivider} />
+
+              {/* Kalendarz miesiąca z zaznaczonym dniem - ZWIJANY */}
+              <Animated.View style={animatedCalendarExpandStyle}>
+                <PanGestureHandler onHandlerStateChange={onSwipeGesture}>
+                  <Animated.View style={animatedCalendarStyle}>
+                    <Calendar
+                      key={format(new Date(currentDate), 'yyyy-MM')}
+                      current={currentDate}
+                      minDate="2020-01-01"
+                      maxDate="2030-12-31"
+                      markedDates={markedDates}
+                      onDayPress={(day: any) => {
+                        setCurrentDate(day.dateString);
+                        dispatch(setDateFilter(day.dateString));
+                        setValue('dateFilter', day.dateString);
+                      }}
+                      theme={{
+                        todayTextColor: Colors.white,
+                        todayBackgroundColor: Colors.calendarPrimary,
+                        selectedDayBackgroundColor: Colors.calendarPrimary,
+                        selectedDayTextColor: Colors.white,
+                        arrowColor: 'transparent',
+                        monthTextColor: 'transparent',
+                        textDayFontFamily: 'Poppins_400Regular',
+                        textMonthFontFamily: 'Poppins_600SemiBold',
+                        textDayHeaderFontFamily: 'Poppins_600SemiBold',
+                        weekVerticalMargin: 1,
+                      }}
+                      firstDay={1}
+                      hideArrows
+                      disableMonthChange
+                    />
+                  </Animated.View>
+                </PanGestureHandler>
+              </Animated.View>
+
+              {/* Szary pasek do chowania kalendarza - TERAZ POD KALENDARZEM */}
+              <PanGestureHandler onHandlerStateChange={onCalendarSwipeGesture}>
+                <Animated.View style={styles.swipeHandleContainer}>
+                  <View style={styles.swipeHandle} />
                 </Animated.View>
               </PanGestureHandler>
+
+              {/* TABELA Z KOLUMNAMI EKIP */}
+              <ScrollView style={styles.monthTableContainer}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={styles.monthTable}>
+                    {/* Nagłówek tabeli z nazwami ekip */}
+                    {(() => {
+                      // Zbierz wszystkie ekipy z całego miesiąca
+                      const allTeamIds = new Set<string>();
+                      const daysWithTasks = Object.keys(eventTasks || {}).sort();
+
+                      daysWithTasks.forEach(dateString => {
+                        const dayTasks = eventTasks?.[dateString] || [];
+                        dayTasks.forEach((task: any) => {
+                          const originalTask = tasks?.find(t => t.id === task.id);
+                          const teamId = originalTask?.grupa?.toString() || 'unassigned';
+                          allTeamIds.add(teamId);
+                        });
+                      });
+
+                      const teamIds = Array.from(allTeamIds).sort((a, b) => {
+                        if (a === 'unassigned') return 1;
+                        if (b === 'unassigned') return -1;
+                        return parseInt(a) - parseInt(b);
+                      });
+
+                      const teamColors: Record<string, string> = {};
+                      teamIds.forEach((id, index) => {
+                        teamColors[id] = TEAM_COLORS[index % TEAM_COLORS.length];
+                      });
+
+                      const getTeamName = (teamId: string) => {
+                        const team = teams?.find(t => t.id.toString() === teamId);
+                        if (team) return team.nazwa;
+                        if (teamId === 'unassigned') return 'Nieprzydzielone';
+                        return `Ekipa ${teamId}`;
+                      };
+
+                      if (teamIds.length === 0) {
+                        return (
+                          <View style={styles.emptyTimelineContainer}>
+                            <Text style={styles.emptyTimelineText}>Brak zadań w tym miesiącu</Text>
+                          </View>
+                        );
+                      }
+
+                      return (
+                        <>
+                          <View style={styles.monthTableHeaderRow}>
+                            <View style={styles.monthTableDateColumn} />
+                            {teamIds.map(teamId => (
+                              <View key={teamId} style={styles.monthTableTeamColumn}>
+                                <Text style={[styles.monthTableTeamHeader, { color: teamColors[teamId] }]}>
+                                  {getTeamName(teamId)}
+                                </Text>
+                              </View>
+                            ))}
+                          </View>
+
+                          {/* Wiersze dla każdego dnia z zadaniami */}
+                          {daysWithTasks.map(dateString => {
+                            const date = new Date(dateString);
+                            const dayName = formatWeekDay(date);
+                            const isToday = dateString === format(new Date(), 'yyyy-MM-dd');
+
+                            // Grupuj zadania według ekip dla tego dnia
+                            const dayTasks = eventTasks?.[dateString] || [];
+                            const tasksByTeam: Record<string, any[]> = {};
+
+                            dayTasks.forEach((task: any) => {
+                              const originalTask = tasks?.find(t => t.id === task.id);
+                              const teamId = originalTask?.grupa?.toString() || 'unassigned';
+                              if (!tasksByTeam[teamId]) {
+                                tasksByTeam[teamId] = [];
+                              }
+                              tasksByTeam[teamId].push(task);
+                            });
+
+                            return (
+                              <View key={dateString} style={styles.monthTableRow}>
+                                {/* Kolumna z datą */}
+                                <View style={[styles.monthTableDateCell, isToday && styles.monthTableDateCellToday]}>
+                                  <Text style={[styles.monthTableDayName, isToday && styles.monthTableDayNameToday]}>
+                                    {dayName}
+                                  </Text>
+                                  <Text style={[styles.monthTableDate, isToday && styles.monthTableDateToday]}>
+                                    {format(date, 'dd.MM.yyyy')}
+                                  </Text>
+                                </View>
+
+                                {/* Kolumny z zadaniami dla każdej ekipy */}
+                                {teamIds.map(teamId => {
+                                  const teamTasks = tasksByTeam[teamId] || [];
+                                  const teamColor = teamColors[teamId];
+
+                                  return (
+                                    <View key={teamId} style={styles.monthTableTaskCell}>
+                                      {teamTasks.map((task, index) => {
+                                        const originalTask = tasks?.find(t => t.id === task.id);
+                                        return (
+                                          <RNTouchableOpacity
+                                            key={task.id || index}
+                                            style={[styles.monthTableTaskCard, { backgroundColor: teamColor, borderLeftColor: darkenColor(teamColor) }]}
+                                            onPress={() => {
+                                              if (originalTask) {
+                                                navigation.navigate('TaskDetails', { task: originalTask });
+                                              }
+                                            }}
+                                          >
+                                            <Text style={styles.monthTableTaskType}>{task.type}</Text>
+                                            <Text style={styles.monthTableTaskTitle} numberOfLines={1}>
+                                              {task.title}
+                                            </Text>
+                                          </RNTouchableOpacity>
+                                        );
+                                      })}
+                                    </View>
+                                  );
+                                })}
+                              </View>
+                            );
+                          })}
+                        </>
+                      );
+                    })()}
+                  </View>
+                </ScrollView>
+              </ScrollView>
             </View>
           )}
+
+          {/* WIDOK ROK - pokazuje WIDOK ROCZNY ze wszystkimi miesiącami */}
+          {viewMode === 'year' && (
+            <ScrollView style={{ flex: 1, backgroundColor: Colors.white }}>
+              <Text style={styles.yearLabel}>
+                {format(new Date(currentDate), 'yyyy')}
+              </Text>
+
+              <View style={styles.modeButtonsContainer}>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('day')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'day' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'day' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M8.973 11H9.027" stroke="#fff" strokeWidth={4} strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M8.973 11H9.027" stroke="black" strokeWidth={4} strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Dzień</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('week')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'week' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'week' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.4962 9.41667H11.5052" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M11.4962 13.5837H11.5052" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 9.41667H6.50383" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
+                      <Path
+                        d="M6.49484 13.5837H6.50383"
+                        stroke="black"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                      />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.4962 9.41667H11.5052" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M11.4962 13.5837H11.5052" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 9.41667H6.50383" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                      <Path d="M6.49484 13.5837H6.50383" stroke="black" strokeWidth={2} strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Tydzień</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('month')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'month' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'month' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="#fff" strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="black" strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Miesiąc</Text>
+                </RNTouchableOpacity>
+                <RNTouchableOpacity
+                  style={styles.modeButton}
+                  onPress={() => handleCalendarModeChange('year')}
+                >
+                  <View style={[styles.modeButtonCircle, viewMode === 'year' && styles.modeButtonCircleActive]}>
+                    {viewMode === 'year' ? <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="#fff" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="#fff"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="#fff" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="#fff" strokeLinecap="round" />
+                    </Svg> : <Svg width={26} height={26} viewBox="0 0 18 18" fill="none">
+                      <Path d="M6 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M12 1.5V3.75" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path d="M2.625 6.81738H15.375" stroke="black" strokeLinecap="round" strokeLinejoin="round" />
+                      <Path
+                        d="M15.75 12.75C15.75 15 14.625 16.5 12 16.5H6C3.375 16.5 2.25 15 2.25 12.75V6.375C2.25 4.125 3.375 2.625 6 2.625H12C14.625 2.625 15.75 4.125 15.75 6.375V12.75Z"
+                        stroke="black"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Path d="M11.771 10.2754H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M11.771 12.5254H11.7778" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 10.2754H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M8.99661 12.5254H9.00335" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 10.2754H6.22747" stroke="black" strokeLinecap="round" />
+                      <Path d="M6.22073 12.5254H6.22747" stroke="black" strokeLinecap="round" />
+                    </Svg>}
+                  </View>
+                  <Text style={styles.modeButtonText}>Wybierz rok</Text>
+                </RNTouchableOpacity>
+              </View>
+
+              <View style={styles.modeButtonsDivider} />
+
+              <View style={styles.yearGrid}>
+                {Array.from({ length: 12 }, (_, monthIndex) => {
+                  const year = new Date(currentDate).getFullYear();
+                  const monthDate = new Date(year, monthIndex, 1);
+
+                  return (
+                    <View key={monthIndex} style={styles.yearMonthCell}>
+                      {/* NAZWA MIESIĄCA */}
+                      <Text style={styles.yearMonthTitle}>
+                        {formatPolishMonthNominative(monthDate)}
+                      </Text>
+
+
+
+                      {/* MINI KALENDARZ */}
+                      <Calendar
+                        current={format(monthDate, 'yyyy-MM-dd')}
+                        hideArrows
+                        hideExtraDays
+                        disableMonthChange
+                        firstDay={1}
+                        onDayPress={(day) => {
+                          setCurrentDate(day.dateString);
+                          dispatch(setCalendarMode('day'));
+                          dispatch(setDateFilter(day.dateString));
+                          setValue('dateFilter', day.dateString);
+                        }}
+                        theme={{
+                          'stylesheet.calendar.header': {
+                            header: { height: 0 },
+                            dayHeader: { height: 0, opacity: 0 },
+                            week: { marginTop: 0 },
+                          },
+
+                          'stylesheet.day.basic': {
+                            base: {
+                              height: 16,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            },
+                          },
+
+                          textDayFontFamily: 'Poppins_400Regular',
+                          textDayFontSize: 11,
+                          todayTextColor: Colors.calendarPrimary,
+                          selectedDayBackgroundColor: Colors.calendarPrimary,
+                          selectedDayTextColor: '#fff',
+                        }}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          )}
+
         </>
       )}
+
+      {/* ZAWARTOŚĆ - HARMONOGRAM - USUNIĘTE (teraz tylko calendar i tasks) */}
+
       <CalendarFiltersModal
         visible={calendarFiltersVisible}
         onClose={() => {
           setCalendarFiltersVisible(false);
         }}
-        onFilterPress={() => { }} // Redux actions są już wywoływane w handleSubmit
+        onFilterPress={() => {}}
         filters={baseFilters}
         control={control}
         calendarType={viewMode}
         setValue={setValue}
       />
-      {/* Spinner widoczny tylko podczas ładowania danych */}
+
       <Spinner
         visible={loading || tasks === null}
         textContent="Ładowanie zadań..."
@@ -1517,10 +2793,285 @@ function CalendarTab({ appliedFilters, setAppliedFilters }: CalendarTabProps) {
 
 export default CalendarTab;
 
+// ===== STYLE =====
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  // GŁÓWNY NAGŁÓWEK
+  mainHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  backButton: {
+    padding: 8,
+  },
+  backButtonText: {
+    fontSize: 32,
+    color: Colors.black,
+    fontWeight: '300',
+  },
+  mainHeaderTitle: {
+    fontSize: 18,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+  },
+  swipeHandleContainer: {
+    alignItems: 'center',
+    paddingVertical: 6,
+    backgroundColor: Colors.white,
+  },
+  swipeHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#c0c0c0',
+  },
+  filterButton: {
+    padding: 8,
+  },
+  filterButtonText: {
+    fontSize: 24,
+    color: Colors.black,
+  },
+  // PRZYCISKI TRYBU KALENDARZA
+  modeButtonsContainer: {
+    flexDirection: 'row',
+    gap: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: Colors.white,
+    justifyContent: 'space-around',
+  },
+  modeButton: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modeButtonCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeButtonCircleActive: {
+    backgroundColor: Colors.calendarPrimary,
+  },
+  modeButtonIcon: {
+    fontSize: 28,
+    color: '#666',
+  },
+  modeButtonIconActive: {
+    color: Colors.white,
+  },
+  modeButtonText: {
+    fontSize: 13,
+    fontFamily: 'Poppins_500Medium',
+    color: '#000',
+  },
+  // ZAKŁADKI
+  tabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: Colors.white,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  tabActive: {},
+  tabText: {
+    fontSize: 14,
+    fontFamily: 'Poppins_400Regular',
+    color: '#666',
+  },
+  tabTextActive: {
+    color: Colors.black,
+    fontFamily: 'Poppins_600SemiBold',
+  },
+  tabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#FF6B35',
+  },
+  // TYDZIEŃ - NOWE STYLE
+  newWeekHeader: {
+    backgroundColor: Colors.white,
+    paddingTop: 4,
+    paddingBottom: 2,
+  },
+  newWeekRowContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: 12,
+  },
+  newWeekDay: {
+    flex: 1,                 // ❗ RÓWNE SEGMENTY
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  newWeekDayName: {
+    fontSize: 11,
+    color: '#999',
+    fontFamily: 'Poppins_400Regular',
+  },
+  newWeekDayNameSelected: {
+    color: Colors.white,
+    fontFamily: 'Poppins_600SemiBold',
+  },
+  newWeekDayCircle: {
+    width: 40,
+    height: 52,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  newWeekDayCircleSelected: {
+    backgroundColor: Colors.calendarPrimary,
+  },
+  newWeekDayNumber: {
+    fontSize: 16,
+    color: Colors.black,
+    fontFamily: 'Poppins_400Regular',
+  },
+  newWeekDayNumberSelected: {
+    color: Colors.white,
+    fontFamily: 'Poppins_600SemiBold',
+  },
+  // TIMELINE Z KOLUMNAMI
+  columnTimelineContainer: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    minWidth: '100%',
+  },
+  horizontalScrollContent: {
+    flexGrow: 1,
+  },
+  timelineHeaderRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 2,
+    borderBottomColor: '#d0d0d0',
+    backgroundColor: Colors.white,
+  },
+  timeColumnHeader: {
+    width: 70,
+    height: 50,
+  },
+  ekipaColumnHeader: {
+    width: 150,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+    borderBottomWidth: 0,
+    borderRightWidth: 0,
+  },
+  ekipaColumnHeaderSimple: {
+    width: 150,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+    borderBottomWidth: 0,
+    borderRightWidth: 0,
+  },
+  ekipaHeaderText: {
+    fontSize: 12,
+    fontFamily: 'Poppins_600SemiBold',
+  },
+  columnTimelineRow: {
+    flexDirection: 'row',
+    minHeight: 80,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  simpleTimelineRow: {
+    flexDirection: 'row',
+    minHeight: 100,
+  },
+  columnTimeCell: {
+    width: 70,
+    paddingTop: 8,
+    paddingLeft: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#d0d0d0',
+  },
+  columnTimeText: {
+    fontSize: 12,
+    color: '#666',
+    fontFamily: 'Poppins_400Regular',
+  },
+  ekipaTaskColumn: {
+    width: 150,
+    padding: 8,
+    gap: 8,
+    borderRightWidth: 1,
+    borderRightColor: '#e0e0e0',
+    backgroundColor: '#f8f8f8',
+  },
+  ekipaTaskColumnSimple: {
+    width: 150,
+    padding: 8,
+    gap: 8,
+    borderRightWidth: 1,
+    borderRightColor: '#e0e0e0',
+    backgroundColor: '#f8f8f8',
+  },
+  // KARTY ZADAŃ
+  columnTaskCard: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderLeftWidth: 4,
+  },
+  columnTaskType: {
+    fontSize: 10,
+    fontFamily: 'Poppins_600SemiBold',
+    color: '#000',
+    backgroundColor: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  columnTaskTitle: {
+    fontSize: 10,
+    fontFamily: 'Poppins_400Regular',
+    color: '#000',
+    flex: 1,
+  },
+  groupedTaskCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.9,
+  },
+  groupedTaskText: {
+    fontSize: 10,
+    fontFamily: 'Poppins_600SemiBold',
+    color: '#000',
+    textAlign: 'center',
+  },
+  // POZOSTAŁE STYLE
   eventRight: {
     marginLeft: 'auto',
   },
@@ -1541,21 +3092,6 @@ const styles = StyleSheet.create({
   eventStatusChip: {
     padding: 0,
     marginTop: 5,
-  },
-  buttonsHeader: {
-    display: 'flex',
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  calendarHeader: {
-    display: 'flex',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingRight: 10,
-  },
-  calendarModeDropdown: {
-    minWidth: 150,
   },
   modalContent: {
     backgroundColor: Colors.white,
@@ -1596,9 +3132,10 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontWeight: 'bold',
   },
+  // WIDOK MIESIĄC
   monthlyCalendarContainer: {
+    flex: 1,
     backgroundColor: Colors.white,
-    paddingHorizontal: 10,
   },
   monthNavigation: {
     justifyContent: 'center',
@@ -1612,375 +3149,50 @@ const styles = StyleSheet.create({
     color: Colors.black,
     fontFamily: 'Poppins_600SemiBold',
   },
-  // Style dla widoku dziennego
-  dailyTasksContainer: {
+  dayViewContainer: {
     flex: 1,
     backgroundColor: Colors.white,
-    paddingHorizontal: 15,
-    paddingTop: 20,
   },
-  dailyTasksTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: Colors.black,
-    marginBottom: 15,
-    fontFamily: 'Poppins_600SemiBold',
+  dayViewHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 4,
+    backgroundColor: Colors.white,
   },
-  tasksList: {
-    flex: 1,
-  },
-  taskItem: {
+  weekHeaderWithNav: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 4,
     backgroundColor: Colors.white,
-    borderRadius: 10,
-    padding: 15,
-    marginVertical: 5,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
-  taskContent: {
-    flex: 1,
-    paddingRight: 10,
+
+  orangeTopBorder: {
+    height: 2,
+    backgroundColor: Colors.calendarPrimary,
+    width: '100%',
   },
-  taskTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: Colors.black,
-    fontFamily: 'Poppins_400Regular',
-  },
-  taskNotes: {
-    fontSize: 14,
-    color: Colors.grayText,
-    marginTop: 5,
-    fontStyle: 'italic',
-  },
-  taskTime: {
-    fontSize: 12,
-    color: Colors.calendarPrimary,
-    marginTop: 5,
-    fontWeight: 'bold',
-  },
-  taskStatusChip: {
-    padding: 5,
-    borderRadius: 15,
-  },
-  taskStatusTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  noTasksContainer: {
-    flex: 1,
+  weekNavButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.white,
   },
-  noTasksText: {
-    fontSize: 16,
-    color: Colors.grayText,
-    textAlign: 'center',
-    fontFamily: 'Poppins_400Regular',
+  weekNavArrow: {
+    fontSize: 32,
+    color: Colors.calendarPrimary,
+    fontWeight: '300',
   },
-  // Style dla timeline view
-  timelineContainer: {
-    flex: 1,
-    backgroundColor: Colors.white,
-  },
-  timelineHeader: {
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: `${Colors.gray}30`,
-    backgroundColor: Colors.white,
-  },
-  timelineDate: {
+  dayViewDateText: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: Colors.black,
-    textAlign: 'center',
-    fontFamily: 'Poppins_600SemiBold',
-  },
-  timelineScrollView: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  timelineHour: {
-    flexDirection: 'row',
-    minHeight: 60,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
-  },
-  timelineHourLabel: {
-    width: 60,
-    paddingTop: 8,
-    paddingLeft: 15,
-    backgroundColor: Colors.white,
-  },
-  timelineHourText: {
-    fontSize: 14,
-    color: Colors.grayText,
-    fontFamily: 'Poppins_400Regular',
-  },
-  timelineHourContent: {
-    flex: 1,
-    paddingLeft: 15,
-    paddingRight: 15,
-    paddingTop: 5,
-    position: 'relative',
-  },
-  timelineHourLine: {
-    position: 'absolute',
-    top: 16,
-    left: 0,
-    right: 15,
-    height: 1,
-    backgroundColor: '#e9ecef',
-  },
-  timelineTask: {
-    backgroundColor: `${Colors.calendarPrimary}20`,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    marginTop: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.calendarPrimary,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  timelineTaskTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: Colors.black,
-    fontFamily: 'Poppins_600SemiBold',
-    marginBottom: 4,
-  },
-  timelineTaskType: {
-    fontSize: 12,
-    color: Colors.calendarPrimary,
-    fontFamily: 'Poppins_400Regular',
-    textTransform: 'uppercase',
-    marginBottom: 2,
-  },
-  timelineTaskTime: {
-    fontSize: 12,
-    color: Colors.grayText,
-    fontFamily: 'Poppins_400Regular',
-  },
-  // Style dla widoku tygodnia
-  weekHeader: {
-    backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: `${Colors.gray}30`,
-    paddingVertical: 10,
-  },
-  weekScrollContainer: {
-    paddingHorizontal: 15,
-    alignItems: 'center',
-  },
-  weekDay: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginHorizontal: 4,
-    borderRadius: 20,
-    minWidth: 50,
-  },
-  weekDaySelected: {
-    backgroundColor: Colors.calendarPrimary,
-  },
-  weekDayToday: {
-    backgroundColor: `${Colors.calendarPrimary}20`,
-  },
-  weekDayName: {
-    fontSize: 12,
-    color: Colors.grayText,
-    fontFamily: 'Poppins_400Regular',
-    marginBottom: 4,
-  },
-  weekDayNameSelected: {
-    color: Colors.white,
-    fontWeight: 'bold',
-  },
-  weekDayNumber: {
-    fontSize: 16,
-    color: Colors.black,
-    fontFamily: 'Poppins_600SemiBold',
-  },
-  weekDayNumberSelected: {
-    color: Colors.white,
-  },
-  weekDayNumberWithTask: {
-    color: Colors.calendarPrimary,
-    fontWeight: 'bold',
-  },
-  filtersContainer: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  filtersScrollContainer: {
-    paddingRight: 10,
-  },
-  filterChip: {
-    backgroundColor: Colors.calendarPrimary,
-    marginRight: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  filterChipText: {
-    color: Colors.white,
-    fontSize: 12,
-    fontFamily: 'Poppins_400Regular',
-  },
-  loadingText: {
-    fontSize: 14,
-    color: Colors.grayText,
-    fontFamily: 'Poppins_400Regular',
-    textAlign: 'center',
-    marginTop: 5,
-  },
-  weekTimelineHour: {
-    flexDirection: 'row',
-    minHeight: 60,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
-  },
-  weekTimelineDaysContainer: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  weekTimelineDayColumn: {
-    flex: 1,
-    paddingLeft: 5,
-    paddingRight: 5,
-    paddingTop: 5,
-    position: 'relative',
-    borderRightWidth: 1,
-    borderRightColor: '#e9ecef',
-  },
-  // Style dla nowego widoku tygodnia (dni jako wiersze)
-  weekViewContainer: {
-    flex: 1,
-    backgroundColor: Colors.white,
-  },
-  weekViewScroll: {
-    flex: 1,
-  },
-  weekViewDayRow: {
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
-    backgroundColor: Colors.white,
-  },
-  weekViewDayRowToday: {
-    backgroundColor: `${Colors.calendarPrimary}10`,
-  },
-  weekViewDayRowHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
-    backgroundColor: Colors.white,
-    gap: 8,
-  },
-  weekViewDayName: {
-    fontSize: 14,
     fontFamily: 'Poppins_600SemiBold',
     color: Colors.black,
   },
-  weekViewDayNumber: {
-    fontSize: 14,
-    fontFamily: 'Poppins_600SemiBold',
-    color: Colors.black,
-  },
-  weekViewDayMonth: {
-    fontSize: 12,
-    fontFamily: 'Poppins_400Regular',
-    color: Colors.grayText,
-    textTransform: 'capitalize',
-  },
-  weekViewDayTasksRow: {
+  dayViewTimelineContainer: {
     flex: 1,
-  },
-  weekViewDayTasksRowContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  weekViewTaskItem: {
     backgroundColor: Colors.white,
-    borderRadius: 8,
-    padding: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.calendarPrimary,
-    minWidth: 200,
-    maxWidth: 250,
-    shadowColor: Colors.black,
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  weekViewTaskHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  weekViewTaskTime: {
-    fontSize: 12,
-    fontFamily: 'Poppins_600SemiBold',
-    color: Colors.black,
-  },
-  weekViewTaskTypeChip: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    backgroundColor: Colors.white,
-  },
-  weekViewTaskTypeText: {
-    fontSize: 9,
-    fontFamily: 'Poppins_600SemiBold',
-    color: Colors.calendarPrimary,
-  },
-  weekViewTaskTitle: {
-    fontSize: 12,
-    fontFamily: 'Poppins_600SemiBold',
-    color: Colors.black,
-    marginBottom: 2,
-  },
-  weekViewTaskNotes: {
-    fontSize: 11,
-    fontFamily: 'Poppins_400Regular',
-    color: Colors.grayText,
-    fontStyle: 'italic',
-    marginTop: 2,
-  },
-  weekViewEmptyDay: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  weekViewEmptyDayText: {
-    fontSize: 12,
-    fontFamily: 'Poppins_400Regular',
-    color: Colors.grayText,
   },
   calendarFilterInput: {
     borderWidth: 1,
@@ -1993,5 +3205,422 @@ const styles = StyleSheet.create({
     fontFamily: 'Archivo_400Regular',
     fontSize: 14,
     color: Colors.black,
+  },
+  monthEventsListContainer: {
+    flex: 1,
+    backgroundColor: Colors.white,
+    paddingTop: 10,
+  },
+  // TABELA MIESIĄCA
+  monthTableContainer: {
+    flex: 1,
+    backgroundColor: Colors.white,
+  },
+  monthTable: {
+    flex: 1,
+  },
+  monthTableHeaderRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#d0d0d0',
+    backgroundColor: '#fff',
+  },
+  monthTableDateColumn: {
+    width: 120,
+    padding: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#d0d0d0',
+  },
+  monthTableTeamColumn: {
+    width: 150,
+    padding: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#d0d0d0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  monthTableTeamHeader: {
+    fontSize: 13,
+    fontFamily: 'Poppins_600SemiBold',
+    textAlign: 'center',
+  },
+  monthTableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    minHeight: 80,
+  },
+  monthTableDateCell: {
+    width: 120,
+    padding: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#d0d0d0',
+    justifyContent: 'center',
+  },
+  monthTableDateCellToday: {
+    backgroundColor: '#fff5f5',
+  },
+  monthTableDayName: {
+    fontSize: 13,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+  },
+  monthTableDayNameToday: {
+    color: Colors.calendarPrimary,
+  },
+  monthTableDate: {
+    fontSize: 11,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.grayText,
+    marginTop: 2,
+  },
+  monthTableDateToday: {
+    color: Colors.calendarPrimary,
+  },
+  monthTableTaskCell: {
+    width: 150,
+    padding: 8,
+    gap: 6,
+    borderRightWidth: 1,
+    borderRightColor: '#e0e0e0',
+    backgroundColor: '#fafafa',
+  },
+  monthTableTaskCard: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderLeftWidth: 4,
+  },
+  monthTableTaskType: {
+    fontSize: 10,
+    fontFamily: 'Poppins_600SemiBold',
+    color: '#000',
+    backgroundColor: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  monthTableTaskTitle: {
+    fontSize: 10,
+    fontFamily: 'Poppins_400Regular',
+    color: '#000',
+    flex: 1,
+  },
+  monthDaySection: {
+    marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  monthDayHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#f8f8f8',
+  },
+  monthDayHeaderToday: {
+    backgroundColor: Colors.calendarPrimary,
+  },
+  monthDayName: {
+    fontSize: 14,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+  },
+  monthDayNameToday: {
+    color: Colors.white,
+  },
+  monthDayDate: {
+    fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.grayText,
+    marginTop: 2,
+  },
+  monthDayDateToday: {
+    color: Colors.white,
+  },
+  monthDayTimeline: {
+    height: 600,
+    backgroundColor: Colors.white,
+  },
+  // WIDOK TYDZIEŃ
+  weekViewContainer: {
+    flex: 1,
+    backgroundColor: Colors.white,
+  },
+  expandHandleContainer: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    backgroundColor: Colors.white,
+  },
+  expandHandle: {
+    width: 60,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#c0c0c0',
+  },
+  // TABELA TYGODNIA
+  weekTableContainer: {
+    flex: 1,
+    backgroundColor: Colors.white,
+  },
+  weekTable: {
+    flex: 1,
+  },
+  weekTableHeaderRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#d0d0d0',
+    backgroundColor: '#fff',
+  },
+  weekTableDateColumn: {
+    width: 120,
+    padding: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#d0d0d0',
+  },
+  weekTableTeamColumn: {
+    width: 150,
+    padding: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#d0d0d0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  weekTableTeamHeader: {
+    fontSize: 13,
+    fontFamily: 'Poppins_600SemiBold',
+    textAlign: 'center',
+  },
+  weekTableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    minHeight: 80,
+  },
+  weekTableDateCell: {
+    width: 120,
+    padding: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#d0d0d0',
+    justifyContent: 'center',
+  },
+  weekTableDayName: {
+    fontSize: 13,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+  },
+  weekTableDayNameToday: {
+    color: Colors.calendarPrimary,
+  },
+  weekTableDate: {
+    fontSize: 11,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.grayText,
+    marginTop: 2,
+  },
+  weekTableDateToday: {
+    color: Colors.calendarPrimary,
+  },
+  weekTableTaskCell: {
+    width: 150,
+    padding: 8,
+    gap: 6,
+    borderRightWidth: 1,
+    borderRightColor: '#e0e0e0',
+    backgroundColor: '#fafafa',
+  },
+  weekTableTaskCard: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderLeftWidth: 4,
+  },
+  weekTableTaskType: {
+    fontSize: 10,
+    fontFamily: 'Poppins_600SemiBold',
+    color: '#000',
+    backgroundColor: '#fff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+  },
+  weekTableTaskTitle: {
+    fontSize: 10,
+    fontFamily: 'Poppins_400Regular',
+    color: '#000',
+    flex: 1,
+  },
+  tasksPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+  },
+  tasksPlaceholderText: {
+    fontSize: 14,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.grayText,
+  },
+  // WIDOK ROCZNY
+  yearViewContainer: {
+    flex: 1,
+    backgroundColor: Colors.white,
+  },
+  yearViewScrollContainer: {
+    flex: 1,
+  },
+  yearViewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 8,
+  },
+  yearMonthContainer: {
+    width: '50%',
+    padding: 4,
+  },
+  yearMonthTitle: {
+    fontSize: 13,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  // PUSTY TIMELINE
+  emptyTimelineContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyTimelineText: {
+    fontSize: 14,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.grayText,
+  },
+
+  yearGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 0,
+  },
+
+  yearMonthCell: {
+    width: '50%',        // 🔥 2 kolumny
+    padding: 0,
+  },
+
+  yearMonthTitle: {
+    fontSize: 14,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+    textAlign: 'left',   // 🔥 DO LEWEJ
+    marginBottom: 4,
+  },
+
+  yearLabel: {
+    fontSize: 16,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+
+  yearGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 8,
+  },
+
+  yearMonthCell: {
+    width: '50%',          // 2 kolumny
+    padding: 8,
+  },
+
+  yearMonthTitle: {
+    fontSize: 14,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+    textAlign: 'left',
+    marginBottom: 4,
+  },
+
+  dayStrip: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: Colors.white,
+  },
+
+  dayEllipse: {
+    width: 44,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  dayEllipseActive: {
+    backgroundColor: Colors.calendarPrimary,
+  },
+
+  dayEllipseName: {
+    fontSize: 11,
+    fontFamily: 'Poppins_400Regular',
+    color: '#000',
+    marginBottom: 2,
+  },
+
+  dayEllipseNameActive: {
+    color: '#fff',
+    fontFamily: 'Poppins_600SemiBold',
+  },
+
+  dayEllipseNumber: {
+    fontSize: 16,
+    fontFamily: 'Poppins_500Medium',
+    color: '#000',
+  },
+
+  dayEllipseNumberActive: {
+    color: '#fff',
+    fontFamily: 'Poppins_700Bold',
+  },
+
+  modeButtonsDivider: {
+    height: 1,
+    backgroundColor: '#E0E0E0',
+    width: '100%',
+    marginTop: 30,
+    marginBottom: 10,
+  },
+
+  // PUSTY TIMELINE
+  emptyTimelineContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 32,
+    backgroundColor: '#FAFAFA',
+    marginHorizontal: 16,
+    marginTop: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderStyle: 'dashed',
+  },
+  emptyTimelineText: {
+    fontSize: 16,
+    fontFamily: 'Poppins_500Medium',
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 12,
   },
 });

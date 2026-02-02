@@ -1,7 +1,8 @@
 /* eslint-disable camelcase */
 import { useNavigation } from '@react-navigation/native';
-import { Chip, Text } from '@rneui/themed';
-import { format, parseISO } from 'date-fns';
+import { Text } from '@rneui/themed';
+import { format, parseISO, isSameDay, isToday, isTomorrow } from 'date-fns';
+import { pl } from 'date-fns/locale';
 import React, {
   useCallback,
   useEffect,
@@ -10,20 +11,19 @@ import React, {
   useState,
 } from 'react';
 import { useForm } from 'react-hook-form';
-import { Animated, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { FlatList, Swipeable } from 'react-native-gesture-handler';
+import { StyleSheet, View, Modal, ScrollView, TouchableOpacity } from 'react-native';
+import { FlatList } from 'react-native-gesture-handler';
 import Spinner from 'react-native-loading-spinner-overlay';
 import { useDispatch, useSelector } from 'react-redux';
 
 import DropDownPicker from 'react-native-dropdown-picker';
 import MultiSelectModal from '../../components/MultiSelectModal';
+import { Button } from '@rneui/themed';
 
-import { IconButton } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import ConfirmationOverlay from '../../components/ConfirmationOverlay';
 import FloatingActionButton from '../../components/FloatingActionButton';
-import DocumentIcon from '../../components/icons/DocumentIcon';
-import TrashIcon from '../../components/icons/TrashIcon';
+import { Dropdown } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import { TasksMenuScreenProps } from '../../navigation/types';
@@ -37,6 +37,7 @@ import {
   setTaskType,
 } from '../../store/taskFiltersSlice';
 import { Filter } from './TasksMenu';
+import TaskCard from './TaskCard';
 
 type FilterOption = {
   label: string;
@@ -298,238 +299,162 @@ const addClientStyles = StyleSheet.create({
 //   );
 // });
 
-function RowLeftContent({ onEditPress }: { onEditPress: () => void }) {
-  const translateX = useRef(new Animated.Value(150)).current;
+// Helper functions for week calendar
+const getWeekDays = (date: string) => {
+  const current = new Date(date);
+  const monday = new Date(current);
+  const day = current.getDay();
+  const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+  monday.setDate(diff);
 
-  const animate = (toValue: number) => {
-    Animated.spring(translateX, {
-      toValue,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 100,
-    }).start();
-  };
-
-  useEffect(() => {
-    animate(0);
-  }, []);
-
-  return (
-    <Animated.View
-      style={[
-        styles.actionContainer,
-        styles.taskEdit,
-        { transform: [{ translateX }] },
-      ]}
-    >
-      <IconButton
-        icon={<DocumentIcon color="white" />}
-        style={styles.buttonStyle}
-        titleStyle={styles.buttonTitleStyle}
-        onPress={onEditPress}
-        withoutBackground
-      />
-    </Animated.View>
-  );
-}
-
-function RowRightContent({ onDeletePress }: { onDeletePress: () => void }) {
-  const translateX = useRef(new Animated.Value(150)).current;
-
-  const animate = (toValue: number) => {
-    Animated.spring(translateX, {
-      toValue,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 100,
-    }).start();
-  };
-
-  useEffect(() => {
-    animate(0);
-  }, []);
-
-  return (
-    <Animated.View
-      style={[
-        styles.actionContainer,
-        styles.taskDelete,
-        { transform: [{ translateX }] },
-      ]}
-    >
-      <IconButton
-        icon={<TrashIcon color="white" />}
-        style={styles.buttonStyle}
-        titleStyle={styles.buttonTitleStyle}
-        onPress={onDeletePress}
-        withoutBackground
-      />
-    </Animated.View>
-  );
-}
-
-function TaskRow({
-  task,
-  onDelete,
-  onCloseAllSwipes,
-  registerSwipeRef,
-  isLast,
-}: {
-  task: Task;
-  onDelete: (id: number) => void;
-  onCloseAllSwipes: () => void;
-  registerSwipeRef: (id: number, ref: any) => void;
-  isLast: boolean;
-}) {
-  const { id, nazwa, typ, grupa, status, start_date, instalacja_info } = task;
-  let statusColor;
-
-  switch (status) {
-    case 'wykonane':
-      statusColor = Colors.statusDone;
-      break;
-    case 'niewykonane':
-      statusColor = Colors.statusNotDone;
-      break;
-    case 'Zaplanowane':
-      statusColor = Colors.statusPlanned;
-      break;
-    default:
-      statusColor = Colors.statusOther;
-      break;
+  const weekDays = [];
+  for (let i = 0; i < 7; i++) {
+    const dayDate = new Date(monday);
+    dayDate.setDate(monday.getDate() + i);
+    weekDays.push(dayDate);
   }
+  return weekDays;
+};
 
-  const formattedDate = format(parseISO(start_date), 'dd.MM.yyyy HH:mm');
-  const navigation = useNavigation<TasksMenuScreenProps['navigation']>();
+const formatWeekDayShort = (date: Date) => {
+  const days = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Niedz'];
+  return days[date.getDay() === 0 ? 6 : date.getDay() - 1];
+};
 
-  // Pobierz nazwę ekipy/pracownika
-  const { teams, employees } = useStaff();
-  const assignedName = useMemo(() => {
-    if (!grupa) return null;
-    if (grupa > 1) {
-      // Ekipa
-      const team = teams?.find(t => t.id === grupa);
-      return team ? team.nazwa : `Ekipa ${grupa}`;
+const formatPolishMonth = (date: Date) => {
+  const polishMonths = [
+    'Stycznia',
+    'Lutego',
+    'Marca',
+    'Kwietnia',
+    'Maja',
+    'Czerwca',
+    'Lipca',
+    'Sierpnia',
+    'Września',
+    'Października',
+    'Listopada',
+    'Grudnia',
+  ];
+  return polishMonths[date.getMonth()];
+};
+
+// Helper function to format date header
+const formatDateHeader = (dateString: string): string => {
+  try {
+    const date = parseISO(dateString);
+    if (isToday(date)) {
+      return `Dziś, ${format(date, 'd MMMM yyyy', { locale: pl })}`;
+    } else if (isTomorrow(date)) {
+      return `Jutro, ${format(date, 'd MMMM yyyy', { locale: pl })}`;
+    } else {
+      const dayName = format(date, 'EEEE', { locale: pl });
+      return `${dayName.charAt(0).toUpperCase() + dayName.slice(1)}, ${format(date, 'd MMMM yyyy', { locale: pl })}`;
     }
-    // Pracownik
-    const employee = employees?.employees?.find(e => e.id === grupa);
-    return employee
-      ? `${employee.first_name} ${employee.last_name}`
-      : `Pracownik ${grupa}`;
-  }, [grupa, teams, employees]);
+  } catch {
+    return dateString;
+  }
+};
 
-  // Pobierz adres klienta
-  const clientAddress = useMemo(() => {
-    if (!instalacja_info) return null;
-    const parts = [
-      instalacja_info.ulica,
-      instalacja_info.numer_domu,
-      instalacja_info.mieszkanie && `/${instalacja_info.mieszkanie}`,
-      instalacja_info.kod_pocztowy,
-      instalacja_info.miasto,
-    ].filter(Boolean);
-    return parts.length > 0 ? parts.join(' ') : null;
-  }, [instalacja_info]);
-
-  // Pobierz nazwę klienta
-  const clientName = useMemo(() => {
-    if (!instalacja_info) return null;
-    return (
-      instalacja_info.nazwa_firmy ||
-      `${instalacja_info.first_name || ''} ${instalacja_info.last_name || ''
-        }`.trim()
-    );
-  }, [instalacja_info]);
-
-  const handleTaskDetails = () => {
-    (navigation as any).navigate('TaskDetails', { task });
-  };
-
-  const handleEdit = () => {
-    (navigation as any).navigate('AddForm', { task });
-  };
-
-  const handleDelete = () => {
-    onDelete(id);
-  };
-
-  const swipeRefCallback = useCallback(
-    (ref: any) => {
-      if (ref) {
-        registerSwipeRef(id, ref);
-      }
-    },
-    [id, registerSwipeRef],
-  );
-
-  const renderLeftActions = () => {
-    return <RowLeftContent onEditPress={handleEdit} />;
-  };
-
-  const renderRightActions = () => {
-    return <RowRightContent onDeletePress={handleDelete} />;
-  };
-
+// TaskFiltersModal Component
+const TasksFiltersModal = React.memo(function TasksFiltersModal({
+  visible,
+  onClose,
+  control,
+  localDateSort,
+  setLocalDateSort,
+  handleFilterChange,
+  ekipaOptions,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  control: any;
+  localDateSort: string;
+  setLocalDateSort: (value: string) => void;
+  handleFilterChange: (filterName: 'dateSort', value: any) => void;
+  ekipaOptions: FilterOption[];
+}) {
   return (
-    <View style={[styles.swipeableContainer, !isLast && styles.listItemBorder]}>
-      <Swipeable
-        ref={swipeRefCallback}
-        renderLeftActions={renderLeftActions}
-        renderRightActions={renderRightActions}
-        friction={2}
-        leftThreshold={10}
-        rightThreshold={10}
-        onSwipeableOpen={direction => {
-          if (direction === 'left') {
-            handleEdit();
-          } else if (direction === 'right') {
-            handleDelete();
-          }
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Filtry zadań</Text>
+          <ScrollView contentContainerStyle={styles.modalScrollContent}>
+            <Text style={styles.modalLabel}>Typ</Text>
+            <MultiSelectModal
+              name="taskType"
+              control={control}
+              options={[
+                { label: 'Oględziny', value: 'oględziny' },
+                { label: 'Montaż', value: 'montaż' },
+                { label: 'Szkolenie', value: 'szkolenie' },
+              ]}
+              placeholder="Wybierz typy..."
+              customWidth={300}
+              isBordered
+              customHeight={40}
+              noMargin
+            />
 
-          onCloseAllSwipes();
-        }}
-      >
-        <TouchableOpacity
-          style={styles.listItem}
-          onPress={handleTaskDetails}
-          activeOpacity={0.7}
-        >
-          <View style={styles.listItemContainer}>
-            <View style={styles.listItemContent}>
-              {/* Tytuł lub typ */}
-              <Text style={styles.taskTitle}>
-                {nazwa ||
-                  typ.charAt(0).toUpperCase() + typ.slice(1).toLowerCase()}
-              </Text>
-              {/* Klient i adres */}
-              {clientName && (
-                <Text style={styles.taskSubtitle}>
-                  {clientName}
-                  {clientAddress && ` - ${clientAddress}`}
-                </Text>
-              )}
-              {/* Przydzielona ekipa lub pracownik */}
-              {assignedName && (
-                <Text style={styles.taskSubtitle}>
-                  {typ === 'szkolenie' ? 'Pracownik' : 'Ekipa'}: {assignedName}
-                </Text>
-              )}
-            </View>
-            <View style={styles.listItemRight}>
-              <Text style={styles.listItemDate}>{formattedDate}</Text>
-              <Chip
-                title={status}
-                color={statusColor}
-                titleStyle={styles.statusTitle}
-                buttonStyle={styles.statusChip}
-              />
-            </View>
+            <Text style={styles.modalLabel}>Status</Text>
+            <MultiSelectModal
+              name="taskStatus"
+              control={control}
+              options={[
+                { label: 'Wykonane', value: 'wykonane' },
+                { label: 'Niewykonane', value: 'niewykonane' },
+                { label: 'Zaplanowane', value: 'Zaplanowane' },
+              ]}
+              placeholder="Wybierz statusy..."
+              customWidth={300}
+              isBordered
+              customHeight={40}
+              noMargin
+            />
+
+            <Text style={styles.modalLabel}>Sortowanie</Text>
+            <Dropdown
+              name="dateSort"
+              control={control}
+              options={[
+                { label: 'Najbliższa', value: 'nearest' },
+                { label: 'Najdalsza', value: 'farthest' },
+              ]}
+              customWidth="100%"
+              isBordered
+            />
+
+            <Text style={styles.modalLabel}>Ekipa</Text>
+            <MultiSelectModal
+              name="taskGroup"
+              control={control}
+              options={ekipaOptions}
+              placeholder="Wybierz ekipy..."
+              customWidth={300}
+              isBordered
+              customHeight={40}
+              noMargin
+            />
+          </ScrollView>
+
+          <View style={styles.modalButtonGroup}>
+            <Button
+              title="Zamknij"
+              buttonStyle={styles.closeButton}
+              onPress={onClose}
+              titleStyle={styles.buttonText}
+            />
           </View>
-        </TouchableOpacity>
-      </Swipeable>
-    </View>
+        </View>
+      </View>
+    </Modal>
   );
-}
+});
 
 type Filters = {
   dateSort: string;
@@ -564,12 +489,13 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
     );
   }, [taskFilters]);
 
-  // useForm dla MultiSelectModal (Typ, Status, Ekipa)
+  // useForm dla MultiSelectModal (Typ, Status, Ekipa) i Dropdown (Sortowanie)
   const { control, watch, setValue } = useForm({
     defaultValues: {
       taskType: safeTaskFilters.taskType || [],
       taskStatus: safeTaskFilters.taskStatus || [],
       taskGroup: safeTaskFilters.taskGroup || [],
+      dateSort: safeTaskFilters.dateSort || 'nearest',
     },
   });
 
@@ -577,6 +503,7 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
   const watchedTaskType = watch('taskType');
   const watchedTaskStatus = watch('taskStatus');
   const watchedTaskGroup = watch('taskGroup');
+  const watchedDateSort = watch('dateSort');
 
   // Ref to track if update is from form (to avoid loops)
   const isUpdatingFromForm = useRef(false);
@@ -633,6 +560,20 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
     }
   }, [watchedTaskGroup, dispatch, safeTaskFilters.taskGroup]);
 
+  useEffect(() => {
+    if (watchedDateSort && !isUpdatingFromForm.current) {
+      const currentRedux = safeTaskFilters.dateSort || 'nearest';
+      if (watchedDateSort !== currentRedux) {
+        isUpdatingFromForm.current = true;
+        dispatch(setDateSort(watchedDateSort));
+        setLocalDateSort(watchedDateSort);
+        setTimeout(() => {
+          isUpdatingFromForm.current = false;
+        }, 0);
+      }
+    }
+  }, [watchedDateSort, dispatch, safeTaskFilters.dateSort]);
+
   // Sync Redux to form when Redux changes externally (e.g., resetFilters)
   useEffect(() => {
     if (
@@ -679,17 +620,25 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
     }
   }, [safeTaskFilters.taskGroup, setValue, watchedTaskGroup]);
 
-  // Local state dla Sortowania (pozostaje jako DropDownPicker)
+  useEffect(() => {
+    if (!isUpdatingFromForm.current) {
+      const currentRedux = safeTaskFilters.dateSort || 'nearest';
+      if (watchedDateSort !== currentRedux) {
+        setValue('dateSort', currentRedux);
+        setLocalDateSort(currentRedux);
+      }
+    }
+  }, [safeTaskFilters.dateSort, setValue, watchedDateSort]);
+
+  // Local state dla Sortowania
   const [localDateSort, setLocalDateSort] = useState<string>(
     safeTaskFilters.dateSort || 'nearest',
   );
 
-  // State dla kontroli otwarcia dropdowna Sortowania
-  const [openDateSort, setOpenDateSort] = useState(false);
-
   const [data, setData] = useState<Task[] | null>(null);
   const [dataToFilter, setDataToFilter] = useState<Task[] | null>(null);
   const [searchValue, setSearchValue] = useState<string>('');
+  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
 
   const { result: tasks, execute: getTasks, loading } = useTasks();
 
@@ -755,7 +704,6 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
   const [visible, setVisible] = useState(false);
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
-  const [filtersPanelVisible, setFiltersPanelVisible] = useState(false);
 
   // Konwertuj Redux state na Filter[] dla kompatybilności (dla modala - zakomentowany)
   // const baseFilters = useMemo<Filter[]>(() => {
@@ -832,25 +780,6 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
     }
   };
 
-  // System zarządzania swipe'ami
-  const swipeRefs = useRef<Map<number, any>>(new Map());
-
-  // Funkcja do zamykania wszystkich swipe elementów
-  const closeAllSwipes = useCallback(() => {
-    swipeRefs.current.forEach((ref, taskId) => {
-      if (ref && ref.close) {
-        ref.close();
-      }
-    });
-  }, []);
-
-  // Funkcja do rejestrowania referencji swipe elementów
-  const registerSwipeRef = useCallback((id: number, ref: any) => {
-    if (ref) {
-      swipeRefs.current.set(id, ref);
-    }
-  }, []);
-
   const onDeleteConfirmed = async () => {
     if (idToDelete) {
       await deleteTask({
@@ -865,7 +794,6 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
   const onDelete = (id: number) => {
     setIdToDelete(id);
     toggleOverlay();
-    closeAllSwipes(); // Zamykamy wszystkie swipe'y po wywołaniu dialogu
   };
 
   const toggleOverlay = useCallback(() => {
@@ -875,10 +803,6 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
   const toggleFilterModal = useCallback(() => {
     setFilterModalVisible(!filterModalVisible);
   }, [filterModalVisible]);
-
-  const toggleFiltersPanel = useCallback(() => {
-    setFiltersPanelVisible(prev => !prev);
-  }, []);
 
   useEffect(() => {
     if (getTasks) {
@@ -946,6 +870,14 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
         });
       }
 
+      // Filter by selected date
+      if (selectedDate) {
+        filteredData = filteredData.filter(task => {
+          const taskDate = format(parseISO(task.start_date), 'yyyy-MM-dd');
+          return taskDate === selectedDate;
+        });
+      }
+
       // Apply dateSort
       if (filters.dateSort === 'farthest') {
         filteredData.sort(
@@ -970,9 +902,8 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
       }
 
       setData(filteredData);
-      closeAllSwipes(); // Zamykamy swipe'y po filtrowaniu
     }
-  }, [dataToFilter, searchValue, safeTaskFilters, closeAllSwipes]);
+  }, [dataToFilter, searchValue, safeTaskFilters, selectedDate]);
 
   // Handle filter changes (tylko dla Sortowania, reszta przez useForm)
   const handleFilterChange = useCallback(
@@ -985,162 +916,79 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
     [dispatch],
   );
 
+  // Week days for calendar
+  const weekDays = useMemo(() => getWeekDays(selectedDate), [selectedDate]);
+
   return (
     <View style={styles.container}>
       <ButtonsHeader
-        // onBackPress={navigation.goBack}
         searchValue={searchValue}
         onChangeSearchValue={setSearchValue}
-        onFilterPress={toggleFiltersPanel}
+        onFilterPress={toggleFilterModal}
       />
-      {/* Filtry na górze widoku */}
-      {filtersPanelVisible && (
-        <View style={styles.filtersContainer}>
-          <View style={styles.filterItem}>
-            <Text style={styles.filterLabel}>Typ</Text>
-            <View style={styles.dropdownWrapper}>
-              <MultiSelectModal
-                name="taskType"
-                control={control}
-                options={[
-                  { label: 'Oględziny', value: 'oględziny' },
-                  { label: 'Montaż', value: 'montaż' },
-                  { label: 'Szkolenie', value: 'szkolenie' },
-                ]}
-                placeholder="Wybierz typy..."
-                customWidth={250}
-                isBordered
-                isSmall
-                customHeight={34}
-                noMargin
-              />
-            </View>
-          </View>
-          <View style={styles.filterItem}>
-            <Text style={styles.filterLabel}>Status</Text>
-            <View style={styles.dropdownWrapper}>
-              <MultiSelectModal
-                name="taskStatus"
-                control={control}
-                options={[
-                  { label: 'Wykonane', value: 'wykonane' },
-                  { label: 'Niewykonane', value: 'niewykonane' },
-                  { label: 'Zaplanowane', value: 'Zaplanowane' },
-                ]}
-                placeholder="Wybierz statusy..."
-                customWidth={250}
-                isBordered
-                isSmall
-                customHeight={34}
-                noMargin
-              />
-            </View>
-          </View>
-          <View style={styles.filterItem}>
-            <Text style={styles.filterLabel}>Sortowanie</Text>
-            <View style={styles.dropdownWrapper}>
-              <DropDownPicker
-                open={openDateSort}
-                setOpen={setOpenDateSort}
-                value={localDateSort}
-                setValue={callback => {
-                  const newValue = callback(localDateSort);
-                  handleFilterChange('dateSort', newValue);
-                }}
-                items={[
-                  { label: 'Najbliższa', value: 'nearest' },
-                  { label: 'Najdalsza', value: 'farthest' },
-                ]}
-                style={styles.dropdownStyle}
-                textStyle={styles.dropdownTextStyle}
-                dropDownContainerStyle={styles.dropdownContainerStyle}
-                zIndex={28}
-                listMode="MODAL"
-                modalAnimationType="slide"
-              />
-            </View>
-          </View>
-          <View style={styles.filterItem}>
-            <Text style={styles.filterLabel}>Ekipa</Text>
-            <View style={styles.dropdownWrapper}>
-              <MultiSelectModal
-                name="taskGroup"
-                control={control}
-                options={ekipaOptions}
-                placeholder="Wybierz ekipy..."
-                customWidth={250}
-                isBordered
-                isSmall
-                customHeight={34}
-                noMargin
-              />
-            </View>
-          </View>
-        </View>
+
+      {/* Week Calendar */}
+      <View style={styles.weekCalendarContainer}>
+        <Text style={styles.monthYearText}>
+          {formatPolishMonth(new Date(selectedDate))} {format(new Date(selectedDate), 'yyyy')}
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.weekDaysScroll}
+        >
+          {weekDays.map((day, index) => {
+            const dayString = format(day, 'yyyy-MM-dd');
+            const isSelected = dayString === selectedDate;
+            const isCurrentDay = isToday(day);
+
+            return (
+              <TouchableOpacity
+                key={index}
+                style={styles.weekDayContainer}
+                onPress={() => setSelectedDate(dayString)}
+              >
+                <Text style={[
+                  styles.weekDayName,
+                  isSelected && styles.weekDayNameSelected
+                ]}>
+                  {formatWeekDayShort(day)}
+                </Text>
+                <View style={[
+                  styles.weekDayCircle,
+                  isSelected && styles.weekDayCircleSelected
+                ]}>
+                  <Text style={[
+                    styles.weekDayNumber,
+                    isSelected && styles.weekDayNumberSelected
+                  ]}>
+                    {format(day, 'dd')}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
+      {/* Selected date header */}
+      {data && data.length > 0 && (
+        <Text style={styles.dateHeader}>
+          {formatDateHeader(selectedDate)}
+        </Text>
       )}
-      {/* Active filters display */}
-      {/* TODO: Uncomment in future if needed
-      {appliedFilters.length > 0 && (
-        <View style={styles.filtersContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filtersScrollContainer}
-          >
-            {appliedFilters
-              .filter(filter => filter.value && filter.value !== 'wszystkie' && filter.value !== 'nearest' && filter.value !== '' && filter.value.trim() !== '')
-              .map((filter, index) => (
-                <Chip
-                  key={index}
-                  title={`${getFilterLabel(filter.type)}: ${getFilterValueLabel(filter.type, filter.value)}`}
-                  size="sm"
-                  buttonStyle={styles.filterChip}
-                  titleStyle={styles.filterChipText}
-                  onPress={() => removeFilter(filter)}
-                />
-              ))}
-          </ScrollView>
-        </View>
-      )}
-      */}
-      {/* <View style={styles.filterWrapper}>
-        <Dropdown
-          name="taskType"
-          control={control}
-          label="Rodzaj zadania"
-          options={[
-            { label: 'Wszystkie', value: '' },
-            { label: 'Oględziny', value: 'oględziny' },
-            { label: 'Montaż', value: 'montaż' },
-            { label: 'Serwis', value: 'serwis' },
-            { label: 'Szkolenie', value: 'szkolenie' },
-          ]}
-          dropDownDirection="BOTTOM"
-          isBordered
-          isThin
-          zIndex={30}
-          customWidth="80%"
-          onChange={setTaskType}
-        />
-      </View> */}
 
       {data && data.length > 0 ? (
-        <FlatList
-          data={data}
-          contentContainerStyle={styles.content}
-          renderItem={({ item, index }) => (
-            <TaskRow
-              task={item}
-              onDelete={onDelete}
-              onCloseAllSwipes={closeAllSwipes}
-              registerSwipeRef={registerSwipeRef}
-              isLast={index === data.length - 1}
-            />
-          )}
-          ItemSeparatorComponent={(<View style={styles.separator} />) as any}
-          refreshing={loading && data.length > 0}
-          onRefresh={() => getTasks && getTasks()}
-        />
+        <ScrollView contentContainerStyle={styles.content}>
+          <View style={styles.cardsContainer}>
+            {data.map((task, index) => (
+              <View key={task.id}>
+                <TaskCard task={task} onDelete={onDelete} />
+                {index < data.length - 1 && <View style={styles.cardDivider} />}
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       ) : (
         !loading && (
           <View style={styles.noDataContainer}>
@@ -1167,166 +1015,111 @@ function TasksTab({ appliedFilters, setAppliedFilters }: TasksTabProps) {
 
       <FloatingActionButton
         onPress={() => (navigation as any).navigate('AddForm')}
-        backgroundColor={Colors.calendarPrimary}
+        backgroundColor="#FF6B35"
       />
 
-      {/* Modal filtrów - zakomentowany, może się przydać później */}
-      {/* <TasksFiltersModal
-        filters={baseFilters}
+      <TasksFiltersModal
         visible={filterModalVisible}
         onClose={toggleFilterModal}
-        onFilterPress={() => {}}
         control={control}
-      /> */}
+        localDateSort={localDateSort}
+        setLocalDateSort={setLocalDateSort}
+        handleFilterChange={handleFilterChange}
+        ekipaOptions={ekipaOptions}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  separator: {
-    height: 10,
-  },
   container: {
     flex: 1,
+    backgroundColor: '#f5f5f5',
   },
-  content: {
-    paddingBottom: 70,
-    zIndex: 10,
-    gap: -4,
-  },
-  actionContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: '100%',
-    height: 100,
-  },
-  taskEdit: {
-    borderTopLeftRadius: 6,
-    borderBottomLeftRadius: 6,
-    backgroundColor: Colors.buttons.editBg,
-    color: Colors.white,
-  },
-  taskDelete: {
-    borderTopRightRadius: 6,
-    borderBottomRightRadius: 6,
-    backgroundColor: Colors.buttons.deleteBg,
-    color: Colors.white,
-  },
-  buttonStyle: {
-    flex: 1,
-    overflow: 'hidden',
-    height: 80,
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 80,
-    borderRadius: 0,
-    margin: 0,
-    padding: 0,
-    backgroundColor: Colors.transparent,
-  },
-  buttonTitleStyle: {
-    flex: 1,
-    color: Colors.white,
-    fontSize: 12,
-    backgroundColor: Colors.transparent,
-  },
-  swipeableContainer: {
-    height: 80,
-    width: '100%',
-  },
-  listItem: {
-    width: '100%',
-    height: 100,
-    zIndex: 10,
-  },
-  listItemContainer: {
-    width: '100%',
-    flexDirection: 'row',
-    height: 80,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
+  weekCalendarContainer: {
     backgroundColor: Colors.white,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
   },
-  listItemContent: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
+  monthYearText: {
+    fontSize: 18,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  weekDaysScroll: {
+    paddingHorizontal: 8,
+    alignItems: 'center',
+  },
+  weekDayContainer: {
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'flex-start',
+    paddingHorizontal: 12,
   },
-  taskTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  weekDayName: {
+    fontSize: 11,
+    color: '#666',
+    fontFamily: 'Poppins_400Regular',
+    marginBottom: 6,
+  },
+  weekDayNameSelected: {
     color: Colors.black,
     fontFamily: 'Poppins_600SemiBold',
   },
-  taskSubtitle: {
-    fontSize: 14,
-    color: Colors.grayText,
-    fontFamily: 'Poppins_400Regular',
-  },
-  listItemRight: {
-    marginLeft: 'auto',
+  weekDayCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'flex-end',
+    backgroundColor: 'transparent',
   },
-  listItemDate: {
+  weekDayCircleSelected: {
+    backgroundColor: '#FF6B35',
+  },
+  weekDayNumber: {
+    fontSize: 14,
+    color: Colors.black,
     fontFamily: 'Poppins_400Regular',
-    fontSize: 12,
-    color: Colors.grayerText,
-    textAlign: 'right',
   },
-  statusTitle: {
-    fontSize: 12,
-    textTransform: 'capitalize',
+  weekDayNumberSelected: {
+    color: Colors.white,
+    fontFamily: 'Poppins_600SemiBold',
   },
-  statusChip: {
-    padding: 0,
-    marginTop: 5,
-    width: 120,
+  content: {
+    paddingTop: 8,
+    paddingBottom: 80,
   },
-  // modalOverlay: {
-  //   flex: 1,
-  //   backgroundColor: Colors.blackHalfOpacity,
-  //   justifyContent: 'center',
-  //   alignItems: 'center',
-  // },
-  // modalContent: {
-  //   backgroundColor: Colors.white,
-  //   borderRadius: 8,
-  //   padding: 20,
-  //   width: '90%',
-  //   maxWidth: 500,
-  // },
-  // modalTitle: {
-  //   fontSize: 18,
-  //   fontWeight: 'bold',
-  //   textAlign: 'center',
-  // },
-  // modalButtonGroup: {
-  //   flexDirection: 'column',
-  //   marginTop: 10,
-  //   gap: 10,
-  // },
-  // modalButton: {
-  //   padding: 10,
-  //   borderRadius: 5,
-  //   minWidth: 100,
-  //   alignItems: 'center',
-  // },
-  // saveButton: {
-  //   backgroundColor: Colors.red,
-  // },
-  // cancelButton: {
-  //   backgroundColor: Colors.gray,
-  // },
-  // buttonText: {
-  //   color: Colors.white,
-  //   fontWeight: 'bold',
-  // },
+  dateHeader: {
+    fontSize: 16,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+    paddingTop: 16,
+    paddingBottom: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#f5f5f5',
+  },
+  cardsContainer: {
+    marginHorizontal: 16,
+    backgroundColor: Colors.white,
+    borderRadius: 8,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: '#e0e0e0',
+    marginHorizontal: 12,
+  },
   noDataContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -1339,57 +1132,51 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_400Regular',
     textAlign: 'center',
   },
-  listItemBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.grayBorder,
-  },
-  filtersContainer: {
-    display: 'flex',
-    flexDirection: 'column',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.grayBorder,
-    gap: 8,
-    width: '100%',
-    marginBottom: 15,
-  },
-  filterItem: {
-    display: 'flex',
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    justifyContent: 'space-between',
-  },
-  filterLabel: {
-    fontFamily: 'Archivo_400Regular',
-    fontSize: 14,
-    color: Colors.black,
-  },
-  dropdownWrapper: {
-    width: 250,
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  dropdownStyle: {
-    width: 250,
-    borderWidth: 1,
-    borderRadius: 4,
+  modalContent: {
     backgroundColor: Colors.white,
-    minHeight: 34,
-    marginBottom: 0,
+    borderRadius: 12,
+    padding: 20,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '80%',
   },
-  dropdownTextStyle: {
-    fontFamily: 'Archivo_400Regular',
-    fontSize: 12,
+  modalTitle: {
+    fontSize: 20,
+    fontFamily: 'Poppins_600SemiBold',
     color: Colors.black,
+    textAlign: 'center',
+    marginBottom: 20,
   },
-  dropdownContainerStyle: {
-    borderWidth: 1,
-    borderTopWidth: 1,
-    borderTopColor: Colors.divider,
-    backgroundColor: Colors.white,
+  modalScrollContent: {
+    gap: 16,
+  },
+  modalLabel: {
+    fontSize: 14,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  modalButtonGroup: {
+    marginTop: 20,
+    gap: 10,
+  },
+  closeButton: {
+    backgroundColor: Colors.calendarPrimary,
+    borderRadius: 8,
+    paddingVertical: 12,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.white,
   },
 });
 

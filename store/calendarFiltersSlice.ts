@@ -6,7 +6,7 @@ export interface CalendarFiltersState {
   taskType: (string | number)[];
   taskStatus: string;
   taskGroup: (string | number)[];
-  calendarMode: 'day' | 'week' | 'month';
+  calendarMode: 'day' | 'week' | 'month' | 'year';
 }
 
 const initialState: CalendarFiltersState = {
@@ -15,7 +15,7 @@ const initialState: CalendarFiltersState = {
   taskType: [],
   taskStatus: 'wszystkie',
   taskGroup: [],
-  calendarMode: 'month',
+  calendarMode: 'day',
 };
 
 const calendarFiltersSlice = createSlice({
@@ -37,7 +37,10 @@ const calendarFiltersSlice = createSlice({
     setTaskGroup(state, action: PayloadAction<(string | number)[]>) {
       state.taskGroup = action.payload;
     },
-    setCalendarMode(state, action: PayloadAction<'day' | 'week' | 'month'>) {
+    setCalendarMode(
+      state,
+      action: PayloadAction<'day' | 'week' | 'month' | 'year'>,
+    ) {
       state.calendarMode = action.payload;
     },
     setAllFilters(state, action: PayloadAction<Partial<CalendarFiltersState>>) {
