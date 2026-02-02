@@ -3,9 +3,8 @@ import { Button, ListItem, Text } from '@rneui/themed';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 
-import ButtonsHeader from '../../components/ButtonsHeader';
-import FloatingActionButton from '../../components/FloatingActionButton';
 import ConfirmationOverlay from '../../components/ConfirmationOverlay';
+import FloatingActionButton from '../../components/FloatingActionButton';
 import UserIcon from '../../components/icons/UserIcon';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
@@ -114,9 +113,6 @@ function SettingsEmployees() {
 
   return (
     <View style={styles.container}>
-      <ButtonsHeader
-        style={styles.buttonsHeader}
-      />
       {employees ? (
         <FlatList
           data={flattenedEmployees}
@@ -146,9 +142,7 @@ function SettingsEmployees() {
       />
 
       <FloatingActionButton
-        onPress={() =>
-          navigation.navigate('AddEmployee', { employee: null })
-        }
+        onPress={() => navigation.navigate('AddEmployee', { employee: null })}
         backgroundColor={Colors.primary}
       />
     </View>

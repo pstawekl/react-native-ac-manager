@@ -311,7 +311,7 @@ function InvoicesList({ navigation }: InvoicesListScreenProps) {
               installationId: undefined,
             })
           }
-          backgroundColor={Colors.lightRose}
+          backgroundColor={Colors.invoiceRose}
         />
       )}
     </View>

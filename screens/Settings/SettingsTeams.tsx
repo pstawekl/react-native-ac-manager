@@ -7,7 +7,6 @@ import { ScrollView } from 'react-native-gesture-handler';
 import Spinner from 'react-native-loading-spinner-overlay/lib';
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { DraxProvider, DraxScrollView, DraxView } from 'react-native-drax';
-import ButtonsHeader from '../../components/ButtonsHeader';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import DraggableGroupIcon from '../../components/icons/DraggableGroupIcon';
 import UserIcon from '../../components/icons/UserIcon';
@@ -174,9 +173,6 @@ function SettingsTeams() {
   return (
     <DraxProvider>
       <View style={styles.container}>
-        <ButtonsHeader
-          style={styles.buttonsHeader}
-        />
         {teams?.length ? (
           <ScrollView>
             {teams.map((team, idx) => renderTeam(team, idx))}

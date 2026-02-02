@@ -1,5 +1,4 @@
 /* eslint-disable react-native/no-inline-styles */
-import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { Text } from '@rneui/themed';
 import { useCallback, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
@@ -11,7 +10,6 @@ import { FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import {
-  BottomTabParamList,
   SettingsDataScreenProps,
 } from '../../navigation/types';
 
@@ -49,15 +47,6 @@ function SettingsData({ navigation }: SettingsDataScreenProps) {
   const { control, handleSubmit, setValue } = useForm<FormData>();
 
   const handleBackPress = useCallback(() => {
-    const bottomTabNavigation = navigation
-      .getParent()
-      ?.getParent<BottomTabNavigationProp<BottomTabParamList>>();
-
-    if (bottomTabNavigation) {
-      bottomTabNavigation.navigate('MenuTab');
-      return;
-    }
-
     if (navigation.canGoBack()) {
       navigation.goBack();
     }

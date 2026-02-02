@@ -542,22 +542,20 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
               uncheckedColor={Colors.grayBorder}
             />
           )}
+          <ButtonGroup
+            submitTitle={isEditMode ? 'Zapisz' : 'Dodaj'}
+            cancelTitle="Anuluj"
+            onSubmitPress={handleSubmit(onSubmit)}
+            onCancel={navigation.goBack}
+            stretch
+            groupStyle={styles.buttonGroup}
+            cancelStyle={styles.cancelButton}
+            cancelTitleStyle={styles.cancelButtonTitle}
+            submitStyle={styles.submitButton}
+            submitTitleStyle={styles.submitButtonTitle}
+            loading={loading}
+          />
         </ScrollView>
-      </View>
-      <View style={styles.footer}>
-        <ButtonGroup
-          submitTitle={isEditMode ? 'Zapisz' : 'Dodaj'}
-          cancelTitle="Anuluj"
-          onSubmitPress={handleSubmit(onSubmit)}
-          onCancel={navigation.goBack}
-          stretch={false}
-          groupStyle={styles.buttonGroup}
-          cancelStyle={styles.cancelButton}
-          cancelTitleStyle={styles.cancelButtonTitle}
-          submitStyle={styles.submitButton}
-          submitTitleStyle={styles.submitButtonTitle}
-          loading={loading}
-        />
       </View>
     </View>
   );
@@ -622,57 +620,36 @@ const styles = StyleSheet.create({
     fontFamily: 'Archivo_600SemiBold',
     fontSize: 12,
   },
-  footer: {
-    width: '100%',
-    paddingBottom: 65,
-  },
   cancelButton: {
     minHeight: 48,
     height: 48,
-    paddingLeft: 12,
-    paddingRight: 12,
-    paddingTop: 12,
-    paddingBottom: 12,
-    padding: 0,
     borderRadius: 60,
     borderWidth: 1,
     backgroundColor: Colors.transparent,
     borderColor: Colors.borderButton,
-    width: '100%',
   },
   cancelButtonTitle: {
     color: Colors.black,
     fontFamily: 'Archivo_600SemiBold',
     fontSize: 12,
-    lineHeight: 18,
   },
   submitButton: {
     backgroundColor: Colors.green,
     minHeight: 48,
     height: 48,
-    paddingLeft: 16,
-    paddingRight: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
-    padding: 0,
     borderRadius: 60,
-    width: '100%',
   },
   submitButtonTitle: {
     color: Colors.white,
     fontFamily: 'Archivo_600SemiBold',
     fontSize: 12,
-    lineHeight: 18,
     textAlign: 'center',
   },
   buttonGroup: {
-    display: 'flex',
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
     gap: 20,
     paddingVertical: 20,
     width: '100%',
-    paddingHorizontal: 10,
+    paddingBottom: 80,
   },
 });

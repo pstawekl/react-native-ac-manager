@@ -27,6 +27,8 @@ type TabsProps = {
   headerContent?: React.ReactNode;
   headerDividerColor?: string;
   fabBgColor?: string;
+  fabIconColor?: string;
+  onFilterPress?: () => void;
 };
 
 type TabMeasurement = {
@@ -46,6 +48,8 @@ export default function Tabs({
   headerContent,
   headerDividerColor,
   fabBgColor,
+  fabIconColor,
+  onFilterPress,
 }: TabsProps): JSX.Element {
   const [index, setIndex] = useState(
     defaultTab ? items.findIndex(item => item.id === defaultTab) : 0,
@@ -81,6 +85,7 @@ export default function Tabs({
         <ButtonsHeader
           onBackPress={onBackPress || navigation.goBack}
           title={title}
+          onFilterPress={onFilterPress}
         />
       )}
       {headerContent && (
@@ -143,6 +148,7 @@ export default function Tabs({
         <FloatingActionButton
           onPress={items[index]!.onAddPress!}
           backgroundColor={fabBgColor || Colors.offersTeal}
+          iconColor={fabIconColor || Colors.white}
         />
       )}
     </View>
