@@ -91,6 +91,9 @@ export default function Tabs({
       {headerContent && (
         <View style={styles.headerContent}>{headerContent}</View>
       )}
+      {headerContent && (
+        <View style={styles.headerContent}>{headerContent}</View>
+      )}
       <Tab
         value={index}
         onChange={handleIndexChange}
@@ -114,6 +117,17 @@ export default function Tabs({
           />
         ))}
       </Tab>
+
+      {headerDividerColor && (
+        <Divider
+          style={[
+            styles.headerDivider,
+            {
+              borderBottomColor: headerDividerColor || Colors.blue,
+            },
+          ]}
+        />
+      )}
 
       {headerDividerColor && (
         <Divider
@@ -179,6 +193,9 @@ const styles = StyleSheet.create({
   headerDivider: {
     borderBottomWidth: 2,
   },
+  headerDivider: {
+    borderBottomWidth: 2,
+  },
   container: {
     flex: 1,
     backgroundColor: Colors.white,
@@ -227,6 +244,9 @@ const styles = StyleSheet.create({
   },
   indicator: {
     height: 0,
+  },
+  headerContent: {
+    paddingBottom: 0,
   },
   headerContent: {
     paddingBottom: 0,

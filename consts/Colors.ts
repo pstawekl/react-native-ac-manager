@@ -25,6 +25,8 @@ const Colors = {
   transparent: 'transparent',
   newPurple: '#8829BC',
   newPurpleWithOpacity: '#8829BC26',
+  newPurple: '#8829BC',
+  newPurpleWithOpacity: '#8829BC26',
 
   backgroundTeal: '#0F7A7A1A',
 
