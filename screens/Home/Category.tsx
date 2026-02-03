@@ -1,6 +1,6 @@
 // eslint-disable @typescript-eslint/ban-types
 import { DrawerNavigationProp } from '@react-navigation/drawer';
-import { useNavigation } from '@react-navigation/native';
+import { CommonActions, useNavigation } from '@react-navigation/native';
 import { Text } from '@rneui/themed';
 import React from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -38,6 +38,21 @@ function Category({
   const handlePress = () => {
     if (screen === 'Home') {
       // Jeśli już jesteśmy na Home, nie rób nic
+      return;
+    }
+
+    // Dla Faktur: reset stosu, żeby goBack z listy wracał na dashboard
+    if (screen === 'Invoices' && params?.screen === 'List') {
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Invoices',
+          params: { screen: 'List' },
+          state: {
+            routes: [{ name: 'List' as const }],
+            index: 0,
+          },
+        }),
+      );
       return;
     }
 

@@ -71,6 +71,7 @@ function Categories() {
             icon={ReceiptIcon}
             iconBackgroundColor="#AB1A2E26"
             iconColor="#AB1A2E"
+            params={{ screen: 'List' }}
           />
         </PermissionGate>
 

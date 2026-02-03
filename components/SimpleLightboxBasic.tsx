@@ -591,6 +591,12 @@ export default function SimpleLightboxBasic({
     }
   };
 
+  const fallbackSize = useMemo(
+    () => ({ width: screenWidth, height: screenHeight * 0.5 }),
+    [],
+  );
+  const imageSize = displaySize ?? fallbackSize;
+
   return (
     <Modal
       visible={visible}
@@ -600,6 +606,7 @@ export default function SimpleLightboxBasic({
       onRequestClose={onClose}
     >
       <GestureHandlerRootView style={styles.gestureRoot}>
+        <View style={styles.backdrop} />
         <View style={styles.container}>
           <View style={styles.headerButtons}>
             <IconButton
@@ -616,32 +623,29 @@ export default function SimpleLightboxBasic({
                   <Animated.View
                     style={[
                       styles.pinchContainer,
-                      displaySize
-                        ? {
-                          width: displaySize.width,
-                          height: displaySize.height,
-                        }
-                        : null,
+                      {
+                        width: imageSize.width,
+                        height: imageSize.height,
+                      },
                       animatedImageStyle,
                     ]}
                   >
                     <Image
+                      key={currentImageUri || imageUri}
                       source={{ uri: currentImageUri || imageUri }}
                       style={[
                         styles.image,
-                        displaySize
-                          ? {
-                            width: displaySize.width,
-                            height: displaySize.height,
-                          }
-                          : null,
+                        {
+                          width: imageSize.width,
+                          height: imageSize.height,
+                        },
                       ]}
                       resizeMode="contain"
                       onLoad={handleImageLoad}
-                      onError={error =>
+                      onError={() =>
                         Alert.alert(
-                          'Image load error:',
-                          (error as unknown as Error).message,
+                          'Błąd ładowania zdjęcia',
+                          'Nie udało się wczytać obrazu. Sprawdź połączenie z internetem lub spróbuj później.',
                         )
                       }
                     />
@@ -847,8 +851,12 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
   },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
   container: {
-    backgroundColor: Colors.transparent,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     flex: 1,

@@ -315,10 +315,12 @@ export default function Catalogs({ searchQuery = '' }: CatalogsProps) {
     });
   }, [selectedProducer, selectedYear, categories]);
 
-  const onDeleteConfirmed = () => {
-    if (idToDelete && getCatalogs) {
-      deleteCatalog({ katalog_id: idToDelete });
-      toggleOverlay();
+  const onDeleteConfirmed = async () => {
+    if (!idToDelete) return;
+    await deleteCatalog({ data: { katalog_id: idToDelete } });
+    toggleOverlay();
+    setIdToDelete(null);
+    if (getCatalogs) {
       getCatalogs();
     }
   };

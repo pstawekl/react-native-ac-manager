@@ -1,8 +1,14 @@
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useNavigation } from '@react-navigation/native';
 import { Button, Text } from '@rneui/themed';
-import { useCallback, useEffect, useState } from 'react';
+import { format } from 'date-fns';
+import { pl } from 'date-fns/locale';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useForm } from 'react-hook-form';
 import {
   Alert,
+  Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -13,12 +19,14 @@ import {
 import ButtonsHeader from '../../components/ButtonsHeader';
 import ConfirmationOverlay from '../../components/ConfirmationOverlay';
 import FloatingActionButton from '../../components/FloatingActionButton';
+import { Dropdown } from '../../components/Input';
 import FilterIcon from '../../components/icons/FilterIcon';
 import SearchIcon from '../../components/icons/SearchIcon';
 import Colors from '../../consts/Colors';
 import { Scopes } from '../../consts/Permissions';
 import useApi from '../../hooks/useApi';
 import { InvoicesListScreenProps } from '../../navigation/types';
+import useClients from '../../providers/ClientsProvider';
 import usePermission from '../../providers/PermissionProvider';
 
 type Invoice = {
@@ -90,6 +98,328 @@ function getInvoiceTypeLabel(kind: string | undefined): string {
   return kind && typeMap[kind] ? typeMap[kind] : 'Faktura VAT';
 }
 
+export type InvoiceFiltersState = {
+  dateFrom: string | null;
+  dateTo: string | null;
+  clientName: string | null;
+  paidStatus: 'all' | 'paid' | 'unpaid';
+  sortBy: 'date_asc' | 'date_desc' | 'amount_asc' | 'amount_desc';
+};
+
+const defaultInvoiceFilters: InvoiceFiltersState = {
+  dateFrom: null,
+  dateTo: null,
+  clientName: null,
+  paidStatus: 'all',
+  sortBy: 'date_desc',
+};
+
+type InvoicesFiltersModalProps = {
+  visible: boolean;
+  onClose: () => void;
+  filters: InvoiceFiltersState;
+  setFilters: (
+    f:
+      | InvoiceFiltersState
+      | ((prev: InvoiceFiltersState) => InvoiceFiltersState),
+  ) => void;
+};
+
+function InvoicesFiltersModal({
+  visible,
+  onClose,
+  filters,
+  setFilters,
+}: InvoicesFiltersModalProps) {
+  const { clients, getClients } = useClients();
+  const [showDateFromPicker, setShowDateFromPicker] = useState(false);
+  const [showDateToPicker, setShowDateToPicker] = useState(false);
+
+  const { control, watch, setValue } = useForm({
+    defaultValues: {
+      clientName: filters.clientName ?? '',
+      paidStatus: filters.paidStatus,
+      sortBy: filters.sortBy,
+    },
+  });
+
+  useEffect(() => {
+    if (visible && getClients) {
+      getClients();
+    }
+  }, [visible, getClients]);
+
+  useEffect(() => {
+    setValue('clientName', filters.clientName ?? '');
+    setValue('paidStatus', filters.paidStatus);
+    setValue('sortBy', filters.sortBy);
+  }, [filters.clientName, filters.paidStatus, filters.sortBy, setValue]);
+
+  const watchedClient = watch('clientName');
+  const watchedPaidStatus = watch('paidStatus');
+  const watchedSortBy = watch('sortBy');
+
+  useEffect(() => {
+    setFilters(prev => {
+      const next = {
+        ...prev,
+        clientName: watchedClient ? String(watchedClient).trim() || null : null,
+        paidStatus: watchedPaidStatus as InvoiceFiltersState['paidStatus'],
+        sortBy: watchedSortBy as InvoiceFiltersState['sortBy'],
+      };
+      return next;
+    });
+  }, [watchedClient, watchedPaidStatus, watchedSortBy]);
+
+  const clientOptions = useMemo(() => {
+    const list = clients ?? [];
+    const options = [{ label: 'Wszyscy klienci', value: '' }];
+    list.forEach(c => {
+      const value = `${c.first_name || ''} ${c.last_name || ''}`.trim();
+      const label =
+        c.rodzaj_klienta === 'firma'
+          ? `Firma: ${c.nazwa_firmy || ''}`
+          : value || c.nazwa_firmy || 'Klient';
+      if (value) options.push({ label, value });
+    });
+    return options;
+  }, [clients]);
+
+  const handleDateFromSelect = (_: unknown, date?: Date) => {
+    setShowDateFromPicker(Platform.OS === 'ios');
+    if (date) {
+      setFilters(prev => ({ ...prev, dateFrom: format(date, 'yyyy-MM-dd') }));
+    }
+  };
+
+  const handleDateToSelect = (_: unknown, date?: Date) => {
+    setShowDateToPicker(Platform.OS === 'ios');
+    if (date) {
+      setFilters(prev => ({ ...prev, dateTo: format(date, 'yyyy-MM-dd') }));
+    }
+  };
+
+  if (!visible) return null;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={filterStyles.modalOverlay}>
+        <View style={filterStyles.modalContent}>
+          <Text style={filterStyles.modalTitle}>Filtry faktur</Text>
+          <ScrollView contentContainerStyle={filterStyles.modalScrollContent}>
+            <Text style={filterStyles.modalLabel}>Okres</Text>
+            <View style={filterStyles.dateRow}>
+              <View style={filterStyles.dateField}>
+                <Text style={filterStyles.dateFieldLabel}>Od</Text>
+                <TouchableOpacity
+                  style={filterStyles.dateTouchable}
+                  onPress={() => setShowDateFromPicker(true)}
+                >
+                  <Text style={filterStyles.dateTouchableText}>
+                    {filters.dateFrom
+                      ? format(new Date(filters.dateFrom), 'd MMM yyyy', {
+                        locale: pl,
+                      })
+                      : 'Wybierz datę'}
+                  </Text>
+                </TouchableOpacity>
+                {filters.dateFrom && (
+                  <TouchableOpacity
+                    onPress={() =>
+                      setFilters(prev => ({ ...prev, dateFrom: null }))
+                    }
+                    style={filterStyles.clearDateBtn}
+                  >
+                    <Text style={filterStyles.clearDateText}>Wyczyść</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <View style={filterStyles.dateField}>
+                <Text style={filterStyles.dateFieldLabel}>Do</Text>
+                <TouchableOpacity
+                  style={filterStyles.dateTouchable}
+                  onPress={() => setShowDateToPicker(true)}
+                >
+                  <Text style={filterStyles.dateTouchableText}>
+                    {filters.dateTo
+                      ? format(new Date(filters.dateTo), 'd MMM yyyy', {
+                        locale: pl,
+                      })
+                      : 'Wybierz datę'}
+                  </Text>
+                </TouchableOpacity>
+                {filters.dateTo && (
+                  <TouchableOpacity
+                    onPress={() =>
+                      setFilters(prev => ({ ...prev, dateTo: null }))
+                    }
+                    style={filterStyles.clearDateBtn}
+                  >
+                    <Text style={filterStyles.clearDateText}>Wyczyść</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+            {showDateFromPicker && (
+              <DateTimePicker
+                value={
+                  filters.dateFrom ? new Date(filters.dateFrom) : new Date()
+                }
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={handleDateFromSelect}
+                locale="pl-PL"
+              />
+            )}
+            {showDateToPicker && (
+              <DateTimePicker
+                value={filters.dateTo ? new Date(filters.dateTo) : new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                onChange={handleDateToSelect}
+                locale="pl-PL"
+              />
+            )}
+
+            <Text style={filterStyles.modalLabel}>Klient</Text>
+            <Dropdown
+              name="clientName"
+              control={control}
+              options={clientOptions}
+              customWidth="100%"
+              isBordered
+            />
+
+            <Text style={filterStyles.modalLabel}>Status płatności</Text>
+            <Dropdown
+              name="paidStatus"
+              control={control}
+              options={[
+                { label: 'Wszystkie', value: 'all' },
+                { label: 'Opłacona', value: 'paid' },
+                { label: 'Nieopłacona', value: 'unpaid' },
+              ]}
+              customWidth="100%"
+              isBordered
+            />
+
+            <Text style={filterStyles.modalLabel}>Sortowanie</Text>
+            <Dropdown
+              name="sortBy"
+              control={control}
+              options={[
+                { label: 'Data od najstarszej', value: 'date_asc' },
+                { label: 'Data od najnowszej', value: 'date_desc' },
+                { label: 'Kwota od najwyższej', value: 'amount_desc' },
+                { label: 'Kwota od najniższej', value: 'amount_asc' },
+              ]}
+              customWidth="100%"
+              isBordered
+            />
+          </ScrollView>
+
+          <View style={filterStyles.modalButtonGroup}>
+            <Button
+              title="Zamknij"
+              buttonStyle={filterStyles.closeButton}
+              onPress={onClose}
+              titleStyle={filterStyles.buttonText}
+            />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const filterStyles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    padding: 20,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  modalScrollContent: {
+    gap: 16,
+    paddingBottom: 8,
+  },
+  modalLabel: {
+    fontSize: 14,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.black,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  dateField: {
+    flex: 1,
+  },
+  dateFieldLabel: {
+    fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.lightGray,
+    marginBottom: 4,
+  },
+  dateTouchable: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  dateTouchableText: {
+    fontSize: 14,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.black,
+  },
+  clearDateBtn: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  clearDateText: {
+    fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.calendarPrimary || '#FF6B35',
+  },
+  modalButtonGroup: {
+    marginTop: 20,
+    gap: 10,
+  },
+  closeButton: {
+    backgroundColor: Colors.invoiceRose || Colors.calendarPrimary,
+    borderRadius: 8,
+    paddingVertical: 12,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.white,
+  },
+});
+
 function InvoiceItem({
   invoice,
   onDeletePress,
@@ -130,7 +460,12 @@ function InvoiceItem({
   }
 
   const formattedDate = formatDate(invoice.issue_date);
-  const formattedAmount = formatAmount(invoice.total, invoice.currency);
+
+  const totalBrutto = invoice.total ?? Number(invoice.currency) ?? 0;
+  const formattedAmount = formatAmount(
+    Number.isFinite(totalBrutto) ? totalBrutto : undefined,
+    invoice.currency || 'PLN',
+  );
   const invoiceType = getInvoiceTypeLabel(invoice.kind);
 
   return (
@@ -173,6 +508,10 @@ function InvoicesList({ navigation }: InvoicesListScreenProps) {
   const [invoices, setInvoices] = useState<any>(null);
   const [visible, setVisible] = useState(false);
   const [idToDelete, setIdToDelete] = useState<number | undefined>(undefined);
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [filters, setFilters] = useState<InvoiceFiltersState>(
+    defaultInvoiceFilters,
+  );
   const { hasAccess } = usePermission();
 
   const { result, execute } = useApi<Invoice[]>({
@@ -195,21 +534,80 @@ function InvoicesList({ navigation }: InvoicesListScreenProps) {
     }
   }, [result]);
 
-  // Filtrowanie faktur na podstawie wyszukiwania
-  const filteredInvoices = invoices
-    ? invoices.filter((invoice: Invoice) => {
-      if (!searchValue.trim()) {
-        return true;
-      }
+  const toggleFilterModal = useCallback(() => {
+    setFilterModalVisible(prev => !prev);
+  }, []);
+
+  // Filtrowanie i sortowanie faktur: wyszukiwanie + filtry (okres, klient, opłacona/nieopłacona, sortowanie)
+  const filteredInvoices = useMemo(() => {
+    if (!invoices) return null;
+    let list = [...invoices];
+
+    if (searchValue.trim()) {
       const searchLower = searchValue.toLowerCase().trim();
-      const clientName = invoice.client_name?.toLowerCase() || '';
-      const invoiceNumber = invoice.numer_faktury?.toLowerCase() || '';
-      return (
-        clientName.includes(searchLower) ||
-        invoiceNumber.includes(searchLower)
+      list = list.filter((invoice: Invoice) => {
+        const clientName = invoice.client_name?.toLowerCase() || '';
+        const invoiceNumber = invoice.numer_faktury?.toLowerCase() || '';
+        return (
+          clientName.includes(searchLower) ||
+          invoiceNumber.includes(searchLower)
+        );
+      });
+    }
+
+    if (filters.dateFrom) {
+      list = list.filter(
+        (inv: Invoice) => inv.issue_date && inv.issue_date >= filters.dateFrom!,
       );
-    })
-    : null;
+    }
+    if (filters.dateTo) {
+      list = list.filter(
+        (inv: Invoice) => inv.issue_date && inv.issue_date <= filters.dateTo!,
+      );
+    }
+
+    if (filters.clientName) {
+      list = list.filter(
+        (inv: Invoice) =>
+          (inv.client_name || '').trim() === filters.clientName!.trim(),
+      );
+    }
+
+    if (filters.paidStatus === 'paid') {
+      list = list.filter((inv: Invoice) => inv.status === 'paid');
+    } else if (filters.paidStatus === 'unpaid') {
+      list = list.filter((inv: Invoice) => inv.status !== 'paid');
+    }
+
+    const cmpDate = (a: Invoice, b: Invoice) => {
+      const da = a.issue_date ? new Date(a.issue_date).getTime() : 0;
+      const db = b.issue_date ? new Date(b.issue_date).getTime() : 0;
+      return da - db;
+    };
+    const cmpAmount = (a: Invoice, b: Invoice) => {
+      const va = a.total ?? 0;
+      const vb = b.total ?? 0;
+      return va - vb;
+    };
+    switch (filters.sortBy) {
+      case 'date_asc':
+        list.sort(cmpDate);
+        break;
+      case 'date_desc':
+        list.sort((a, b) => cmpDate(b, a));
+        break;
+      case 'amount_asc':
+        list.sort(cmpAmount);
+        break;
+      case 'amount_desc':
+        list.sort((a, b) => cmpAmount(b, a));
+        break;
+      default:
+        list.sort((a, b) => cmpDate(b, a));
+    }
+
+    return list;
+  }, [invoices, searchValue, filters]);
 
   // Odświeżanie listy faktur przy każdym wejściu na ekran
   useEffect(() => {
@@ -263,9 +661,7 @@ function InvoicesList({ navigation }: InvoicesListScreenProps) {
         </View>
         <TouchableOpacity
           style={styles.filterButton}
-          onPress={() => {
-            // Placeholder - na razie nic nie robi
-          }}
+          onPress={toggleFilterModal}
           activeOpacity={0.7}
         >
           <FilterIcon color={Colors.black} size={20} />
@@ -300,6 +696,13 @@ function InvoicesList({ navigation }: InvoicesListScreenProps) {
         onBackdropPress={toggleOverlay}
         onSubmit={onDeleteConfirmed}
         title="Czy na pewno chcesz usunąć fakturę ?"
+      />
+
+      <InvoicesFiltersModal
+        visible={filterModalVisible}
+        onClose={toggleFilterModal}
+        filters={filters}
+        setFilters={setFilters}
       />
 
       {hasAccess(Scopes.addInvoices) && (

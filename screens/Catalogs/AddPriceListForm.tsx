@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Alert, StyleSheet, View } from 'react-native';
 
@@ -27,30 +26,33 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
     },
   });
 
-  const { result, execute, loading } = useApi<object, FormData>({
+  const { execute, loading } = useApi<object, FormData>({
     path: 'cennik_add',
   });
 
   const { getPriceList } = useCatalogs();
 
-  useEffect(() => {
-    // TODO
-  }, [result]);
+  const onSubmit = async (data: PriceListData) => {
+    if (!data.file) {
+      Alert.alert('Błąd', 'Wybierz plik PDF cennika.');
+      return;
+    }
 
-  const onSubmit = (data: PriceListData) => {
     const requestData = new FormData();
-
     requestData.append('file', data.file);
-    // mocked now: what does ac user stand for?
     requestData.append('name', data.name);
     requestData.append('is_active', data.is_active);
 
-    execute(requestData);
+    const response = await execute({ data: requestData });
 
-    if (getPriceList) {
+    if (response && !('error' in response)) {
+      if (getPriceList) {
+        getPriceList();
+      }
       Alert.alert('Sukces', 'Dodano cennik');
-      getPriceList();
       navigation.navigate('Catalogs');
+    } else if (response && 'error' in response) {
+      Alert.alert('Błąd', (response as { error: string }).error);
     }
   };
 

@@ -2,7 +2,14 @@ import { Avatar } from '@rneui/base';
 import { Button, ListItem, Text } from '@rneui/themed';
 import { FlashList } from '@shopify/flash-list';
 import Constants from 'expo-constants';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,13 +17,14 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  View
+  View,
 } from 'react-native';
 
 import { useNavigation } from '@react-navigation/native';
 import { useForm } from 'react-hook-form';
 import { ScrollView } from 'react-native-gesture-handler';
 import { IconButton } from '../../components/Button';
+import ArrowLeftIcon from '../../components/icons/ArrowLeftIcon';
 import ArrowRightIcon from '../../components/icons/ArrowRightIcon';
 import CloseIcon from '../../components/icons/CloseIcon';
 import PlusIcon from '../../components/icons/PlusIcon';
@@ -94,6 +102,15 @@ function AddClientModal({
   onClose: () => void;
   onClientPress: (clientId: number) => void;
 }) {
+  useEffect(() => {
+    if (visible) {
+      console.log('[Map/ClientsTab] AddClientModal opened', {
+        clientsCount: clients?.length ?? 0,
+        clientIds: clients?.map(c => c.id) ?? [],
+      });
+    }
+  }, [visible, clients]);
+
   const { control, handleSubmit } = useForm({
     defaultValues: {
       name: '',
@@ -158,6 +175,13 @@ function AddClientModal({
                   <IconButton
                     icon={<PlusIcon color={Colors.black} />}
                     onPress={() => {
+                      console.log(
+                        '[Map/ClientsTab] AddClientModal: user selected client',
+                        {
+                          clientId: item.id,
+                          name: `${item.first_name} ${item.last_name}`,
+                        },
+                      );
                       onClientPress(item.id);
                     }}
                     withoutBackground
@@ -252,15 +276,22 @@ function PlaceRow({
   );
 }
 
-export default function ClientsTab({
-  places,
-  onDataChange,
-  isActive = false,
-}: {
-  places: Place[];
-  onDataChange?: () => Promise<any>;
-  isActive?: boolean;
-}) {
+export type ClientsTabRef = {
+  openAddClientModal: () => void;
+};
+
+const ClientsTab = forwardRef<
+  ClientsTabRef,
+  {
+    places: Place[];
+    onDataChange?: () => Promise<any>;
+    isActive?: boolean;
+    onClientsListOpenChange?: (open: boolean) => void;
+  }
+>(function ClientsTab(
+  { places, onDataChange, isActive = false, onClientsListOpenChange },
+  ref,
+) {
   const { execute: deleteClient } = useApi({
     path: 'remove_klient',
   });
@@ -294,6 +325,11 @@ export default function ClientsTab({
       swipeRefs.current.delete(id);
     }
   }, []);
+
+  useEffect(() => {
+    onClientsListOpenChange?.(clientsTabOpen);
+  }, [clientsTabOpen, onClientsListOpenChange]);
+
   const API_URL: string =
     Constants?.expoConfig?.extra?.apiUrl ?? 'http://api.acmanager.usermd.net';
   const API_PORT: string = Constants?.expoConfig?.extra?.apiPort ?? '';
@@ -303,6 +339,21 @@ export default function ClientsTab({
       : `${API_URL}/api/`;
   const { clients, getClients } = useClients();
   const { token } = useAuth();
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openAddClientModal: () => {
+        console.log('[Map/ClientsTab] openAddClientModal (FAB) called', {
+          currentClientsList,
+          availableClientsCount:
+            clients?.filter(x => x.lista_klientow == null).length ?? 0,
+        });
+        setAddModalVisible(true);
+      },
+    }),
+    [currentClientsList, clients],
+  );
 
   const formatClientAddress = useCallback(
     (client: Client) =>
@@ -351,6 +402,7 @@ export default function ClientsTab({
 
   const loadClientsForList = useCallback(
     async (listId: number | null) => {
+      console.log('[Map/ClientsTab] loadClientsForList called', { listId });
       if (!listId) {
         setCurrentListClients([]);
         return;
@@ -534,38 +586,82 @@ export default function ClientsTab({
   };
 
   async function handleAddClientToList(clientId: number) {
+    console.log('[Map/ClientsTab] handleAddClientToList called', {
+      clientId,
+      currentClientsList,
+      hasToken: !!token,
+      API_PATH,
+    });
     if (!currentClientsList) {
+      console.warn(
+        '[Map/ClientsTab] handleAddClientToList aborted: no currentClientsList',
+      );
       return;
     }
 
     try {
       setIsMutating(true);
-      const response = await fetch(
-        `${API_PATH}listy_klientow_add_klient_to_lista/`,
-        {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            token,
-            klient_id: clientId,
-            lista_id: currentClientsList,
-          }),
+      const body = {
+        token,
+        klient_id: clientId,
+        lista_id: currentClientsList,
+      };
+      const url = `${API_PATH}listy_klientow_add_klient_to_lista/`;
+      console.log('[Map/ClientsTab] POST add client to list', { url, body });
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
         },
-      );
+        body: JSON.stringify(body),
+      });
+
+      const responseText = await response.text();
+      let responseJson: unknown = null;
+      try {
+        responseJson = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        // ignore
+      }
+      console.log('[Map/ClientsTab] add client response', {
+        status: response.status,
+        ok: response.ok,
+        responseText: responseText.slice(0, 500),
+        responseJson,
+      });
 
       if (!response.ok) {
-        throw new Error('Add client request failed');
+        throw new Error(
+          `Add client request failed: ${response.status} ${responseText.slice(
+            0,
+            200,
+          )}`,
+        );
       }
 
-      await loadClientsForList(currentClientsList);
+      // Aktualizacja optymistyczna: getClients() zwraca tylko pierwszą stronę (20 klientów)
+      // i backend cache'uje odpowiedź, więc odświeżenie mogłoby nie pokazać dodanego klienta.
+      // Dodajemy klienta do listy z lokalnych danych (był w modalu, więc mamy go w clients).
+      const addedClient = clients?.find(c => c.id === clientId);
+      if (addedClient) {
+        const newPlace = mapClientToPlace({
+          ...addedClient,
+          lista_klientow: currentClientsList,
+        });
+        setCurrentListClients(prev => sortPlacesByName([...prev, newPlace]));
+      } else {
+        // Fallback: odśwież z API (może klient jest na pierwszej stronie)
+        await loadClientsForList(currentClientsList);
+      }
+
       if (onDataChange && onDataChange !== getClients) {
         await onDataChange();
       }
       setAddModalVisible(false);
+      console.log('[Map/ClientsTab] handleAddClientToList success');
     } catch (error) {
+      console.warn('[Map/ClientsTab] handleAddClientToList error', error);
       Alert.alert('Błąd', 'Nie udało się dodać klienta do listy');
     } finally {
       setIsMutating(false);
@@ -596,6 +692,20 @@ export default function ClientsTab({
       )}
       {clientsTabOpen && (
         <>
+          <View style={styles.listHeader}>
+            <IconButton
+              icon={<ArrowLeftIcon color={Colors.black} size={16} />}
+              onPress={() => {
+                setClientsTabOpen(false);
+                setCurrentClientsList(null);
+              }}
+              withoutBackground
+            />
+            <Text style={styles.listHeaderTitle} numberOfLines={1}>
+              {clientsLists.find(l => l.id === currentClientsList)?.nazwa ??
+                'Lista klientów'}
+            </Text>
+          </View>
           <FlashList<Place>
             data={currentListClients}
             renderItem={({ item }) => (
@@ -622,7 +732,7 @@ export default function ClientsTab({
       )}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -679,36 +789,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
-  modalButtonGroup: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
-  },
-  modalButton: {
-    padding: 10,
-    borderRadius: 5,
-    minWidth: 100,
-    alignItems: 'center',
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: Colors.blackHalfOpacity,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  saveButton: {
-    backgroundColor: Colors.primary,
-  },
-  cancelButton: {
-    backgroundColor: Colors.gray,
-  },
-  buttonText: {
-    color: Colors.white,
-    fontWeight: 'bold',
-  },
-  errorText: {
-    color: Colors.red,
-    marginBottom: 10,
   },
   loaderOverlay: {
     position: 'absolute',
@@ -726,4 +811,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: Colors.black,
   },
+  listHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+  },
+  listHeaderTitle: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: Colors.black,
+    marginLeft: 8,
+  },
 });
+
+export default ClientsTab;

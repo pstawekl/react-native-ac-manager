@@ -1,6 +1,9 @@
 import * as FileSystem from 'expo-file-system';
+import * as IntentLauncher from 'expo-intent-launcher';
 import * as Sharing from 'expo-sharing';
 import { Alert, Linking, Platform } from 'react-native';
+
+const FLAG_GRANT_READ_URI_PERMISSION = 0x00000001;
 
 /**
  * Pobiera plik PDF z serwera i otwiera go w skojarzonej aplikacji.
@@ -31,9 +34,15 @@ export async function openPdfFile(
     }
 
     // eslint-disable-next-line no-console
-    console.log('Otwieranie pliku PDF:', filePath);
+    console.log('[openPdfFile] Wejście, filePath:', filePath);
 
-    const fileUrl = `http://api.acmanager.usermd.net${filePath}`;
+    // filePath może być już pełnym URL-em (http/https) lub ścieżką względną
+    const fileUrl =
+      filePath.startsWith('http://') || filePath.startsWith('https://')
+        ? filePath
+        : `http://api.acmanager.usermd.net${
+            filePath.startsWith('/') ? '' : '/'
+          }${filePath}`;
     const fileName = filePath.split('/').pop() || 'document.pdf';
 
     // Pobierz plik do documentDirectory (bardziej trwały i lepiej obsługiwany przez FileProvider)
@@ -43,9 +52,9 @@ export async function openPdfFile(
     const localUri = `${FileSystem.documentDirectory}${uniqueFileName}`;
 
     // eslint-disable-next-line no-console
-    console.log('Lokalna ścieżka:', localUri);
+    console.log('[openPdfFile] fileUrl (pobieranie):', fileUrl);
     // eslint-disable-next-line no-console
-    console.log('Pobieranie pliku z serwera:', fileUrl);
+    console.log('[openPdfFile] localUri (docelowa ścieżka):', localUri);
 
     // Zawsze pobierz plik z serwera (nadpisz jeśli istnieje)
     // Pokaż spinner podczas pobierania
@@ -59,29 +68,42 @@ export async function openPdfFile(
       }
 
       // Pobierz plik z serwera
-      const downloadResult = await FileSystem.downloadAsync(
-        fileUrl,
-        localUri,
-      );
+      const downloadResult = await FileSystem.downloadAsync(fileUrl, localUri);
+
+      // eslint-disable-next-line no-console
+      console.log('[openPdfFile] downloadAsync result:', {
+        uri: downloadResult.uri,
+        status: downloadResult.status,
+      });
 
       if (!downloadResult.uri) {
         throw new Error('Nie udało się pobrać pliku');
       }
-      
+
       downloadedUri = downloadResult.uri;
-      // eslint-disable-next-line no-console
-      console.log('Plik pobrany:', downloadedUri);
-      
+
       // Sprawdź czy plik został poprawnie pobrany
-      const fileInfo = await FileSystem.getInfoAsync(downloadedUri);
+      const fileInfo = await FileSystem.getInfoAsync(downloadedUri, {
+        size: true,
+      });
+      const size = 'size' in fileInfo ? fileInfo.size : 0;
+      // eslint-disable-next-line no-console
+      console.log(
+        '[openPdfFile] Plik po pobraniu – exists:',
+        fileInfo.exists,
+        'size:',
+        size,
+        'bajtów',
+      );
+
       if (!fileInfo.exists) {
         throw new Error('Plik nie istnieje po pobraniu');
       }
-      if (fileInfo.size === 0) {
-        throw new Error('Plik został pobrany ale jest pusty (rozmiar 0 bajtów)');
+      if (size === 0) {
+        throw new Error(
+          'Plik został pobrany ale jest pusty (rozmiar 0 bajtów)',
+        );
       }
-      // eslint-disable-next-line no-console
-      console.log('Rozmiar pobranego pliku:', fileInfo.size, 'bajtów');
     } finally {
       // Ukryj spinner po zakończeniu pobierania
       onLoadingEnd?.();
@@ -89,90 +111,90 @@ export async function openPdfFile(
 
     // Użyj downloadedUri zamiast localUri (to jest rzeczywista ścieżka do pobranego pliku)
     const fileUriToOpen = downloadedUri || localUri;
-    
-    // Na Androidzie użyj getContentUriAsync + IntentLauncher aby otworzyć plik bezpośrednio
-    // Na iOS użyj Linking.openURL z file:// URI
+
+    // eslint-disable-next-line no-console
+    console.log(
+      '[openPdfFile] fileUriToOpen (przed otwarciem):',
+      fileUriToOpen,
+    );
+
+    // Upewnij się, że fileUriToOpen ma format file://
+    const fileUri = fileUriToOpen.startsWith('file://')
+      ? fileUriToOpen
+      : `file://${fileUriToOpen}`;
+
+    // Sprawdź ponownie czy plik istnieje
+    const finalCheck = await FileSystem.getInfoAsync(fileUri, {
+      size: true,
+    });
+    const fileSize = 'size' in finalCheck ? finalCheck.size : 0;
+    if (!finalCheck.exists || fileSize === 0) {
+      throw new Error(
+        `Plik nie istnieje lub jest pusty przed otwarciem. Rozmiar: ${fileSize}`,
+      );
+    }
+
+    // Na Androidzie: IntentLauncher z content URI + FLAG_GRANT_READ_URI_PERMISSION
+    // otwiera PDF bezpośrednio w skojarzonej aplikacji (bez ekranu udostępniania).
     if (Platform.OS === 'android') {
       try {
-        // Upewnij się, że fileUriToOpen ma format file://
-        const fileUri = fileUriToOpen.startsWith('file://')
-          ? fileUriToOpen
-          : `file://${fileUriToOpen}`;
-        
-        // eslint-disable-next-line no-console
-        console.log('Próba otwarcia pliku z URI:', fileUri);
-        
-        // Sprawdź ponownie czy plik istnieje przed konwersją
-        const finalCheck = await FileSystem.getInfoAsync(fileUri);
-        if (!finalCheck.exists || finalCheck.size === 0) {
-          throw new Error(`Plik nie istnieje lub jest pusty przed otwarciem. Rozmiar: ${finalCheck.size}`);
-        }
-        
-        // eslint-disable-next-line no-console
-        console.log('Plik istnieje, rozmiar:', finalCheck.size, 'bajtów');
-        
-        // Konwertuj file:// URI na content:// URI używając getContentUriAsync
         const contentUri = await FileSystem.getContentUriAsync(fileUri);
-        
         // eslint-disable-next-line no-console
         console.log(
-          `Otwieranie pliku na Android używając content:// URI:`,
+          '[openPdfFile] Android – otwarcie przez IntentLauncher (contentUri):',
           contentUri,
         );
-        
-        // Dodajemy małe opóźnienie aby upewnić się, że plik jest gotowy
-        await new Promise(resolve => setTimeout(resolve, 200));
-        
-        // Spróbuj otworzyć przez Linking z content:// URI
-        // Uwaga: To może nie działać bez flag FLAG_GRANT_READ_URI_PERMISSION,
-        // ale spróbujemy jako pierwsze podejście
-        try {
-          // eslint-disable-next-line no-console
-          console.log('Próba otwarcia przez Linking z content:// URI:', contentUri);
-          const canOpen = await Linking.canOpenURL(contentUri);
-          if (canOpen) {
-            await Linking.openURL(contentUri);
-            return; // Sukces, zakończ funkcję
-          }
-        } catch (linkingError: any) {
-          // eslint-disable-next-line no-console
-          console.warn('Linking.openURL nie zadziałał, próbujemy expo-sharing:', linkingError);
-        }
-        
-        // Fallback: użyj expo-sharing jako ostatnia deska ratunku
-        // expo-sharing używa natywnych flag Intent z FLAG_GRANT_READ_URI_PERMISSION
-        // Niestety zawsze pokazuje okno wyboru aplikacji, ale to jedyne działające rozwiązanie
-        // bez potrzeby przebudowy aplikacji natywnej
+        const result = await IntentLauncher.startActivityAsync(
+          'android.intent.action.VIEW',
+          {
+            data: contentUri,
+            type: 'application/pdf',
+            flags: FLAG_GRANT_READ_URI_PERMISSION,
+          },
+        );
+        // eslint-disable-next-line no-console
+        // console.log(
+        //   '[openPdfFile] Android – IntentLauncher result:',
+        //   result.resultCode,
+        // );
+        // if (result.resultCode !== IntentLauncher.ResultCode.Success) {
+        //   // Brak aplikacji do PDF lub użytkownik anulował – fallback na sharing
+        //   if (await Sharing.isAvailableAsync()) {
+        //     await Sharing.shareAsync(fileUri, {
+        //       mimeType: 'application/pdf',
+        //       UTI: 'com.adobe.pdf',
+        //     });
+        //   }
+        // }
+      } catch (intentError: unknown) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[openPdfFile] Android – IntentLauncher nie zadziałał, fallback sharing:',
+          intentError,
+        );
         if (await Sharing.isAvailableAsync()) {
-          // eslint-disable-next-line no-console
-          console.log('Używanie expo-sharing jako fallback');
           await Sharing.shareAsync(fileUri, {
             mimeType: 'application/pdf',
             UTI: 'com.adobe.pdf',
           });
         } else {
-          throw new Error('Nie można otworzyć pliku: brak dostępnych metod otwierania plików');
+          throw intentError;
         }
-      } catch (error: any) {
-        // eslint-disable-next-line no-console
-        console.error('Błąd podczas otwierania pliku:', error);
-        throw error;
       }
     } else {
-      // Na iOS użyj Linking.openURL z file:// URI
-      const fileUri = fileUriToOpen.startsWith('file://')
-        ? fileUriToOpen
-        : `file://${fileUriToOpen}`;
+      // Na iOS Linking.openURL z file:// działa poprawnie
       // eslint-disable-next-line no-console
-      console.log(`Otwieranie pliku na iOS używając file:// URI:`, fileUri);
+      console.log('[openPdfFile] iOS – otwarcie fileUri:', fileUri);
       await Linking.openURL(fileUri);
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     // eslint-disable-next-line no-console
-    console.error('Błąd podczas otwierania pliku PDF:', error);
+    console.error('[openPdfFile] Błąd:', error);
     Alert.alert(
       'Błąd',
-      `Nie udało się otworzyć pliku PDF: ${error.message || 'Nieznany błąd'}`,
+      `Nie udało się otworzyć pliku PDF: ${
+        error instanceof Error ? error.message : 'Nieznany błąd'
+      }`,
     );
   }
 }

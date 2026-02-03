@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { DrawerScreenProps } from '@react-navigation/drawer';
 import { Text } from '@rneui/base';
@@ -14,7 +20,7 @@ import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import { MainParamList } from '../../navigation/types';
 import useClients, { Client } from '../../providers/ClientsProvider';
-import ClientsTab from './ClientsTab';
+import ClientsTab, { ClientsTabRef } from './ClientsTab';
 import MapTab from './MapTab';
 
 export type Place = {
@@ -286,6 +292,9 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
   const [filteredClients, setFilteredClients] = useState<Place[]>([]);
   const [isLoadingPlaces, setIsLoadingPlaces] = useState(true);
   const [addModalVisible, setAddModalVisible] = useState(false);
+  const [listTabIndex, setListTabIndex] = useState(0);
+  const [clientsTabOpen, setClientsTabOpen] = useState(false);
+  const clientsTabRef = useRef<ClientsTabRef>(null);
   const { execute: updateClientCoordinates } = useApi<{
     message: string;
     error?: string;
@@ -451,9 +460,11 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
   const renderClientsTab = useCallback(
     (props: { isActive: boolean }) => (
       <ClientsTab
+        ref={clientsTabRef}
         places={filteredClients}
         onDataChange={getClients}
         isActive={props.isActive}
+        onClientsListOpenChange={setClientsTabOpen}
       />
     ),
     [filteredClients, getClients],
@@ -482,6 +493,8 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
         items={items}
         isWithLinearGradient={false}
         isButtonsHeader={false}
+        headerDividerColor={Colors.yellow}
+        onTabChange={setListTabIndex}
       />
 
       <AddListModal
@@ -490,9 +503,15 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
         onSave={handleAddList}
       />
 
-      {/* FAB - Floating Action Button */}
+      {/* FAB - Floating Action Button: dodaj klienta do listy gdy otwarta lista, w przeciwnym razie dodaj nową listę */}
       <FloatingActionButton
-        onPress={() => setAddModalVisible(true)}
+        onPress={() => {
+          if (listTabIndex === 1 && clientsTabOpen) {
+            clientsTabRef.current?.openAddClientModal();
+          } else {
+            setAddModalVisible(true);
+          }
+        }}
         backgroundColor={Colors.yellow}
       />
     </Container>

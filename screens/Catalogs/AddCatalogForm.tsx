@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Alert, StyleSheet, View } from 'react-native';
 
@@ -27,31 +26,37 @@ function AddCatalogForm({ navigation }: CatalogsAddCatalogScreenProps) {
     },
   });
 
-  const { result, execute, loading } = useApi<object, FormData>({
+  const { execute, loading } = useApi<object, FormData>({
     path: 'katalog_add',
   });
 
   const { getCatalogs } = useCatalogs();
 
-  useEffect(() => {
-    // TODO
-  }, [result]);
-
   const onSubmit = async (data: CatalogData) => {
-    const requestData = new FormData();
+    if (!data.file) {
+      Alert.alert('Błąd', 'Wybierz plik katalogu.');
+      return;
+    }
 
+    const requestData = new FormData();
     requestData.append('file', data.file);
-    // mocked now: what does ac user stand for?
-    // requestData.append('ac_user', 9);
     requestData.append('name', data.name);
     requestData.append('is_active', data.is_active);
 
-    await execute(requestData);
+    const response = await execute({ data: requestData });
 
-    if (getCatalogs) {
-      Alert.alert('Sukces', 'Dodano katalog');
-      getCatalogs();
-      navigation.navigate('Catalogs');
+    if (response && !('error' in response)) {
+      if (getCatalogs) {
+        getCatalogs();
+      }
+      Alert.alert('Sukces', 'Dodano katalog', [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack(),
+        },
+      ]);
+    } else if (response && 'error' in response) {
+      Alert.alert('Błąd', (response as { error: string }).error);
     }
   };
 
@@ -101,7 +106,7 @@ function AddCatalogForm({ navigation }: CatalogsAddCatalogScreenProps) {
           submitStyle={styles.submitButton}
           cancelTitle="Anuluj"
           onSubmitPress={handleSubmit(onSubmit)}
-          onCancel={() => navigation.navigate('Menu')}
+          onCancel={() => navigation.goBack()}
         />
       </View>
     </Container>

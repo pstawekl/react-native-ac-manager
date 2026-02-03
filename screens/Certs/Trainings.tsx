@@ -7,7 +7,6 @@ import { Linking, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import Spinner from 'react-native-loading-spinner-overlay/lib';
 
-import ButtonsHeader from '../../components/ButtonsHeader';
 import ConfirmationOverlay from '../../components/ConfirmationOverlay';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import Colors from '../../consts/Colors';
@@ -79,10 +78,6 @@ export default function Trainings() {
 
   return (
     <View style={styles.container}>
-      <ButtonsHeader
-        // onBackPress={goBack}
-      />
-
       <ScrollView>
         {trainings?.length ? (
           trainings.map(item => {

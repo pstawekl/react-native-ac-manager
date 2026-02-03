@@ -124,10 +124,12 @@ export default function PriceList({ searchQuery = '' }: PriceListProps) {
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(false);
 
-  const onDeleteConfirmed = () => {
-    if (idToDelete && getPriceList) {
-      deletePriceListItem({ cennik_id: idToDelete });
-      toggleOverlay();
+  const onDeleteConfirmed = async () => {
+    if (!idToDelete) return;
+    await deletePriceListItem({ data: { cennik_id: idToDelete } });
+    toggleOverlay();
+    setIdToDelete(null);
+    if (getPriceList) {
       getPriceList();
     }
   };
@@ -178,11 +180,9 @@ export default function PriceList({ searchQuery = '' }: PriceListProps) {
       />
 
       <ScrollView>
-        {filteredPriceList?.length ? (
-          <View />
-        ) : (
+        {!filteredPriceList?.length ? (
           <Text style={styles.noPriceLists}>Brak cenników.</Text>
-        )}
+        ) : null}
         {filteredPriceList?.map(item => (
           <View key={item.id}>
             <PriceListElement

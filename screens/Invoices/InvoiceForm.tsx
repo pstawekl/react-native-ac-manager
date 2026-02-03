@@ -1,7 +1,7 @@
 /* eslint-disable react-native/no-inline-styles */
-import { Button, Divider, Text } from '@rneui/themed';
-import React, { useCallback, useEffect, useState } from 'react';
-import { Control, UseFormRegister, useForm, useWatch } from 'react-hook-form';
+import { Button, Divider, Input, Text } from '@rneui/themed';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Control, useController, useForm, useWatch } from 'react-hook-form';
 import { Alert, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-virtualized-view';
 
@@ -152,7 +152,7 @@ function BuyerDetailsForm({
   }
 
   return (
-    <View style={{ gap: -18 }}>
+    <View style={{ gap: 0 }}>
       {!clientId && (
         <Dropdown
           name="client"
@@ -168,17 +168,19 @@ function BuyerDetailsForm({
           isBordered={false}
         />
       )}
-      <Dropdown
-        name="buyer"
-        control={control}
-        label="Typ nabywcy"
-        options={[
-          { label: 'Osoba prywatna', value: 'private' },
-          { label: 'Firma', value: 'company' },
-        ]}
-        isBordered={false}
-        disabled={Boolean(clientId)}
-      />
+      <View style={clientId ? { paddingBottom: 10 } : undefined}>
+        <Dropdown
+          name="buyer"
+          control={control}
+          label="Typ nabywcy"
+          options={[
+            { label: 'Osoba prywatna', value: 'private' },
+            { label: 'Firma', value: 'company' },
+          ]}
+          isBordered={false}
+          disabled={Boolean(clientId)}
+        />
+      </View>
       <FormInput
         label="Firma / Imię i nazwisko"
         noPadding
@@ -218,31 +220,95 @@ function BuyerDetailsForm({
   );
 }
 
+type PositionTextFieldName =
+  | `positions.${number}.productName`
+  | `positions.${number}.productQuantity`
+  | `positions.${number}.productUnit`
+  | `positions.${number}.nettoPrice`;
+
+/**
+ * Pole tekstowe pozycji z lokalnym stanem – zapis do formularza tylko przy onBlur.
+ * Zapobiega resetowaniu wpisanego tekstu przy re-renderze rodzica (useWatch('positions')).
+ */
+function PositionFormInputWithLocalState({
+  control,
+  name,
+  label,
+  containerStyle,
+}: {
+  control: Control<FormData>;
+  name: PositionTextFieldName;
+  label: string;
+  containerStyle?: object;
+}) {
+  const { field } = useController({ control, name });
+  const [localValue, setLocalValue] = useState(() =>
+    field.value != null ? String(field.value) : '',
+  );
+  const lastSentRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const formVal = field.value != null ? String(field.value) : '';
+    if (formVal !== lastSentRef.current) {
+      setLocalValue(formVal);
+    }
+  }, [field.value]);
+
+  return (
+    <Input
+      label={label}
+      value={localValue}
+      onChangeText={setLocalValue}
+      onBlur={() => {
+        lastSentRef.current = localValue;
+        field.onChange(localValue);
+        field.onBlur();
+      }}
+      inputStyle={{
+        fontFamily: 'Archivo_400Regular',
+        borderWidth: 1,
+        color: Colors.black,
+        borderColor: Colors.borderInput,
+        borderRadius: 10,
+        height: 54,
+        minHeight: 40,
+        paddingHorizontal: 12,
+        fontSize: 14,
+        backgroundColor: Colors.white,
+        marginBottom: 6,
+      }}
+      inputContainerStyle={{ borderBottomWidth: 0 }}
+      containerStyle={{
+        paddingHorizontal: 0,
+        width: '100%',
+        ...containerStyle,
+      }}
+      labelStyle={{
+        fontFamily: 'Archivo_600SemiBold',
+        marginTop: 0,
+        marginBottom: 6,
+        color: Colors.black,
+        fontSize: 10,
+        letterSpacing: 0.3,
+        fontWeight: 'normal',
+      }}
+    />
+  );
+}
+
 function ProductDetailsForm({
   control,
   position,
-  register,
   setValue,
   onAddNewPosition,
   isLastPosition,
 }: {
   control: Control<FormData>;
   position: number;
-  register: UseFormRegister<FormData>;
   setValue: (name: any, value: any) => void;
   onAddNewPosition?: () => void;
   isLastPosition?: boolean;
 }) {
-  React.useEffect(() => {
-    register(`positions.${position}.productName`);
-    register(`positions.${position}.buyerType`);
-    register(`positions.${position}.productQuantity`);
-    register(`positions.${position}.productUnit`);
-    register(`positions.${position}.nettoPrice`);
-    register(`positions.${position}.vat`);
-    register(`positions.${position}.productBrutto`);
-  }, [register, position]);
-
   const quantity = useWatch({
     control,
     name: `positions.${position}.productQuantity` as any,
@@ -261,9 +327,9 @@ function ProductDetailsForm({
     name: `positions.${position}.productBrutto` as any,
   });
 
-  // Obliczanie wartości brutto
+  // Obliczanie wartości brutto – odroczone setValue, żeby nie kolidować z wpisywaniem
+  // (setValue w tym samym cyklu co onChange nadpisywał wpisywane znaki w innych polach)
   useEffect(() => {
-    // Sprawdzamy, czy wszystkie wartości są dostępne
     if (
       quantity === undefined &&
       nettoPrice === undefined &&
@@ -279,25 +345,24 @@ function ProductDetailsForm({
     const grossValue = qty * price * (1 + vatRate / 100);
     const newBruttoValue = grossValue.toFixed(2);
 
-    // Sprawdzamy, czy wartość się zmieniła, aby uniknąć niepotrzebnych aktualizacji
-    // Porównujemy jako stringi, aby uniknąć problemów z precyzją liczb zmiennoprzecinkowych
     const currentBruttoStr = bruttoValue?.toString() || '0.00';
     if (currentBruttoStr !== newBruttoValue) {
-      setValue(`positions.${position}.productBrutto`, newBruttoValue);
+      const timer = setTimeout(() => {
+        setValue(`positions.${position}.productBrutto`, newBruttoValue);
+      }, 0);
+      return () => clearTimeout(timer);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quantity, nettoPrice, vat, position]);
 
   return (
     <View style={{ gap: -18 }}>
-      <FormInput
-        label="Nazwa pozycji"
-        noPadding
-        isBordered
+      <PositionFormInputWithLocalState
         control={control}
         name={`positions.${position}.productName`}
+        label="Nazwa pozycji"
       />
-      <Dropdown
+      {/* <Dropdown
         name={`positions.${position}.buyerType`}
         control={control}
         label="Typ nabywcy"
@@ -306,35 +371,29 @@ function ProductDetailsForm({
           { label: 'Firma', value: 'company' },
         ]}
         isBordered={false}
-      />
+      /> */}
       <View style={styles.rowContainer}>
         <View style={styles.halfWidth}>
-          <FormInput
-            label="Ilość"
-            noPadding
-            isBordered
+          <PositionFormInputWithLocalState
             control={control}
             name={`positions.${position}.productQuantity`}
+            label="Ilość"
           />
         </View>
         <View style={[styles.halfWidth, styles.rightMargin]}>
-          <FormInput
-            label="Jednostka"
-            noPadding
-            isBordered
+          <PositionFormInputWithLocalState
             control={control}
             name={`positions.${position}.productUnit`}
+            label="Jednostka"
           />
         </View>
       </View>
       <View style={styles.rowContainer}>
         <View style={styles.halfWidth}>
-          <FormInput
-            label="Cena netto"
-            noPadding
-            isBordered
+          <PositionFormInputWithLocalState
             control={control}
             name={`positions.${position}.nettoPrice`}
+            label="Cena netto"
           />
         </View>
         <View style={[styles.halfWidth, styles.rightMargin]}>
@@ -382,15 +441,26 @@ function ProductDetailsForm({
   );
 }
 
+function parsePositionNumber(
+  value: string | number | null | undefined,
+): number {
+  if (value === null || value === undefined) return 0;
+  const str = String(value).trim().replace(',', '.');
+  const num = parseFloat(str);
+  return Number.isNaN(num) ? 0 : num;
+}
+
 function SummarySection({
-  positions,
+  positionsIndices,
+  getValues,
   currency,
 }: {
-  positions: Array<{ [key: string]: string | null }> | undefined;
+  positionsIndices: number[];
+  getValues: (path: string) => unknown;
   currency: string | null;
 }) {
   const calculateSummary = () => {
-    if (!positions || positions.length === 0) {
+    if (!positionsIndices || positionsIndices.length === 0) {
       return {
         netto: '0,00',
         vat: '0,00',
@@ -402,10 +472,28 @@ function SummarySection({
     let vatSum = 0;
     let bruttoSum = 0;
 
-    positions.forEach(position => {
-      const quantity = parseFloat(position.productQuantity?.toString() || '0');
-      const nettoPrice = parseFloat(position.nettoPrice?.toString() || '0');
-      const vatRate = parseFloat(position.vat?.toString() || '0');
+    positionsIndices.forEach(index => {
+      const quantity = parsePositionNumber(
+        getValues(`positions.${index}.productQuantity`) as
+        | string
+        | number
+        | null
+        | undefined,
+      );
+      const nettoPrice = parsePositionNumber(
+        getValues(`positions.${index}.nettoPrice`) as
+        | string
+        | number
+        | null
+        | undefined,
+      );
+      const vatRate = parsePositionNumber(
+        getValues(`positions.${index}.vat`) as
+        | string
+        | number
+        | null
+        | undefined,
+      );
 
       const netto = quantity * nettoPrice;
       const vat = netto * (vatRate / 100);
@@ -465,7 +553,7 @@ function DeliveryDetailsForm({
   clientId: number | null;
 }) {
   return (
-    <View style={{ gap: -18 }}>
+    <View style={{ gap: 0 }}>
       <Dropdown
         name="paymentMethod"
         control={control}
@@ -534,22 +622,40 @@ function DeliveryDetailsForm({
   );
 }
 
-function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
-  const {
-    clientId: paramClientId,
-    installationId,
-    sourceScreen,
-  } = route.params ?? {};
+function parseOptionalNumber(
+  value: number | string | undefined | null,
+): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const num = Number(value);
+  return Number.isNaN(num) ? null : num;
+}
 
-  const { control, register, handleSubmit, setValue, unregister } =
+function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
+  const params = route.params ?? {};
+  const paramClientId = parseOptionalNumber(params.clientId);
+  const paramInstallationId = parseOptionalNumber(params.installationId);
+  const { sourceScreen } = params;
+
+  const { control, getValues, handleSubmit, setValue, unregister } =
     useForm<FormData>({
-      defaultValues: { sellDate: new Date(), issueDate: new Date() },
+      defaultValues: {
+        sellDate: new Date(),
+        issueDate: new Date(),
+        positions: [
+          {
+            productName: null,
+            productQuantity: null,
+            productUnit: null,
+            nettoPrice: null,
+            vat: null,
+            productBrutto: null,
+          },
+        ],
+      },
     });
   const [positions, setPositions] = useState<Array<number>>([0]);
   const [clientsList, setClientsList] = useState<Client[] | null>(null);
-  const [clientId, setClientId] = useState<number | null>(
-    paramClientId ?? null,
-  );
+  const [clientId, setClientId] = useState<number | null>(paramClientId);
 
   type ApiResponse = {
     code?: string;
@@ -645,21 +751,36 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
 
+  // Synchronizuj clientId ze parametrami nawigacji (np. po wejściu z Instalacji)
   useEffect(() => {
-    if (clients && clientId) {
-      const client = clients.filter(item => item.id === clientId)[0];
+    if (paramClientId != null) {
+      setClientId(paramClientId);
+    }
+  }, [paramClientId]);
 
-      setValue('buyerName', `${client?.first_name} ${client?.last_name}`);
-      setValue('buyerNip', client?.nip);
-      setValue('buyerStreet', client?.ulica);
-      setValue('buyerCode', client?.kod_pocztowy);
-      setValue('buyerCity', client?.miasto);
-      setValue('client', clientId);
-      setValue('receivedBy', `${client?.first_name} ${client?.last_name}`);
-      setValue(
-        'buyer',
-        client?.rodzaj_klienta === 'firma' ? 'company' : 'private',
-      );
+  useEffect(() => {
+    if (clients && clientId != null) {
+      const client = clients.find(item => item.id === clientId);
+
+      if (client) {
+        setValue(
+          'buyerName',
+          `${client.first_name ?? ''} ${client.last_name ?? ''}`.trim(),
+        );
+        setValue('buyerNip', client.nip ?? null);
+        setValue('buyerStreet', client.ulica ?? null);
+        setValue('buyerCode', client.kod_pocztowy ?? null);
+        setValue('buyerCity', client.miasto ?? null);
+        setValue('client', clientId);
+        setValue(
+          'receivedBy',
+          `${client.first_name ?? ''} ${client.last_name ?? ''}`.trim(),
+        );
+        setValue(
+          'buyer',
+          client.rodzaj_klienta === 'firma' ? 'company' : 'private',
+        );
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clients, clientId]);
@@ -749,7 +870,9 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
       return;
     }
 
-    const response = await createInvoice({ data: { ...data, installationId } });
+    const response = await createInvoice({
+      data: { ...data, installationId: paramInstallationId ?? undefined },
+    });
     if (
       response &&
       response.code === 'error' &&
@@ -777,31 +900,28 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
         text: 'OK',
         onPress: () => {
           if (
-            route.params?.from === 'Installation' &&
-            route.params?.clientId &&
-            route.params?.installationId
+            params.from === 'Installation' &&
+            paramClientId != null &&
+            paramInstallationId != null
           ) {
             // Navigate back to the installation's Faktury tab
             navigation.navigate('Clients' as any, {
               screen: 'Settings',
               params: {
-                clientId: route.params.clientId.toString(),
-                installationId: route.params.installationId.toString(),
+                clientId: String(paramClientId),
+                installationId: String(paramInstallationId),
                 activeTab: 'faktury',
               },
             });
-          } else if (
-            route.params?.from === 'Installation' &&
-            route.params?.clientId
-          ) {
+          } else if (params.from === 'Installation' && paramClientId != null) {
             // Navigate back to the specific client if we have clientId but no installationId
             navigation.navigate('Clients' as any, {
               screen: 'Menu',
-              params: { clientId: route.params.clientId },
+              params: { clientId: paramClientId },
             });
           } else if (
-            route.params?.from === 'Installation' ||
-            route.params?.sourceScreen === 'client'
+            params.from === 'Installation' ||
+            params.sourceScreen === 'client'
           ) {
             // Navigate back to client list if we came from installation but don't have specific client
             navigation.navigate('Clients' as any);
@@ -816,29 +936,26 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
 
   const handleBackNavigation = useCallback(() => {
     if (
-      route.params?.from === 'Installation' &&
-      route.params?.clientId &&
-      route.params?.installationId
+      params.from === 'Installation' &&
+      paramClientId != null &&
+      paramInstallationId != null
     ) {
       // Navigate back to the installation's Faktury tab
       navigation.navigate('Clients' as any, {
         screen: 'Settings',
         params: {
-          clientId: route.params.clientId.toString(),
-          installationId: route.params.installationId.toString(),
+          clientId: String(paramClientId),
+          installationId: String(paramInstallationId),
           activeTab: 'faktury',
         },
       });
-    } else if (
-      route.params?.from === 'Installation' &&
-      route.params?.clientId
-    ) {
+    } else if (params.from === 'Installation' && paramClientId != null) {
       // Navigate back to the specific client if we have clientId but no installationId
       navigation.navigate('Clients' as any, {
         screen: 'Menu',
-        params: { clientId: route.params.clientId },
+        params: { clientId: paramClientId },
       });
-    } else if (route.params?.from === 'Installation') {
+    } else if (params.from === 'Installation') {
       // Navigate back to client list if we came from installation
       navigation.navigate('Clients' as any);
     } else {
@@ -890,7 +1007,6 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
                 <ProductDetailsForm
                   control={control}
                   position={position}
-                  register={register}
                   setValue={setValue}
                   onAddNewPosition={addNewPosition}
                   isLastPosition={index === positions.length - 1}
@@ -910,7 +1026,8 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
 
           <Text style={styles.header}>Podsumowanie</Text>
           <SummarySection
-            positions={watchedPositions || []}
+            positionsIndices={positions}
+            getValues={getValues}
             currency={watchedCurrency}
           />
           <DeliveryDetailsForm control={control} clientId={clientId} />

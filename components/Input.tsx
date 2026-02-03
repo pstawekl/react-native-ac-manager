@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { MaterialIcons } from '@expo/vector-icons';
 import { Input, InputProps, Text } from '@rneui/themed';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Control, Controller, FieldError } from 'react-hook-form';
 import { FieldPathValue } from 'react-hook-form/dist/types';
 import { FieldValues } from 'react-hook-form/dist/types/fields';
@@ -28,6 +28,7 @@ type FormInputProps<T extends FieldValues> = Omit<InputProps, 'ref'> & {
   textColor?: string;
   color?: string;
   rules?: object;
+  isMarginBottom?: boolean;
 };
 
 type TextAreaProps<T extends FieldValues> = Omit<InputProps, 'onChange'> & {
@@ -67,6 +68,7 @@ type DropdownProps<
   containerStyle?: object;
   textStyle?: object;
   placeholderStyle?: object;
+  isMarginBottom?: boolean;
 };
 
 type FormColorPickerProps<T extends FieldValues> = {
@@ -141,6 +143,7 @@ export function FormInput<
   required = false,
   grayBackground = false,
   noPadding = false,
+  isMarginBottom = true,
   ...props
 }: FormInputProps<T>) {
   let width = '100%';
@@ -184,6 +187,7 @@ export function FormInput<
               grayBackground && !isBordered
                 ? Colors.invoiceFormTextContainer
                 : Colors.white,
+            marginBottom: isMarginBottom ? 6 : 0,
           }}
           /* eslint-disable-next-line react-native/no-inline-styles */
           inputContainerStyle={{
@@ -216,7 +220,7 @@ export function FormInput<
             letterSpacing: 0.3,
             fontWeight: 'normal',
           }}
-          value={value}
+          value={value != null ? String(value) : ''}
           onFocus={() => setActive(true)}
           onBlur={() => setActive(false)}
           onChangeText={(text: string) =>
@@ -296,7 +300,7 @@ export function Textarea<
           }}
           multiline
           numberOfLines={4}
-          value={value}
+          value={value != null ? String(value) : ''}
           onFocus={() => setActive(true)}
           onBlur={() => setActive(false)}
           onChangeText={(text: string) =>
@@ -330,6 +334,7 @@ export function Dropdown<
   containerStyle,
   textStyle,
   placeholderStyle,
+  isMarginBottom = true,
   ...props
 }: DropdownProps<TFieldValues, TName>) {
   const [open, setOpen] = useState(false);
@@ -367,8 +372,10 @@ export function Dropdown<
             // Akceptuj również puste stringi i 0 jako prawidłowe wartości
             if (newValue !== field.value) {
               isUpdatingRef.current = true;
-              field.onChange(newValue);
-              if (onChange) {
+              if (typeof field.onChange === 'function') {
+                field.onChange(newValue);
+              }
+              if (onChange && typeof onChange === 'function') {
                 onChange(newValue);
               }
               // Reset flag after state update
@@ -382,74 +389,84 @@ export function Dropdown<
             // DropDownPicker używa setValue jako funkcji settera (podobnie jak useState)
             // callback może być wartością lub funkcją (prevValue) => newValue
             if (isUpdatingRef.current) return;
-            
+
             let newValue: any;
             if (typeof callback === 'function') {
               newValue = callback(field.value);
             } else {
               newValue = callback;
             }
-            
-            // Wywołaj handleValueChange tylko jeśli wartość się zmieniła
+
+            // Wywołaj handleValueChange tylko jeśli wartość się zmieniła (porównanie z undefined/null/'' uwzględnione)
             if (newValue !== field.value) {
               handleValueChange(newValue);
             }
           };
 
-          return (
-            <DropDownPicker<FieldPathValue<TFieldValues, TName>>
-              key={`${name}-${field.value ?? 'null'}`}
-              disabled={props.disabled}
-              dropDownDirection={dropDownDirection}
-              /* eslint-disable-next-line react-native/no-inline-styles */
-              style={{
-                borderWidth: grayBackground ? 0 : 1,
-                borderColor: borderColor || '#E8E8E8',
-                borderRadius: 8,
-                backgroundColor: grayBackground ? '#F4F4F4' : Colors.white,
-                minHeight: customHeight || (isThin ? 34 : 44),
-                marginBottom: 12,
-                ...containerStyle,
-              }}
-              /* eslint-disable-next-line react-native/no-inline-styles */
-              textStyle={{
-                fontFamily: 'Poppins_400Regular',
-                fontSize: 14,
-                color: '#111',
-                ...textStyle,
-              }}
-              /* eslint-disable-next-line react-native/no-inline-styles */
-              placeholderStyle={{
-                color: '#ADADAD',
-                ...placeholderStyle,
-              }}
-              placeholder=""
-              /* eslint-disable-next-line react-native/no-inline-styles */
-              dropDownContainerStyle={{
-                borderWidth: isBordered ? 1 : 0,
-                borderTopWidth: 1,
-                borderTopColor: Colors.divider,
-                backgroundColor: isBordered
-                  ? Colors.white
-                  : Colors.invoiceFormTextContainer,
-              }}
-              itemKey="value"
-              open={open}
-              value={field.value ?? null}
-              setValue={handleSetValue}
-              items={options}
-              setOpen={setOpen}
-              setItems={() => {
-                // Nie używamy setItems, bo options są kontrolowane z zewnątrz
-              }}
-              onChangeValue={handleValueChange}
-              placeholder={field.value ? undefined : 'Wybierz...'}
-              listMode="MODAL"
-              modalAnimationType="slide"
-              closeAfterSelecting
-              closeOnBackPressed
-            />
-          );
+          try {
+            const picker = (
+              <DropDownPicker<FieldPathValue<TFieldValues, TName>>
+                key={`${name}-${field.value ?? 'null'}`}
+                disabled={props.disabled}
+                dropDownDirection={dropDownDirection}
+                /* eslint-disable-next-line react-native/no-inline-styles */
+                style={{
+                  borderWidth: grayBackground ? 0 : 1,
+                  borderColor: borderColor || '#E8E8E8',
+                  borderRadius: 8,
+                  backgroundColor: grayBackground ? '#F4F4F4' : Colors.white,
+                  minHeight: customHeight || (isThin ? 34 : 44),
+                  marginBottom: isMarginBottom ? 12 : 0,
+                  ...containerStyle,
+                }}
+                /* eslint-disable-next-line react-native/no-inline-styles */
+                textStyle={{
+                  fontFamily: 'Poppins_400Regular',
+                  fontSize: 14,
+                  color: '#111',
+                  ...textStyle,
+                }}
+                /* eslint-disable-next-line react-native/no-inline-styles */
+                placeholderStyle={{
+                  color: '#ADADAD',
+                  ...placeholderStyle,
+                }}
+                /* eslint-disable-next-line react-native/no-inline-styles */
+                dropDownContainerStyle={{
+                  borderWidth: isBordered ? 1 : 0,
+                  borderTopWidth: 1,
+                  borderTopColor: Colors.divider,
+                  backgroundColor: isBordered
+                    ? Colors.white
+                    : Colors.invoiceFormTextContainer,
+                }}
+                itemKey="value"
+                open={open}
+                value={field.value ?? null}
+                setValue={handleSetValue}
+                items={options}
+                setOpen={setOpen}
+                setItems={() => {
+                  // Nie używamy setItems, bo options są kontrolowane z zewnątrz
+                }}
+                onChangeValue={handleValueChange}
+                placeholder={field.value ? undefined : 'Wybierz...'}
+                listMode="MODAL"
+                modalAnimationType="slide"
+                closeAfterSelecting
+                closeOnBackPressed
+              />
+            );
+            return picker;
+          } catch (error) {
+            const err =
+              error instanceof Error ? error : new Error(String(error));
+            console.warn('[Dropdown] ERROR creating DropDownPicker', {
+              name,
+              message: err.message,
+            });
+            throw err;
+          }
         }}
       />
     </View>

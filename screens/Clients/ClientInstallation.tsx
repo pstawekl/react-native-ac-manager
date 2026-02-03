@@ -1,5 +1,5 @@
 /* eslint-disable react-native/no-inline-styles */
-import { Route, useFocusEffect, useNavigation } from '@react-navigation/native';
+import { Route, useNavigation } from '@react-navigation/native';
 import { Divider } from '@rneui/base';
 import { Text } from '@rneui/themed';
 import { useCallback, useEffect, useState } from 'react';
@@ -977,8 +977,10 @@ export function MontageProtocolForm({
   const [unitName, setUnitName] = useState<string>('');
   const [indoorUnitName, setIndoorUnitName] = useState<string>('');
   const [outdoorUnitName, setOutdoorUnitName] = useState<string>('');
-  const [nominalCoolingCapacity, setNominalCoolingCapacity] = useState<string>('');
-  const [nominalHeatingCapacity, setNominalHeatingCapacity] = useState<string>('');
+  const [nominalCoolingCapacity, setNominalCoolingCapacity] =
+    useState<string>('');
+  const [nominalHeatingCapacity, setNominalHeatingCapacity] =
+    useState<string>('');
 
   const { execute: fetchMontageData } = useApi<MontageData>({
     path: 'montaz_data',
@@ -986,20 +988,21 @@ export function MontageProtocolForm({
 
   // Pobierz urządzenia gdy typ się zmieni
   useEffect(() => {
-    if (getDevicesSplit && type === 'split') {
+    if (typeof getDevicesSplit === 'function' && type === 'split') {
       getDevicesSplit();
     }
-    if (getDevicesMultisplit && type === 'multi_split') {
+    if (typeof getDevicesMultisplit === 'function' && type === 'multi_split') {
       getDevicesMultisplit();
     }
   }, [getDevicesSplit, getDevicesMultisplit, type]);
 
   useEffect(() => {
+    if (typeof setDevicesList !== 'function') return;
     if (devicesSplit && type === 'split') {
-      setDevicesList(devicesSplit);
+      setDevicesList(Array.isArray(devicesSplit) ? devicesSplit : []);
     }
     if (devicesMultisplit && type === 'multi_split') {
-      setDevicesList(devicesMultisplit);
+      setDevicesList(Array.isArray(devicesMultisplit) ? devicesMultisplit : []);
     }
   }, [devicesSplit, devicesMultisplit, type]);
 
@@ -1029,10 +1032,12 @@ export function MontageProtocolForm({
   const loadPhotosForMontage = useCallback(
     async (montazId: number) => {
       try {
+        if (typeof getPhotoList !== 'function') return [];
         const photoResponse = await getPhotoList({
           data: { montaz_id: montazId },
         });
-        return photoResponse?.zdjecia || [];
+        const zdjecia = photoResponse?.zdjecia;
+        return Array.isArray(zdjecia) ? zdjecia : [];
       } catch (error) {
         console.error('Error loading photos:', error);
         return [];
@@ -1043,7 +1048,27 @@ export function MontageProtocolForm({
 
   const updateForm = useCallback(
     (montageData: MontageData) => {
-      setValue('data_montazu', new Date(montageData.data_montazu));
+      if (
+        typeof setValue !== 'function' ||
+        typeof setType !== 'function' ||
+        typeof setSplitManufacturer !== 'function' ||
+        typeof setDeviceType !== 'function'
+      ) {
+        return;
+      }
+      if (!montageData || typeof montageData !== 'object') return;
+      const rawDate = montageData.data_montazu;
+      const dateValue =
+        rawDate != null
+          ? rawDate instanceof Date
+            ? rawDate
+            : new Date(rawDate as string | number)
+          : new Date();
+      const safeDate =
+        dateValue instanceof Date && !Number.isNaN(dateValue.getTime())
+          ? dateValue
+          : new Date();
+      setValue('data_montazu', safeDate);
       setValue('gwarancja', montageData.gwarancja);
       setValue('liczba_przegladow', montageData.liczba_przegladow);
 
@@ -1065,9 +1090,12 @@ export function MontageProtocolForm({
           : 'split';
         setType(montageType);
 
-        if (montageType === 'split' && getDevicesSplit) {
+        if (montageType === 'split' && typeof getDevicesSplit === 'function') {
           getDevicesSplit();
-        } else if (montageType === 'multi_split' && getDevicesMultisplit) {
+        } else if (
+          montageType === 'multi_split' &&
+          typeof getDevicesMultisplit === 'function'
+        ) {
           getDevicesMultisplit();
         }
       }
@@ -1135,243 +1163,175 @@ export function MontageProtocolForm({
 
   useEffect(() => {
     const loadMontageWithPhotos = async () => {
-      if (montage) {
-        updateForm(montage);
+      if (!montage?.id) return;
+      if (typeof fetchMontageData !== 'function') return;
+      if (typeof updateForm !== 'function') return;
+      if (typeof loadPhotosForMontage !== 'function') return;
+      if (typeof setValue !== 'function') return;
+      // Zapisywany montaż – pobierz pełne dane z API (montaz_data), nie używaj obiektu z listy
+      try {
+        const montageData = await fetchMontageData({
+          data: { montaz_id: montage.id },
+        });
+        if (!montageData) return;
 
-        // Wczytaj zdjęcia dla montażu
-        if (montage.id) {
-          const photos = await loadPhotosForMontage(montage.id);
+        updateForm(montageData);
 
-          // Mapuj zdjęcia do odpowiednich pól na podstawie ID zdjęć w montażu
-          // Dla pól PositiveIntegerField (miejsce_montazu_jedn_zew_photo, miejsce_montazu_jedn_wew_photo, miejsce_i_sposob_montazu_jedn_zew_photo, gwarancja_photo)
-          // znajdź zdjęcie z odpowiednim ID i ustaw jako obiekt File
-          const photoMap = new Map(
-            photos.map((photo: any) => [photo.id, photo]),
+        // Wczytaj zdjęcia dla montażu (używamy montageData – pełne dane z API)
+        const montazId =
+          (montageData as any).id ??
+          (montageData as any).montaz_id ??
+          montage.id;
+        const photos = await loadPhotosForMontage(montazId);
+        const safePhotos = Array.isArray(photos) ? photos : [];
+        const photoMap = new Map(
+          safePhotos.map((photo: any) => [photo?.id ?? photo, photo]),
+        );
+
+        if (
+          montageData.miejsce_montazu_jedn_zew_photo &&
+          photoMap.has(montageData.miejsce_montazu_jedn_zew_photo)
+        ) {
+          const photo = photoMap.get(
+            montageData.miejsce_montazu_jedn_zew_photo,
           );
-
-          if (
-            montage.miejsce_montazu_jedn_zew_photo &&
-            photoMap.has(montage.miejsce_montazu_jedn_zew_photo)
-          ) {
-            const photo = photoMap.get(montage.miejsce_montazu_jedn_zew_photo);
-            if (photo?.image) {
-              setValue('miejsce_montazu_jedn_zew_photo', {
-                uri: photo.image,
-                name: `photo_${photo.id}.jpg`,
-                type: 'image/jpeg',
-              } as File);
-            }
-          }
-
-          if (
-            montage.miejsce_montazu_jedn_wew_photo &&
-            photoMap.has(montage.miejsce_montazu_jedn_wew_photo)
-          ) {
-            const photo = photoMap.get(montage.miejsce_montazu_jedn_wew_photo);
-            if (photo?.image) {
-              setValue('miejsce_montazu_jedn_wew_photo', {
-                uri: photo.image,
-                name: `photo_${photo.id}.jpg`,
-                type: 'image/jpeg',
-              } as File);
-            }
-          }
-
-          if (
-            montage.miejsce_i_sposob_montazu_jedn_zew_photo &&
-            photoMap.has(montage.miejsce_i_sposob_montazu_jedn_zew_photo)
-          ) {
-            const photo = photoMap.get(
-              montage.miejsce_i_sposob_montazu_jedn_zew_photo,
-            );
-            if (photo?.image) {
-              setValue('miejsce_i_sposob_montazu_jedn_zew_photo', {
-                uri: photo.image,
-                name: `photo_${photo.id}.jpg`,
-                type: 'image/jpeg',
-              } as File);
-            }
-          }
-
-          if (
-            montage.gwarancja_photo &&
-            photoMap.has(montage.gwarancja_photo)
-          ) {
-            const photo = photoMap.get(montage.gwarancja_photo);
-            if (photo?.image) {
-              setValue('gwarancja_photo', {
-                uri: photo.image,
-                name: `photo_${photo.id}.jpg`,
-                type: 'image/jpeg',
-              } as File);
-            }
-          }
-
-          // Dla pól CharField (nr_seryjny_jedn_zew_photo, nr_seryjny_jedn_wew_photo)
-          // jeśli zawierają URL, ustaw jako obiekt File
-          if (
-            montage.nr_seryjny_jedn_zew_photo &&
-            typeof montage.nr_seryjny_jedn_zew_photo === 'string'
-          ) {
-            setValue('nr_seryjny_jedn_zew_photo', {
-              uri: montage.nr_seryjny_jedn_zew_photo,
-              name: 'nr_seryjny_jedn_zew_photo.jpg',
-              type: 'image/jpeg',
-            } as File);
-          }
-
-          if (
-            montage.nr_seryjny_jedn_wew_photo &&
-            typeof montage.nr_seryjny_jedn_wew_photo === 'string'
-          ) {
-            setValue('nr_seryjny_jedn_wew_photo', {
-              uri: montage.nr_seryjny_jedn_wew_photo,
-              name: 'nr_seryjny_jedn_wew_photo.jpg',
+          if (photo?.image) {
+            setValue('miejsce_montazu_jedn_zew_photo', {
+              uri: photo.image,
+              name: `photo_${photo.id}.jpg`,
               type: 'image/jpeg',
             } as File);
           }
         }
-      } else if (
-        montage &&
-        typeof montage === 'object' &&
-        'id' in montage &&
-        (montage as any).id
-      ) {
-        try {
-          const montageData = await fetchMontageData({
-            data: { montaz_id: (montage as any).id },
-          });
-          if (montageData) {
-            updateForm(montageData);
 
-            // Wczytaj zdjęcia
-            if (montageData.id) {
-              const photos = await loadPhotosForMontage(montageData.id);
-              const photoMap = new Map(
-                photos.map((photo: any) => [photo.id, photo]),
-              );
-
-              if (
-                montageData.miejsce_montazu_jedn_zew_photo &&
-                photoMap.has(montageData.miejsce_montazu_jedn_zew_photo)
-              ) {
-                const photo = photoMap.get(
-                  montageData.miejsce_montazu_jedn_zew_photo,
-                );
-                if (photo?.image) {
-                  setValue('miejsce_montazu_jedn_zew_photo', {
-                    uri: photo.image,
-                    name: `photo_${photo.id}.jpg`,
-                    type: 'image/jpeg',
-                  } as File);
-                }
-              }
-
-              if (
-                montageData.miejsce_montazu_jedn_wew_photo &&
-                photoMap.has(montageData.miejsce_montazu_jedn_wew_photo)
-              ) {
-                const photo = photoMap.get(
-                  montageData.miejsce_montazu_jedn_wew_photo,
-                );
-                if (photo?.image) {
-                  setValue('miejsce_montazu_jedn_wew_photo', {
-                    uri: photo.image,
-                    name: `photo_${photo.id}.jpg`,
-                    type: 'image/jpeg',
-                  } as File);
-                }
-              }
-
-              if (
-                montageData.miejsce_i_sposob_montazu_jedn_zew_photo &&
-                photoMap.has(
-                  montageData.miejsce_i_sposob_montazu_jedn_zew_photo,
-                )
-              ) {
-                const photo = photoMap.get(
-                  montageData.miejsce_i_sposob_montazu_jedn_zew_photo,
-                );
-                if (photo?.image) {
-                  setValue('miejsce_i_sposob_montazu_jedn_zew_photo', {
-                    uri: photo.image,
-                    name: `photo_${photo.id}.jpg`,
-                    type: 'image/jpeg',
-                  } as File);
-                }
-              }
-
-              if (
-                montageData.gwarancja_photo &&
-                photoMap.has(montageData.gwarancja_photo)
-              ) {
-                const photo = photoMap.get(montageData.gwarancja_photo);
-                if (photo?.image) {
-                  setValue('gwarancja_photo', {
-                    uri: photo.image,
-                    name: `photo_${photo.id}.jpg`,
-                    type: 'image/jpeg',
-                  } as File);
-                }
-              }
-
-              if (
-                montageData.nr_seryjny_jedn_zew_photo &&
-                typeof montageData.nr_seryjny_jedn_zew_photo === 'string'
-              ) {
-                setValue('nr_seryjny_jedn_zew_photo', {
-                  uri: montageData.nr_seryjny_jedn_zew_photo,
-                  name: 'nr_seryjny_jedn_zew_photo.jpg',
-                  type: 'image/jpeg',
-                } as File);
-              }
-
-              if (
-                montageData.nr_seryjny_jedn_wew_photo &&
-                typeof montageData.nr_seryjny_jedn_wew_photo === 'string'
-              ) {
-                setValue('nr_seryjny_jedn_wew_photo', {
-                  uri: montageData.nr_seryjny_jedn_wew_photo,
-                  name: 'nr_seryjny_jedn_wew_photo.jpg',
-                  type: 'image/jpeg',
-                } as File);
-              }
-            }
+        if (
+          montageData.miejsce_montazu_jedn_wew_photo &&
+          photoMap.has(montageData.miejsce_montazu_jedn_wew_photo)
+        ) {
+          const photo = photoMap.get(
+            montageData.miejsce_montazu_jedn_wew_photo,
+          );
+          if (photo?.image) {
+            setValue('miejsce_montazu_jedn_wew_photo', {
+              uri: photo.image,
+              name: `photo_${photo.id}.jpg`,
+              type: 'image/jpeg',
+            } as File);
           }
-        } catch (error) {
+        }
+
+        if (
+          montageData.miejsce_i_sposob_montazu_jedn_zew_photo &&
+          photoMap.has(montageData.miejsce_i_sposob_montazu_jedn_zew_photo)
+        ) {
+          const photo = photoMap.get(
+            montageData.miejsce_i_sposob_montazu_jedn_zew_photo,
+          );
+          if (photo?.image) {
+            setValue('miejsce_i_sposob_montazu_jedn_zew_photo', {
+              uri: photo.image,
+              name: `photo_${photo.id}.jpg`,
+              type: 'image/jpeg',
+            } as File);
+          }
+        }
+
+        if (
+          montageData.gwarancja_photo &&
+          photoMap.has(montageData.gwarancja_photo)
+        ) {
+          const photo = photoMap.get(montageData.gwarancja_photo);
+          if (photo?.image) {
+            setValue('gwarancja_photo', {
+              uri: photo.image,
+              name: `photo_${photo.id}.jpg`,
+              type: 'image/jpeg',
+            } as File);
+          }
+        }
+
+        if (
+          montageData.nr_seryjny_jedn_zew_photo &&
+          typeof montageData.nr_seryjny_jedn_zew_photo === 'string'
+        ) {
+          setValue('nr_seryjny_jedn_zew_photo', {
+            uri: montageData.nr_seryjny_jedn_zew_photo,
+            name: 'nr_seryjny_jedn_zew_photo.jpg',
+            type: 'image/jpeg',
+          } as File);
+        }
+
+        if (
+          montageData.nr_seryjny_jedn_wew_photo &&
+          typeof montageData.nr_seryjny_jedn_wew_photo === 'string'
+        ) {
+          setValue('nr_seryjny_jedn_wew_photo', {
+            uri: montageData.nr_seryjny_jedn_wew_photo,
+            name: 'nr_seryjny_jedn_wew_photo.jpg',
+            type: 'image/jpeg',
+          } as File);
+        }
+      } catch (error) {
+        console.log('[MontageProtocolForm] loadMontageWithPhotos ERROR', error);
+        if (typeof Alert?.alert === 'function') {
           Alert.alert('Błąd', 'Nie udało się wczytać danych montażu');
         }
       }
     };
 
-    loadMontageWithPhotos();
+    try {
+      const p = loadMontageWithPhotos();
+      if (p && typeof p.catch === 'function') p.catch(() => { });
+    } catch (e) {
+      console.error(
+        '[MontageProtocolForm] loadMontageWithPhotos sync error',
+        e,
+      );
+    }
   }, [montage, updateForm, fetchMontageData, loadPhotosForMontage, setValue]);
 
   useEffect(() => {
-    if (montage && type && devicesList.length > 0) {
-      if (montage.devices_split && montage.devices_split.length > 0) {
-        const deviceId = montage.devices_split[0];
-        const foundDevice = devicesList.find(device => device.id === deviceId);
-
-        if (foundDevice) {
-          setSplitManufacturer(foundDevice.producent);
-          setDeviceType(foundDevice.typ);
-          // Zaktualizuj pola tylko do odczytu
-          setUnitName(foundDevice.nazwa_modelu || '');
-          setIndoorUnitName(foundDevice.nazwa_jedn_wew || '');
-          setOutdoorUnitName(foundDevice.nazwa_jedn_zew || '');
-          setNominalCoolingCapacity(
-            foundDevice.moc_chlodnicza
-              ? `${foundDevice.moc_chlodnicza.toFixed(2)} kW`
-              : '',
-          );
-          setNominalHeatingCapacity(
-            foundDevice.moc_grzewcza
-              ? `${foundDevice.moc_grzewcza.toFixed(2)} kW`
-              : '',
-          );
-        }
-      }
+    const setters = {
+      setSplitManufacturer,
+      setDeviceType,
+      setUnitName,
+      setIndoorUnitName,
+      setOutdoorUnitName,
+      setNominalCoolingCapacity,
+      setNominalHeatingCapacity,
+    };
+    const allSetters = Object.values(setters);
+    if (allSetters.some(s => typeof s !== 'function')) return;
+    if (
+      !montage ||
+      !type ||
+      !Array.isArray(devicesList) ||
+      devicesList.length === 0
+    )
+      return;
+    if (!montage.devices_split || montage.devices_split.length === 0) return;
+    const deviceId = montage.devices_split[0];
+    const foundDevice = devicesList.find(
+      (device: Device) => device && device.id === deviceId,
+    );
+    if (foundDevice) {
+      setSplitManufacturer(foundDevice.producent);
+      setDeviceType(foundDevice.typ);
+      setUnitName(foundDevice.nazwa_modelu || '');
+      setIndoorUnitName(foundDevice.nazwa_jedn_wew || '');
+      setOutdoorUnitName(foundDevice.nazwa_jedn_zew || '');
+      setNominalCoolingCapacity(
+        foundDevice.moc_chlodnicza != null &&
+          typeof foundDevice.moc_chlodnicza === 'number'
+          ? `${foundDevice.moc_chlodnicza.toFixed(2)} kW`
+          : '',
+      );
+      setNominalHeatingCapacity(
+        foundDevice.moc_grzewcza != null &&
+          typeof foundDevice.moc_grzewcza === 'number'
+          ? `${foundDevice.moc_grzewcza.toFixed(2)} kW`
+          : '',
+      );
     }
   }, [montage, type, devicesList]);
 
@@ -1426,11 +1386,11 @@ export function MontageProtocolForm({
         if (typeof setOutdoorUnitName === 'function') {
           setOutdoorUnitName(device.nazwa_jedn_zew || '');
         }
-        
+
         // Bezpieczne formatowanie mocy
         const coolingPower = device.moc_chlodnicza;
         const heatingPower = device.moc_grzewcza;
-        
+
         if (coolingPower !== undefined && coolingPower !== null) {
           let coolingValue: string;
           try {
@@ -1438,7 +1398,9 @@ export function MontageProtocolForm({
               coolingValue = coolingPower.toFixed(2);
             } else if (typeof coolingPower === 'string') {
               const numValue = parseFloat(coolingPower);
-              coolingValue = !isNaN(numValue) ? numValue.toFixed(2) : coolingPower;
+              coolingValue = !isNaN(numValue)
+                ? numValue.toFixed(2)
+                : coolingPower;
             } else {
               coolingValue = String(coolingPower);
             }
@@ -1448,15 +1410,13 @@ export function MontageProtocolForm({
           } catch (err) {
             console.error('Error formatting cooling power:', err);
             if (typeof setNominalCoolingCapacity === 'function') {
-              setNominalCoolingCapacity(String(coolingPower) + ' kW');
+              setNominalCoolingCapacity(`${String(coolingPower)} kW`);
             }
           }
-        } else {
-          if (typeof setNominalCoolingCapacity === 'function') {
-            setNominalCoolingCapacity('');
-          }
+        } else if (typeof setNominalCoolingCapacity === 'function') {
+          setNominalCoolingCapacity('');
         }
-        
+
         if (heatingPower !== undefined && heatingPower !== null) {
           let heatingValue: string;
           try {
@@ -1464,7 +1424,9 @@ export function MontageProtocolForm({
               heatingValue = heatingPower.toFixed(2);
             } else if (typeof heatingPower === 'string') {
               const numValue = parseFloat(heatingPower);
-              heatingValue = !isNaN(numValue) ? numValue.toFixed(2) : heatingPower;
+              heatingValue = !isNaN(numValue)
+                ? numValue.toFixed(2)
+                : heatingPower;
             } else {
               heatingValue = String(heatingPower);
             }
@@ -1474,13 +1436,11 @@ export function MontageProtocolForm({
           } catch (err) {
             console.error('Error formatting heating power:', err);
             if (typeof setNominalHeatingCapacity === 'function') {
-              setNominalHeatingCapacity(String(heatingPower) + ' kW');
+              setNominalHeatingCapacity(`${String(heatingPower)} kW`);
             }
           }
-        } else {
-          if (typeof setNominalHeatingCapacity === 'function') {
-            setNominalHeatingCapacity('');
-          }
+        } else if (typeof setNominalHeatingCapacity === 'function') {
+          setNominalHeatingCapacity('');
         }
 
         // Pobierz urządzenia jeśli jeszcze nie są załadowane
@@ -1493,7 +1453,12 @@ export function MontageProtocolForm({
         }
       } catch (error) {
         console.error('Error updating form with selected device:', error);
-        Alert.alert('Błąd', 'Nie udało się zaktualizować formularza z wybranym urządzeniem');
+        if (typeof Alert?.alert === 'function') {
+          Alert.alert(
+            'Błąd',
+            'Nie udało się zaktualizować formularza z wybranym urządzeniem',
+          );
+        }
       }
     }
   }, [initialSelectedDevice, setValue, getDevicesSplit, devicesSplit]);
@@ -1503,10 +1468,8 @@ export function MontageProtocolForm({
     montazId: number,
     installationId: number,
   ): Promise<number | null> => {
-    if (!photo || !photo.uri) {
-      return null;
-    }
-
+    if (!photo || !photo.uri) return null;
+    if (typeof addPhoto !== 'function') return null;
     try {
       const formData = new FormData();
       formData.append('image', {
@@ -1514,14 +1477,10 @@ export function MontageProtocolForm({
         name: photo.name,
         type: photo.type,
       } as any);
-      formData.append('instalacja_id', installationId.toString());
-      formData.append('montaz_id', montazId.toString());
-
+      formData.append('instalacja_id', String(installationId));
+      formData.append('montaz_id', String(montazId));
       const result = await addPhoto({ data: formData });
-
-      // Zwróć ID zdjęcia jeśli jest dostępne w odpowiedzi
-      // Jeśli nie, będziemy musieli pobrać je z bazy później
-      return result?.photo_id || null;
+      return result?.photo_id ?? null;
     } catch (error) {
       console.error('Error uploading photo:', error);
       return null;
@@ -1529,8 +1488,14 @@ export function MontageProtocolForm({
   };
 
   const onSubmit = async (data: MontageData & any) => {
+    if (typeof addMontage !== 'function' || typeof editMontage !== 'function') {
+      if (typeof Alert?.alert === 'function') {
+        Alert.alert('Błąd', 'Nie można zapisać – brak funkcji API');
+      }
+      return;
+    }
     try {
-      let response;
+      let response: any;
       let savedMontageId: number | null = null;
 
       const isSplit =
@@ -1595,20 +1560,22 @@ export function MontageProtocolForm({
           savedMontageId = (response as any).id;
         } else {
           // Jeśli nie ma ID w odpowiedzi, pobierz montaż z bazy używając instalacja_id
-          // (ponieważ jedna instalacja = jeden montaż)
-          try {
-            const montageList = await getMontageList({
-              data: { instalacja_id: Number(installationId) },
-            });
-            if (
-              montageList &&
-              Array.isArray(montageList) &&
-              montageList.length > 0
-            ) {
-              savedMontageId = montageList[0].id;
+          if (typeof getMontageList === 'function') {
+            try {
+              const montageList = await getMontageList({
+                data: { instalacja_id: Number(installationId) },
+              });
+              if (
+                montageList &&
+                Array.isArray(montageList) &&
+                montageList.length > 0
+              ) {
+                const first = montageList[0];
+                savedMontageId = first?.id ?? null;
+              }
+            } catch (error) {
+              console.error('Error fetching montage ID:', error);
             }
-          } catch (error) {
-            console.error('Error fetching montage ID:', error);
           }
         }
       } else {
@@ -1666,19 +1633,34 @@ export function MontageProtocolForm({
           response.status === 'Montaz created' ||
           response.status === 'Montaz updated'
         ) {
-          Alert.alert('Sukces', 'Dane montażu zostały zapisane pomyślnie');
-          if (onSave) {
+          if (typeof Alert?.alert === 'function') {
+            Alert.alert('Sukces', 'Dane montażu zostały zapisane pomyślnie');
+          }
+          if (typeof onSave === 'function') {
             onSave();
           }
         } else if (response.error) {
-          Alert.alert('Błąd', JSON.stringify(response.error));
-        } else {
+          if (typeof Alert?.alert === 'function') {
+            Alert.alert('Błąd', JSON.stringify(response.error));
+          }
+        } else if (typeof Alert?.alert === 'function') {
           Alert.alert('Sukces', 'Dane montażu zostały zapisane');
         }
       }
     } catch (error) {
-      Alert.alert('Błąd', 'Wystąpił błąd podczas zapisywania danych montażu');
+      if (typeof Alert?.alert === 'function') {
+        Alert.alert('Błąd', 'Wystąpił błąd podczas zapisywania danych montażu');
+      }
     }
+  };
+
+  const handleCancelPress = () => {
+    try {
+      const nav = navigation as any;
+      if (nav && typeof nav.goBack === 'function') {
+        nav.goBack();
+      }
+    } catch (_) { }
   };
 
   return (
@@ -1706,11 +1688,15 @@ export function MontageProtocolForm({
             <TouchableOpacity
               style={protocolStyles.editIconButton}
               onPress={() => {
-                // Nawiguj do ekranu wyboru urządzenia
-                (navigation as any).navigate('DeviceSelector', {
-                  installationId,
-                  montageId: montage?.id,
-                });
+                try {
+                  const nav = navigation as any;
+                  if (nav && typeof nav.navigate === 'function') {
+                    nav.navigate('DeviceSelector', {
+                      installationId,
+                      montageId: montage?.id,
+                    });
+                  }
+                } catch (_) { }
               }}
             >
               <EditIcon color={Colors.black} size={20} />
@@ -1726,73 +1712,101 @@ export function MontageProtocolForm({
               { label: 'Multisplit', value: 'multi_split' },
             ]}
             isBordered={false}
-            onChange={setType}
+            onChange={
+              typeof setType === 'function'
+                ? (value: string) => setType(value)
+                : () => { }
+            }
           />
 
-          {type === 'split' && devicesList && devicesList.length > 0 && (
-            <>
-              <Dropdown
-                name="deviceManufacturer"
-                control={control}
-                label="Producent urządzenia"
-                options={Array.from(
-                  new Set(devicesList.map(item => item.producent)),
-                ).map(item => ({
-                  label: item,
-                  value: item,
-                }))}
-                isBordered={false}
-                onChange={setSplitManufacturer}
-              />
-              {splitManufacturer && (
-                <Dropdown
-                  name="deviceType"
-                  control={control}
-                  label="Typ urządzenia"
-                  options={Array.from(
-                    new Set(
-                      devicesList
-                        .filter(item => item.producent === splitManufacturer)
-                        .map(item => item.typ),
-                    ),
-                  ).map(item => ({
-                    label: item,
-                    value: item,
-                  }))}
-                  isBordered={false}
-                  onChange={setDeviceType}
-                />
-              )}
-              {splitManufacturer && deviceType && (
+          {type === 'split' &&
+            devicesList &&
+            devicesList.length > 0 &&
+            (() => {
+              const manufacturerOptions = Array.from(
+                new Set(
+                  devicesList
+                    .map(item => item?.producent)
+                    .filter((p): p is string => p != null && p !== ''),
+                ),
+              ).map(item => ({
+                label: String(item),
+                value: item,
+              }));
+
+              return (
                 <>
                   <Dropdown
-                    name="device_split"
+                    name="deviceManufacturer"
                     control={control}
-                    label="Model urządzenia"
-                    options={Array.from(
-                      new Set(
-                        devicesList.filter(
-                          item =>
-                            item.producent === splitManufacturer &&
-                            item.typ === deviceType,
-                        ),
-                      ),
-                    ).map(item => ({
-                      label: item.nazwa_modelu_producenta,
-                      value: item.id,
-                    }))}
+                    label="Producent urządzenia"
+                    options={manufacturerOptions}
                     isBordered={false}
+                    onChange={
+                      typeof setSplitManufacturer === 'function'
+                        ? (value: string) => setSplitManufacturer(value)
+                        : () => { }
+                    }
                   />
-                  <FormInput
-                    name="devicePower"
-                    control={control}
-                    label="Moc urządzenia"
-                    noPadding
-                  />
+                  {splitManufacturer && (
+                    <Dropdown
+                      name="deviceType"
+                      control={control}
+                      label="Typ urządzenia"
+                      options={Array.from(
+                        new Set(
+                          devicesList
+                            .filter(
+                              item => item?.producent === splitManufacturer,
+                            )
+                            .map(item => item?.typ)
+                            .filter((t): t is string => t != null && t !== ''),
+                        ),
+                      ).map(item => ({
+                        label: String(item),
+                        value: item,
+                      }))}
+                      isBordered={false}
+                      onChange={
+                        typeof setDeviceType === 'function'
+                          ? (value: string) => setDeviceType(value)
+                          : () => { }
+                      }
+                    />
+                  )}
+                  {splitManufacturer && deviceType && (
+                    <>
+                      <Dropdown
+                        name="device_split"
+                        control={control}
+                        label="Model urządzenia"
+                        options={devicesList
+                          .filter(
+                            item =>
+                              item?.producent === splitManufacturer &&
+                              item?.typ === deviceType,
+                          )
+                          .map(item => ({
+                            label:
+                              item?.nazwa_modelu_producenta != null
+                                ? String(item.nazwa_modelu_producenta)
+                                : `ID ${item?.id ?? '?'}`,
+                            value: item?.id ?? 0,
+                          }))
+                          .filter(opt => opt.value != null && opt.value !== 0)}
+                        isBordered={false}
+                      />
+                      <FormInput
+                        name="devicePower"
+                        control={control}
+                        label="Moc urządzenia"
+                        noPadding
+                      />
+                    </>
+                  )}
                 </>
-              )}
-            </>
-          )}
+              );
+            })()}
 
           {type === 'multi_split' && devicesList && devicesList.length > 0 && (
             <>
@@ -2157,8 +2171,16 @@ export function MontageProtocolForm({
           submitTitle="Zastosuj"
           submitStyle={protocolStyles.protocolSubmitButton}
           submitTitleStyle={protocolStyles.protocolSubmitButtonTitle}
-          onCancel={() => navigation.goBack()}
-          onSubmitPress={handleSubmit(onSubmit)}
+          onCancel={
+            typeof handleCancelPress === 'function'
+              ? handleCancelPress
+              : () => { }
+          }
+          onSubmitPress={
+            typeof handleSubmit === 'function' && typeof onSubmit === 'function'
+              ? handleSubmit(onSubmit)
+              : () => { }
+          }
           groupStyle={protocolStyles.protocolButtonGroup}
         />
       </ScrollView>

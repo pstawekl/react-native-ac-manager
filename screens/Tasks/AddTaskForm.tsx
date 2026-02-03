@@ -1,26 +1,27 @@
-import { Button, Text } from '@rneui/themed';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Text } from '@rneui/themed';
 import { format, parseISO } from 'date-fns';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import {
-  Alert,
-  Modal,
+  Platform,
+  ScrollView,
   StyleSheet,
   TextInput,
-  View,
   TouchableOpacity,
-  ScrollView,
-  Platform,
+  View,
 } from 'react-native';
 
 import ButtonsHeader from '../../components/ButtonsHeader';
 import { Dropdown } from '../../components/Input';
-import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import useClients from '../../providers/ClientsProvider';
 import useStaff from '../../providers/StaffProvider';
 import useTasks from '../../providers/TasksProvider';
+import {
+  ClientInstallationsListResponse,
+  ClientsInstallationListItem,
+} from '../../types/clients.types';
 
 /* -------------------------------------------------------------------------- */
 /*                                   TYPES                                    */
@@ -70,6 +71,11 @@ export default function AddTaskForm({ navigation, route }: any) {
   const { teams, getTeams } = useStaff();
   const { execute: getTasks } = useTasks();
   const { execute, loading } = useApi({ path: 'zadanie_create' });
+  const {
+    result: installationsResult,
+    execute: fetchInstallations,
+    loading: installationsLoading,
+  } = useApi<ClientInstallationsListResponse>({ path: 'installation_list' });
 
   const taskDate = task ? parseISO(task.start_date) : new Date();
   const taskTime = task ? parseISO(task.start_date) : new Date();
@@ -93,6 +99,7 @@ export default function AddTaskForm({ navigation, route }: any) {
   const watchedDate = useWatch({ control, name: 'task_date' });
   const watchedTime = useWatch({ control, name: 'task_time' });
   const clientType = useWatch({ control, name: 'typ_klienta' });
+  const watchedKlientId = useWatch({ control, name: 'klient_id' });
 
   /* ------------------------------------------------------------------------ */
   /*                                EFFECTS                                   */
@@ -110,6 +117,14 @@ export default function AddTaskForm({ navigation, route }: any) {
       setValue('nip_firmy', '');
     }
   }, [clientType, setValue]);
+
+  // Pobierz instalacje po wyborze klienta; przy zmianie klienta wyczyść instalację
+  useEffect(() => {
+    if (watchedKlientId) {
+      setValue('instalacja_id', null);
+      fetchInstallations({ data: { klient_id: Number(watchedKlientId) } });
+    }
+  }, [watchedKlientId, setValue, fetchInstallations]);
 
   /* ------------------------------------------------------------------------ */
   /*                                 SUBMIT                                   */
@@ -137,9 +152,7 @@ export default function AddTaskForm({ navigation, route }: any) {
       forma_rozliczenia: data.forma_rozliczenia ?? null,
 
       notatki:
-        data.notatki && data.notatki.trim() !== ''
-          ? data.notatki.trim()
-          : null,
+        data.notatki && data.notatki.trim() !== '' ? data.notatki.trim() : null,
 
       start_date: combined.toISOString(),
       end_date: combined.toISOString(),
@@ -194,9 +207,7 @@ export default function AddTaskForm({ navigation, route }: any) {
           style={styles.formControl}
           onPress={() => setShowDatePicker(true)}
         >
-          <Text style={styles.value}>
-            {format(watchedDate, 'dd.MM.yyyy')}
-          </Text>
+          <Text style={styles.value}>{format(watchedDate, 'dd.MM.yyyy')}</Text>
         </TouchableOpacity>
 
         <Text style={styles.label}>Godzina</Text>
@@ -316,14 +327,24 @@ export default function AddTaskForm({ navigation, route }: any) {
 
         <Text style={styles.sectionHeader}>Adres montażu</Text>
 
-        <Text style={styles.label}>Instalacja</Text>
-        <Dropdown
-          name="instalacja_id"
-          control={control}
-          options={[]}
-          isBordered
-          containerStyle={styles.formControl}
-        />
+        {watchedKlientId ? (
+          <>
+            <Text style={styles.label}>Instalacja</Text>
+            <Dropdown
+              name="instalacja_id"
+              control={control}
+              options={(installationsResult?.installation_list ?? []).map(
+                (i: ClientsInstallationListItem) => ({
+                  label: i.name ?? `Instalacja ${i.id}`,
+                  value: i.id,
+                }),
+              )}
+              isBordered
+              containerStyle={styles.formControl}
+              disabled={installationsLoading}
+            />
+          </>
+        ) : null}
 
         <Text style={styles.label}>Ulica</Text>
         <TextInput
@@ -410,7 +431,6 @@ export default function AddTaskForm({ navigation, route }: any) {
           numberOfLines={4}
           onChangeText={t => setValue('notatki', t)}
         />
-
       </ScrollView>
 
       {/* ------------------------- FOOTER ------------------------- */}
@@ -549,5 +569,4 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     marginBottom: 12,
   },
-
 });

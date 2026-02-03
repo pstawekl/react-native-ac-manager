@@ -6,13 +6,12 @@ import { Alert, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import Spinner from 'react-native-loading-spinner-overlay/lib';
 
-import ButtonsHeader from '../../components/ButtonsHeader';
 import ConfirmationOverlay from '../../components/ConfirmationOverlay';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import SimpleLightboxBasic from '../../components/SimpleLightboxBasic';
 import Colors from '../../consts/Colors';
 import getFileName from '../../helpers/files';
-import { getImageUrl } from '../../helpers/image';
+import { downloadImageToLocal, getImageUrl } from '../../helpers/image';
 import { openPdfFile } from '../../helpers/pdfOpener';
 import useApi from '../../hooks/useApi';
 import { CertificatesScreenProps } from '../../navigation/types';
@@ -136,6 +135,7 @@ export default function Certificates() {
   const [selectedCertificate, setSelectedCertificate] =
     useState<Certificate | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(false);
+  const [loadingImage, setLoadingImage] = useState(false);
 
   const onDeleteConfirmed = () => {
     if (idToDelete && getCertificates) {
@@ -154,12 +154,28 @@ export default function Certificates() {
     setVisible(!visible);
   }, [visible]);
 
-  const handleOpenImage = (certificate: Certificate) => {
+  const handleOpenImage = async (certificate: Certificate) => {
     const imageUrl = getImageUrl(certificate.file);
-    if (imageUrl) {
-      setSelectedImageUri(imageUrl);
+    if (!imageUrl) {
+      Alert.alert(
+        'Błąd',
+        'Nie można otworzyć zdjęcia: brak poprawnego adresu do pliku.',
+      );
+      return;
+    }
+    setLoadingImage(true);
+    try {
+      const localUri = await downloadImageToLocal(imageUrl);
+      setSelectedImageUri(localUri);
       setSelectedCertificate(certificate);
       setLightboxVisible(true);
+    } catch {
+      Alert.alert(
+        'Błąd',
+        'Nie udało się pobrać zdjęcia. Sprawdź połączenie i spróbuj ponownie.',
+      );
+    } finally {
+      setLoadingImage(false);
     }
   };
 
@@ -179,9 +195,6 @@ export default function Certificates() {
 
   return (
     <View style={styles.container}>
-      <ButtonsHeader
-        // onBackPress={goBack}
-      />
       <ScrollView>
         {certificates ? (
           certificates.map(item => (
@@ -200,9 +213,13 @@ export default function Certificates() {
       </ScrollView>
 
       <Spinner
-        visible={certificatesLoading || loadingPdf}
+        visible={certificatesLoading || loadingPdf || loadingImage}
         textContent={
-          loadingPdf ? 'Pobieranie pliku PDF...' : 'Trwa pobieranie danych...'
+          loadingImage
+            ? 'Pobieranie zdjęcia...'
+            : loadingPdf
+              ? 'Pobieranie pliku PDF...'
+              : 'Trwa pobieranie danych...'
         }
         textStyle={{ color: Colors.gray }}
       />
@@ -213,6 +230,7 @@ export default function Certificates() {
         title="Czy na pewno chcesz usunąć certyfikat ?"
       />
       <SimpleLightboxBasic
+        key={selectedImageUri || 'closed'}
         visible={lightboxVisible}
         imageUri={selectedImageUri}
         onClose={() => {

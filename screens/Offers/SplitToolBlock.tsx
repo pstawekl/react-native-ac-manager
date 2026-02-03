@@ -48,10 +48,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   fieldAdder: {
+    marginTop: 20,
     zIndex: 9,
     gap: 10,
     width: '100%',
     backgroundColor: Colors.transparent,
+    bottom: 0,
   },
   fieldAdderRow: {
     flexDirection: 'row',
@@ -68,6 +70,7 @@ const styles = StyleSheet.create({
   },
   formWrapper: {
     zIndex: 10,
+    gap: 10,
   },
   fieldRow: {
     display: 'flex',
@@ -75,7 +78,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'center',
     width: '100%',
-    marginBottom: 8,
   },
   buttonStyle: {
     backgroundColor: Colors.offerFilterAddButton,
@@ -92,36 +94,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 'auto',
     marginRight: 0,
+    flexShrink: 0,
   },
   deleteFilterButtonText: {
     color: Colors.offerFilterRemoveButtonText,
     fontWeight: 'bold',
     fontSize: 18,
+    bottom: 0,
   },
   searchButton: {
     marginTop: 16,
     width: '100%',
   },
   rangeFilterContainer: {
-    width: '85%',
+    flex: 1,
+    minWidth: 0,
   },
   rangeFilterLabel: {
     fontFamily: 'Archivo_400Regular',
     marginTop: 0,
+    marginBottom: 4,
     color: Colors.black,
     fontSize: 14,
   },
-  rangeInputsContainer: {
-    display: 'flex',
+  rangeInputsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
+    alignItems: 'center',
     gap: 8,
+    flex: 1,
+    minWidth: 0,
   },
   rangeInputWrapper: {
-    display: 'flex',
-    flexDirection: 'row',
     flex: 1,
+    minWidth: 0,
   },
 });
 
@@ -167,11 +172,11 @@ function FilterItem({
     }
 
     if (isRangeFilter) {
-      // Filtr z zakresem (od-do) - renderujemy dwa inputy w jednym wierszu
+      // Filtr z zakresem (od-do): label u góry, w jednym wierszu Od + Do + przycisk "-"
       return (
         <View style={styles.rangeFilterContainer}>
           <Text style={styles.rangeFilterLabel}>{field.label}</Text>
-          <View style={styles.rangeInputsContainer}>
+          <View style={styles.rangeInputsRow}>
             <View style={styles.rangeInputWrapper}>
               <FormInput
                 name={`${field.name}From` as any}
@@ -181,6 +186,7 @@ function FilterItem({
                 noPadding
                 keyboardType="numeric"
                 placeholder="Od..."
+                isMarginBottom={false}
               />
             </View>
             <View style={styles.rangeInputWrapper}>
@@ -192,8 +198,18 @@ function FilterItem({
                 noPadding
                 keyboardType="numeric"
                 placeholder="Do..."
+                isMarginBottom={false}
               />
             </View>
+            <Pressable
+              style={({ pressed }) => [
+                styles.deleteFilterButton,
+                pressed && { opacity: 0.7 },
+              ]}
+              onPress={() => onRemove(field.id)}
+            >
+              <Text style={styles.deleteFilterButtonText}>-</Text>
+            </Pressable>
           </View>
         </View>
       );
@@ -224,11 +240,15 @@ function FilterItem({
         dropDownDirection="BOTTOM"
         isSmall
         isBordered
+        isMarginBottom={false}
         zIndex={field.zIndex}
-        customHeight={44}
       />
     );
   };
+
+  if (isRangeFilter) {
+    return <View style={styles.fieldRow}>{renderFilterInput()}</View>;
+  }
 
   return (
     <View style={styles.fieldRow}>
@@ -237,13 +257,8 @@ function FilterItem({
         style={({ pressed }) => [
           styles.deleteFilterButton,
           pressed && { opacity: 0.7 },
-          // Dla zwykłych filtrów dodajemy marginBottom, dla range filtrów nie
-          !isRangeFilter && { marginBottom: 20 },
-          isRangeFilter && { marginBottom: 27 },
         ]}
-        onPress={() => {
-          onRemove(field.id);
-        }}
+        onPress={() => onRemove(field.id)}
       >
         <Text style={styles.deleteFilterButtonText}>-</Text>
       </Pressable>

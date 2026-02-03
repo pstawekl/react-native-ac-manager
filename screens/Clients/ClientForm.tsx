@@ -470,54 +470,56 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
             </Text>
           )}
           <View style={{ gap: -18 }}>
-            <FormInput
-              name="email"
-              control={control}
-              disabled={Boolean(client?.email)}
-              label={watchedClientType === 'firma' ? 'E-mail *' : 'E-mail'}
-              editable={client?.email ? false : undefined}
-              noPadding
-              error={errors.email}
-              rules={{
-                required:
-                  watchedClientType === 'firma'
-                    ? 'E-mail jest wymagany dla firm'
-                    : false,
-                validate: (value: string | null) => {
-                  // Jeśli pole jest puste i to nie firma, to jest OK
-                  if (!value && watchedClientType !== 'firma') {
+            <View style={styles.inputContainer}>
+              <FormInput
+                name="email"
+                control={control}
+                disabled={Boolean(client?.email)}
+                label={watchedClientType === 'firma' ? 'E-mail *' : 'E-mail'}
+                editable={client?.email ? false : undefined}
+                noPadding
+                error={errors.email}
+                rules={{
+                  required:
+                    watchedClientType === 'firma'
+                      ? 'E-mail jest wymagany dla firm'
+                      : false,
+                  validate: (value: string | null) => {
+                    // Jeśli pole jest puste i to nie firma, to jest OK
+                    if (!value && watchedClientType !== 'firma') {
+                      return true;
+                    }
+                    // Jeśli to adres @temp.local, nie sprawdzaj poprawności
+                    if (value && value.endsWith('@temp.local')) {
+                      return true;
+                    }
+                    // Jeśli pole ma wartość, sprawdź pattern
+                    if (
+                      value &&
+                      !/^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$/.test(
+                        value,
+                      )
+                    ) {
+                      return 'Nieprawidłowy adres e-mail';
+                    }
                     return true;
-                  }
-                  // Jeśli to adres @temp.local, nie sprawdzaj poprawności
-                  if (value && value.endsWith('@temp.local')) {
-                    return true;
-                  }
-                  // Jeśli pole ma wartość, sprawdź pattern
-                  if (
-                    value &&
-                    !/^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$/.test(
-                      value,
-                    )
-                  ) {
-                    return 'Nieprawidłowy adres e-mail';
-                  }
-                  return true;
-                },
-              }}
-            />
-            <FormInput
-              name="numer_telefonu"
-              control={control}
-              error={errors.numer_telefonu}
-              label="Numer telefonu"
-              rules={{
-                pattern: {
-                  value: /^[0-9]{9}$/,
-                  message: 'Nieprawidłowy numer telefonu (9 cyfr)',
-                },
-              }}
-              noPadding
-            />
+                  },
+                }}
+              />
+              <FormInput
+                name="numer_telefonu"
+                control={control}
+                error={errors.numer_telefonu}
+                label="Numer telefonu"
+                rules={{
+                  pattern: {
+                    value: /^[0-9]{9}$/,
+                    message: 'Nieprawidłowy numer telefonu (9 cyfr)',
+                  },
+                }}
+                noPadding
+              />
+            </View>
           </View>
           <Dropdown
             label="Status klienta"

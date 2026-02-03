@@ -1,0 +1,310 @@
+diff --git a/node_modules/react-native-dropdown-picker/src/components/Picker.js b/node_modules/react-native-dropdown-picker/src/components/Picker.js
+index e3fb93b..688a8e5 100644
+--- a/node_modules/react-native-dropdown-picker/src/components/Picker.js
++++ b/node_modules/react-native-dropdown-picker/src/components/Picker.js
+@@ -1,52 +1,52 @@
+ import React, {
++    Fragment,
++    memo,
+     useCallback,
+-    useState,
+-    useRef,
+     useEffect,
+     useMemo,
+-    memo,
+-    Fragment,
++    useRef,
++    useState,
+ } from 'react';
+ 
+ import {
+-    View,
+-    SafeAreaView,
+-    TouchableOpacity,
+-    Text,
+-    Image,
+-    FlatList,
+-    TextInput,
+-    Dimensions,
+-    ScrollView,
+-    Modal,
+     ActivityIndicator,
+     BackHandler,
++    Dimensions,
++    FlatList,
++    Image,
++    Modal,
+     Platform,
++    SafeAreaView,
++    ScrollView,
+     StyleSheet,
++    Text,
++    TextInput,
++    TouchableOpacity,
++    View,
+ } from 'react-native';
+ 
+ const { height: WINDOW_HEIGHT } = Dimensions.get('window');
+ 
+-import Colors from '../constants/colors';
+ import {
+-    SCHEMA,
+-    GET_TRANSLATION,
++    ASCII_CODE,
+     BADGE_COLORS,
+     BADGE_DOT_COLORS,
+-    ASCII_CODE,
+-    TRANSLATIONS,
+-    MODE,
+-    LIST_MODE,
+     DROPDOWN_DIRECTION,
+     GET_DROPDOWN_DIRECTION,
++    GET_TRANSLATION,
+     LANGUAGE,
++    LIST_MODE,
++    MODE,
+     RTL_DIRECTION,
+-    RTL_STYLE
++    RTL_STYLE,
++    SCHEMA,
++    TRANSLATIONS
+ } from '../constants';
++import Colors from '../constants/colors';
+ import THEMES from '../themes';
++import ListEmpty from './ListEmpty';
+ import RenderBadgeItem from './RenderBadgeItem';
+ import RenderListItem from './RenderListItem';
+-import ListEmpty from './ListEmpty';
+ 
+ function Picker({
+     value = null,
+@@ -189,25 +189,36 @@ function Picker({
+      */
+      const _schema = useMemo(() => ({...SCHEMA, ...schema}), [schema]);
+ 
++    /**
++     * Normalize necessaryItems to always be an array (library bug: single select could set object).
++     */
++    const safeNecessaryItems = useMemo(() => {
++        return Array.isArray(necessaryItems) ? necessaryItems : (necessaryItems != null ? [necessaryItems] : []);
++    }, [necessaryItems]);
++
+     /**
+      * componentDidMount.
+      */
+     useEffect(() => {
+-        memoryRef.current.value = multiple ? (Array.isArray(value) ? value : []) : value;
++        try {
++            memoryRef.current.value = multiple ? (Array.isArray(value) ? value : []) : value;
+ 
+-        // Get initial seleted items
+-        let initialSelectedItems = [];
+-        const valueNotNull = value !== null && (Array.isArray(value) && value.length !== 0);
++            let initialSelectedItems = [];
++            const valueNotNull = value !== null && (Array.isArray(value) && value.length !== 0);
+ 
+-        if (valueNotNull) {
+-            if (multiple) {
+-                initialSelectedItems = items.filter(item => value.includes(item[_schema.value]));
+-            } else {
+-                initialSelectedItems = items.find(item => item[_schema.value] === value);
++            if (valueNotNull) {
++                if (multiple) {
++                    initialSelectedItems = items.filter(item => value.includes(item[_schema.value]));
++                } else {
++                    const found = items.find(item => item[_schema.value] === value);
++                    initialSelectedItems = found != null ? [found] : [];
++                }
+             }
+-        }
+ 
+-        setNecessaryItems(initialSelectedItems);
++            setNecessaryItems(initialSelectedItems);
++        } catch (error) {
++            throw error;
++        }
+     }, []);
+ 
+     useEffect(() => {
+@@ -230,64 +241,78 @@ function Picker({
+      * Update necessary items.
+      */
+     useEffect(() => {
+-        setNecessaryItems(state => {
+-            return [...state].map(item => {
+-                const _item = items.find(x => x[_schema.value] === item[_schema.value]);
+-                
+-                if (_item) {
+-                    return {...item, ..._item};
+-                }
+-                
+-                return item;
++        try {
++            setNecessaryItems(state => {
++                const arr = Array.isArray(state) ? state : (state != null ? [state] : []);
++                const result = [...arr].map(item => {
++                    const _item = items.find(x => x[_schema.value] === item[_schema.value]);
++                    if (_item) {
++                        return {...item, ..._item};
++                    }
++                    return item;
++                });
++                return result;
+             });
+-        });
++        } catch (error) {
++            throw error;
++        }
+     }, [items]);
+ 
+     /**
+      * Sync necessary items.
+      */
+     useEffect(() => {
+-        if (multiple) {
+-            setNecessaryItems(state => {
+-                if (value === null || (Array.isArray(value) && value.length === 0))
+-                    return [];
++        try {
++            if (multiple) {
++                setNecessaryItems(state => {
++                    if (value === null || (Array.isArray(value) && value.length === 0))
++                        return [];
+                     
+-                let _state = [...state].filter(item => value.includes(item[_schema.value]));
++                    let _state = [...state].filter(item => value.includes(item[_schema.value]));
+ 
+-                const newItems = value.reduce((accumulator, currentValue) => {
+-                    const index = _state.findIndex(item => item[_schema.value] === currentValue);
++                    const newItems = value.reduce((accumulator, currentValue) => {
++                        const index = _state.findIndex(item => item[_schema.value] === currentValue);
+ 
+-                    if (index === -1) {
+-                        const item = items.find(item => item[_schema.value] === currentValue);
++                        if (index === -1) {
++                            const item = Array.isArray(items) ? items.find(item => item[_schema.value] === currentValue) : undefined;
+                         
+-                        if (item) {
+-                            return [...accumulator, item];
++                            if (item) {
++                                return [...accumulator, item];
++                            }
++
++                            return accumulator;
+                         }
+ 
+                         return accumulator;
+-                    }
++                    }, []);
+ 
+-                    return accumulator;
+-                }, []);
+-
+-                return [..._state, ...newItems];
+-            });
+-        } else {
+-            let state = [];
++                    return [..._state, ...newItems];
++                });
++            } else {
++                let state = [];
+ 
+-            if (value !== null) {
+-                const item = items.find(item => item[_schema.value] === value);
++                if (value !== null) {
++                    const item = Array.isArray(items) ? items.find(item => item[_schema.value] === value) : undefined;
+ 
+-                if (item) {
+-                    state.push(item);
++                    if (item) {
++                        state.push(item);
++                    }
+                 }
+-            }
+ 
+-            setNecessaryItems(state);
++                setNecessaryItems(state);
++            }
++        } catch (error) {
++            throw error;
+         }
+ 
+         if (initializationRef.current) {
+-            onChangeValue(value);
++            // W trybie single NIE wywołuj onChangeValue(null) – unika to nadpisywania
++            // stanu rodzica (np. setType(null)) przy re-renderze i zapobiega odmontowaniu
++            // bloków formularza (np. deviceManufacturer) oraz błędom "undefined is not a function".
++            const shouldCallOnChange = multiple || value != null;
++            if (typeof onChangeValue === 'function' && shouldCallOnChange) {
++                onChangeValue(value);
++            }
+         } else {
+             initializationRef.current = true;
+         }
+@@ -517,8 +542,8 @@ function Picker({
+         if (! multiple)
+             return [];
+ 
+-        return necessaryItems.filter(item => _value.includes(item[_schema.value]));
+-    }, [necessaryItems, _value, _schema, multiple]);
++        return safeNecessaryItems.filter(item => _value.includes(item[_schema.value]));
++    }, [safeNecessaryItems, _value, _schema, multiple]);
+ 
+     /**
+      * The language.
+@@ -542,13 +567,17 @@ function Picker({
+      * The placeholder.
+      * @returns {string}
+      */
+-    const _placeholder = useMemo(() => placeholder ?? _('PLACEHOLDER'), [placeholder, _]);
++    const _placeholder = useMemo(() => {
++        return placeholder ?? _('PLACEHOLDER');
++    }, [placeholder, _]);
+ 
+     /**
+      * The multiple text.
+      * @returns {string}
+      */
+-     const _multipleText = useMemo(() => multipleText ?? _('SELECTED_ITEMS_COUNT_TEXT'), [multipleText, _]);
++     const _multipleText = useMemo(() => {
++        return multipleText ?? _('SELECTED_ITEMS_COUNT_TEXT');
++    }, [multipleText, _]);
+ 
+     /**
+      * The mode.
+@@ -570,8 +599,8 @@ function Picker({
+         if (_value === null || (Array.isArray(_value) && _value.length === 0))
+             return true;
+ 
+-        return necessaryItems.length === 0;
+-     }, [necessaryItems, _value]);
++        return safeNecessaryItems.length === 0;
++     }, [safeNecessaryItems, _value]);
+ 
+     /**
+      * Get the selected item.
+@@ -585,11 +614,11 @@ function Picker({
+             return null;
+         
+         try {
+-            return necessaryItems.find(item => item[_schema.value] === _value);
++            return safeNecessaryItems.find(item => item[_schema.value] === _value);
+         } catch (e) {
+             return null;
+         }
+-    }, [_value, necessaryItems, isNull, multiple]);
++    }, [_value, safeNecessaryItems, isNull, multiple]);
+ 
+     /**
+      * Get the label of the selected item.
+@@ -621,7 +650,9 @@ function Picker({
+     /**
+      * The label of the selected item / placeholder.
+      */
+-    const _selectedItemLabel = useMemo(() => getLabel(_placeholder), [getLabel, _placeholder]);
++    const _selectedItemLabel = useMemo(() => {
++        return getLabel(_placeholder);
++    }, [getLabel, _placeholder]);
+ 
+     /**
+      * The icon of the selected item.

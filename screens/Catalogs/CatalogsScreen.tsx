@@ -1,12 +1,12 @@
-import { Route, useRoute } from '@react-navigation/native';
-import { Text } from '@rneui/themed';
+import { Route, useNavigation, useRoute } from '@react-navigation/native';
+import { Text } from '@rneui/base';
 import { useState } from 'react';
 import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import Tabs from '../../components/Tabs';
-import FilterIcon from '../../components/icons/FilterIcon';
-import SearchIcon from '../../components/icons/SearchIcon';
 import Colors from '../../consts/Colors';
 
+import FilterIcon from '../../components/icons/FilterIcon';
+import SearchIcon from '../../components/icons/SearchIcon';
 import Catalogs from './Catalogs';
 import Flyers from './Flyers';
 import PriceList from './PriceList';
@@ -40,17 +40,16 @@ function CatalogsScreen() {
 
   const route = useRoute<Route<'Menu', { tab?: string }>>();
   const { tab } = route.params || {};
+  const navigation = useNavigation();
 
   return (
     <View style={styles.container}>
       <Tabs
         items={items}
         defaultTab={tab || 'catalogs'}
-        title="Dokumentacja"
         isWithLinearGradient={false}
         headerContent={
           <View style={styles.headerContent}>
-            {/* Nagłówek "Dokumenty" */}
             <Text style={styles.mainHeader}>Dokumenty</Text>
 
             {/* Pasek wyszukiwania i przycisk filtra */}
@@ -79,6 +78,9 @@ function CatalogsScreen() {
             </View>
           </View>
         }
+        onBackPress={() => {
+          navigation.goBack();
+        }}
         headerDividerColor={Colors.newPurple}
         fabBgColor={Colors.newPurple}
       />
@@ -100,13 +102,12 @@ const styles = StyleSheet.create({
     color: Colors.black,
     marginBottom: 20,
     paddingHorizontal: 18,
-    paddingTop: 20,
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 0,
     backgroundColor: Colors.white,
   },
   searchBar: {
