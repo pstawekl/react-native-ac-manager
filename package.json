@@ -10,7 +10,8 @@
     "lint:fix": "eslint --fix --quiet --ext .ts,.tsx .",
     "format": "prettier . --write",
     "postinstall": "patch-package",
-    "start emulator": "emulator -avd Medium_Phone_API_35"
+    "start-emulator": "emulator -avd Medium_Phone_API_36.1",
+    "start-emulator-cold": "emulator -avd Medium_Phone_API_36.1 -no-snapshot-load -no-snapshot-save"
   },
   "dependencies": {
     "@expo-google-fonts/archivo": "^0.2.3",

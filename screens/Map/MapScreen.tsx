@@ -9,13 +9,20 @@ import React, {
 import { DrawerScreenProps } from '@react-navigation/drawer';
 import { Text } from '@rneui/base';
 import { useForm } from 'react-hook-form';
-import { Alert, Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  Alert,
+  Modal,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import Container from '../../components/Container';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import { FormInput } from '../../components/Input';
 import Tabs from '../../components/Tabs';
+import SearchIcon from '../../components/icons/SearchIcon';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import { MainParamList } from '../../navigation/types';
@@ -163,7 +170,15 @@ function AddListModal({
           activeOpacity={1}
           onPress={e => e.stopPropagation()}
         >
-          <Text style={styles.modalTitle}>Dodaj listę</Text>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Dodaj listę</Text>
+            <TouchableOpacity
+              style={styles.modalCloseButtonTouchable}
+              onPress={handleClose}
+            >
+              <Text style={styles.modalCloseButton}>×</Text>
+            </TouchableOpacity>
+          </View>
 
           <FormInput
             name="name"
@@ -185,18 +200,8 @@ function AddListModal({
           )}
 
           <View style={styles.modalButtonGroup}>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.cancelButton]}
-              onPress={handleClose}
-            >
-              <Text style={styles.buttonText}>Anuluj</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.modalButton, styles.saveButton]}
-              onPress={handleSave}
-            >
-              <Text style={styles.buttonText}>Zapisz</Text>
+            <TouchableOpacity style={styles.modalButton} onPress={handleSave}>
+              <Text style={styles.buttonText}>Dalej</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -287,12 +292,12 @@ async function updateClientsPlaces(
 }
 
 function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
-  const insets = useSafeAreaInsets();
   const { clients, getClients } = useClients();
   const [filteredClients, setFilteredClients] = useState<Place[]>([]);
   const [isLoadingPlaces, setIsLoadingPlaces] = useState(true);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [listTabIndex, setListTabIndex] = useState(0);
+  const [listsSearchQuery, setListsSearchQuery] = useState('');
   const [clientsTabOpen, setClientsTabOpen] = useState(false);
   const clientsTabRef = useRef<ClientsTabRef>(null);
   const { execute: updateClientCoordinates } = useApi<{
@@ -465,9 +470,10 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
         onDataChange={getClients}
         isActive={props.isActive}
         onClientsListOpenChange={setClientsTabOpen}
+        listsSearchQuery={listsSearchQuery}
       />
     ),
-    [filteredClients, getClients],
+    [filteredClients, getClients, listsSearchQuery],
   );
 
   const items = useMemo(
@@ -488,8 +494,23 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
     <Container style={styles.container}>
       <ButtonsHeader onBackPress={navigation.goBack} title="Mapa" />
       <Text style={styles.title}>Lista klientów</Text>
+      {listTabIndex === 1 && (
+        <View style={styles.listsSearchContainer}>
+          <View style={styles.listsSearchBar}>
+            <TextInput
+              style={styles.listsSearchInput}
+              placeholder="Szukaj"
+              placeholderTextColor={Colors.lightGray}
+              value={listsSearchQuery}
+              onChangeText={setListsSearchQuery}
+            />
+            <View style={styles.listsSearchIconContainer}>
+              <SearchIcon color={Colors.black} size={18} />
+            </View>
+          </View>
+        </View>
+      )}
       <Tabs
-        // linearGradient={['#EABA10', '#ffdc04']}
         items={items}
         isWithLinearGradient={false}
         isButtonsHeader={false}
@@ -529,6 +550,30 @@ const styles = StyleSheet.create({
     color: Colors.black,
     paddingHorizontal: 20,
   },
+  listsSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  listsSearchBar: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.menuIconBackground,
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  listsSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.black,
+    padding: 0,
+  },
+  listsSearchIconContainer: {
+    marginLeft: 8,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: Colors.blackHalfOpacity,
@@ -550,28 +595,39 @@ const styles = StyleSheet.create({
   },
   modalButtonGroup: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 10,
   },
   modalButton: {
     padding: 10,
-    borderRadius: 5,
-    minWidth: 100,
+    flex: 1,
+    backgroundColor: Colors.mapDivider,
+    borderRadius: 60,
+    height: 48,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  saveButton: {
-    backgroundColor: Colors.primary,
-  },
-  cancelButton: {
-    backgroundColor: Colors.gray,
-  },
   buttonText: {
-    color: Colors.white,
+    color: Colors.black,
     fontWeight: 'bold',
   },
   errorText: {
     color: Colors.red,
     marginBottom: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  modalCloseButton: {
+    fontSize: 32,
+    fontWeight: 'normal',
+    fontFamily: 'Archivo_400Regular',
+    color: Colors.black,
+  },
+  modalCloseButtonTouchable: {
+    borderRadius: 5,
+    alignItems: 'center',
+    top: -10,
   },
 });
 

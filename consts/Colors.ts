@@ -33,6 +33,9 @@ const Colors = {
   galleryBlue: '#195EDF',
   galleryFabButtonBackground: '#DBDBDB',
 
+  mapRowBackground: '#F9F9F9',
+  mapDivider: '#FFC002',
+
   invoiceRose: '#CF4F8D',
 
   floatingActionButtonBackground: '#CE177D1A',

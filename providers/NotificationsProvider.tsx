@@ -113,8 +113,12 @@ export function NotificationsProvider({
     try {
       const response = await fetchNotifications({});
       if (response) {
-        setNotifications(response.notifications);
-        setUnreadCount(response.unread_count);
+        setNotifications(
+          Array.isArray(response.notifications) ? response.notifications : [],
+        );
+        setUnreadCount(
+          typeof response.unread_count === 'number' ? response.unread_count : 0,
+        );
       }
     } catch (error) {
       console.error('Error fetching notifications:', error);

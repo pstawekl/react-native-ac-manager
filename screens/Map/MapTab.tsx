@@ -11,7 +11,9 @@ import {
 import ClusteredMapView from 'react-native-map-clustering';
 import { Callout, Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 
-import { Text } from '@rneui/base';
+import { Icon, Text } from '@rneui/themed';
+import PhoneIcon from '../../components/icons/PhoneIcon';
+import ProfileUserIcon from '../../components/icons/ProfileUserIcon';
 import Colors from '../../consts/Colors';
 import { Place } from './MapScreen';
 
@@ -62,81 +64,111 @@ export default function MapTab({
     });
   }, [markerCoordinates]);
 
-  const handleCalloutPress = (place: Place) => {
-    setSelectedPlace(place);
-    setActionModalVisible(true);
-  };
-
   const handlePhoneCall = (phone: string) => {
+    setActionModalVisible(false);
     Linking.openURL(`tel:${phone}`).catch(error =>
       Alert.alert('Błąd', 'Nie udało się otworzyć dialera telefonu', error),
     );
-    setActionModalVisible(false);
   };
 
   const handleOpenMaps = (place: Place) => {
+    setActionModalVisible(false);
     const url = `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
     Linking.openURL(url).catch(error =>
       Alert.alert('Błąd', 'Nie udało się otworzyć Google Maps', error),
     );
-    setActionModalVisible(false);
+  };
+
+  const openPlaceModal = (place: Place, isModal = false) => {
+    setSelectedPlace(place);
+    setActionModalVisible(true);
+  };
+
+  const renderPlaceCard = (place: Place) => {
+    const displayName =
+      `${place.firstName} ${place.lastName}`.trim() || place.name || '';
+    const companyName =
+      place.companyName?.trim() && place.companyName !== 'Osoba'
+        ? place.companyName.trim()
+        : '';
+    const primaryName = companyName || displayName || 'Klient';
+    const secondaryName = companyName && displayName ? displayName : null;
+
+    return (
+      <View style={styles.placeCard}>
+        <View style={styles.placeCardAvatarWrap}>
+          <View style={styles.placeCardAvatarCircle}>
+            <ProfileUserIcon color={Colors.black} size={28} stroke={1.5} />
+          </View>
+        </View>
+        <Text style={styles.placeCardName} numberOfLines={2}>
+          {primaryName}
+        </Text>
+        {/* {secondaryName && secondaryName !== '' ? (
+          <Text style={styles.placeCardSubtitle} numberOfLines={1}>
+            {secondaryName}
+          </Text>
+        ) : null} */}
+        <Text style={styles.placeCardAddress} numberOfLines={2}>
+          {place.address || '—'}
+        </Text>
+        {actionModalVisible ? (
+          <View style={styles.placeCardActions}>
+            <TouchableOpacity
+              style={styles.placeCardActionBtn}
+              onPress={() => handleOpenMaps(place)}
+            >
+              <Icon
+                name="map-marker"
+                type="material-community"
+                color={Colors.black}
+                size={24}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.placeCardActionBtn}
+              onPress={() => place.phone && handlePhoneCall(place.phone)}
+              disabled={!place.phone?.trim()}
+            >
+              <PhoneIcon color={Colors.black} size={22} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.placeCardActionBtn}
+              onPress={() => handleOpenMaps(place)}
+            >
+              <Icon
+                name="map-marker"
+                type="material-community"
+                color={Colors.black}
+                size={24}
+              />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+      </View>
+    );
   };
 
   return (
     <View style={styles.container}>
-      {/* Modal z opcjami akcji dla miejsca */}
       <Modal
         visible={actionModalVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setActionModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {selectedPlace && (
-              <>
-                <Text style={styles.modalTitle}>
-                  {`${selectedPlace.firstName} ${selectedPlace.lastName}`.trim() ||
-                    selectedPlace.name}
-                </Text>
-                {selectedPlace.companyName && (
-                  <Text style={styles.modalSubtitle}>
-                    {selectedPlace.companyName}
-                  </Text>
-                )}
-                {selectedPlace.address && (
-                  <Text style={styles.modalAddress}>
-                    {selectedPlace.address}
-                  </Text>
-                )}
-
-                <View style={styles.actionButtonGroup}>
-                  {selectedPlace.phone && selectedPlace.phone.trim() !== '' && (
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.phoneActionButton]}
-                      onPress={() => handlePhoneCall(selectedPlace.phone)}
-                    >
-                      <Text style={styles.actionButtonText}>📞 Zadzwoń</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.mapsActionButton]}
-                    onPress={() => handleOpenMaps(selectedPlace)}
-                  >
-                    <Text style={styles.actionButtonText}>🗺️ Google Maps</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.cancelButton]}
-                  onPress={() => setActionModalVisible(false)}
-                >
-                  <Text style={styles.buttonText}>Zamknij</Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        </View>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setActionModalVisible(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={e => e.stopPropagation()}
+          >
+            {selectedPlace ? renderPlaceCard(selectedPlace) : null}
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       <ClusteredMapView
@@ -154,36 +186,18 @@ export default function MapTab({
               place.lat !== 0 &&
               place.lng !== 0,
           )
-          .map(place => {
-            const fullName = `${place.firstName} ${place.lastName}`.trim();
-            const displayName = fullName || place.name;
-
-            return (
-              <Marker
-                key={place.id}
-                coordinate={{ latitude: place.lat, longitude: place.lng }}
-                image={require('../../assets/marker.png')}
-                onCalloutPress={() => handleCalloutPress(place)}
-              >
-                <Callout style={styles.callout}>
-                  <View style={styles.calloutContainer}>
-                    <Text style={styles.calloutTitle}>{displayName}</Text>
-                    {place.companyName && (
-                      <Text style={styles.calloutCompany}>
-                        {place.companyName}
-                      </Text>
-                    )}
-                    {place.address && (
-                      <Text style={styles.calloutAddress}>{place.address}</Text>
-                    )}
-                    <Text style={styles.calloutInstruction}>
-                      Dotknij aby zobaczyć opcje
-                    </Text>
-                  </View>
-                </Callout>
-              </Marker>
-            );
-          })}
+          .map(place => (
+            <Marker
+              key={place.id}
+              coordinate={{ latitude: place.lat, longitude: place.lng }}
+              image={require('../../assets/marker.png')}
+              onCalloutPress={() => openPlaceModal(place, true)}
+            >
+              <Callout style={styles.callout} tooltip={false}>
+                {renderPlaceCard(place)}
+              </Callout>
+            </Marker>
+          ))}
       </ClusteredMapView>
       {isLoading && (
         <View style={styles.loadingOverlay}>
@@ -213,39 +227,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   callout: {
-    minWidth: 200,
-    maxWidth: 250,
-  },
-  calloutContainer: {
-    padding: 10,
-    alignItems: 'center',
-  },
-  calloutTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: Colors.black,
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  calloutCompany: {
-    fontSize: 14,
-    color: Colors.gray,
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  calloutAddress: {
-    fontSize: 13,
-    color: Colors.lightGray,
-    marginBottom: 6,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  calloutInstruction: {
-    fontSize: 12,
-    color: Colors.blue,
-    marginTop: 8,
-    textAlign: 'center',
-    fontStyle: 'italic',
+    minWidth: 280,
+    maxWidth: 320,
+    backgroundColor: Colors.transparent,
+    borderWidth: 0,
   },
   modalOverlay: {
     flex: 1,
@@ -253,68 +238,57 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalContent: {
+  placeCard: {
     backgroundColor: Colors.white,
-    borderRadius: 8,
-    padding: 20,
-    width: '90%',
-    maxWidth: 500,
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    width: 280,
+    maxWidth: 320,
+    alignItems: 'center',
   },
-  modalTitle: {
+  placeCardAvatarWrap: {
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  placeCardAvatarCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.yellow,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeCardName: {
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 20,
+    color: Colors.black,
     textAlign: 'center',
   },
-  modalButton: {
-    padding: 10,
-    borderRadius: 5,
-    minWidth: 100,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: Colors.gray,
-  },
-  buttonText: {
-    color: Colors.white,
-    fontWeight: 'bold',
-  },
-  modalSubtitle: {
-    fontSize: 16,
-    color: Colors.gray,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  modalAddress: {
+  // placeCardSubtitle: {
+  //   fontSize: 14,
+  //   color: Colors.black,
+  //   textAlign: 'center',
+  // },
+  placeCardAddress: {
     fontSize: 14,
-    color: Colors.lightGray,
-    marginBottom: 15,
+    color: Colors.black,
     textAlign: 'center',
-    fontStyle: 'italic',
+    fontFamily: 'Archivo_400Regular',
   },
-  actionButtonGroup: {
+  placeCardActions: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginBottom: 20,
-    width: '100%',
-  },
-  actionButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    minWidth: 120,
     alignItems: 'center',
-    marginHorizontal: 5,
+    width: '100%',
+    marginBottom: 30,
+    gap: 16,
   },
-  phoneActionButton: {
-    backgroundColor: Colors.primary,
-  },
-  mapsActionButton: {
-    backgroundColor: Colors.blue,
-  },
-  actionButtonText: {
-    color: Colors.white,
-    fontWeight: 'bold',
-    fontSize: 14,
+  placeCardActionBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.menuIconBackground,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

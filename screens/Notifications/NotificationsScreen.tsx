@@ -129,9 +129,13 @@ const NotificationRow = memo(
                   {notification.title}
                 </Text>
                 <Text style={styles.time}>
-                  {format(new Date(notification.created_at), 'dd MMM, HH:mm', {
-                    locale: pl,
-                  })}
+                  {notification.created_at
+                    ? format(
+                        new Date(notification.created_at),
+                        'dd MMM, HH:mm',
+                        { locale: pl },
+                      )
+                    : '—'}
                 </Text>
               </View>
               <Text style={styles.message} numberOfLines={2}>

@@ -1,5 +1,4 @@
-import { Avatar } from '@rneui/base';
-import { Button, ListItem, Text } from '@rneui/themed';
+import { Icon, ListItem, Text } from '@rneui/themed';
 import { FlashList } from '@shopify/flash-list';
 import Constants from 'expo-constants';
 import React, {
@@ -7,12 +6,12 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
-  useRef,
   useState,
 } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Linking,
   Modal,
   Pressable,
@@ -23,53 +22,157 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useForm } from 'react-hook-form';
 import { ScrollView } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconButton } from '../../components/Button';
+import FloatingActionButton from '../../components/FloatingActionButton';
 import ArrowLeftIcon from '../../components/icons/ArrowLeftIcon';
-import ArrowRightIcon from '../../components/icons/ArrowRightIcon';
 import CloseIcon from '../../components/icons/CloseIcon';
+import PhoneIcon from '../../components/icons/PhoneIcon';
 import PlusIcon from '../../components/icons/PlusIcon';
+import TrashIcon from '../../components/icons/TrashIcon';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import useAuth from '../../providers/AuthProvider';
 import useClients, { Client } from '../../providers/ClientsProvider';
 import { ClientsLists, Place } from './MapScreen';
 
-function RowLeftContent({ place }: { place: Place }) {
+const CONTEXT_MENU_PRESS_BG = '#F5F5F5';
+
+function ClientContextMenu({
+  visible,
+  position,
+  place,
+  onClose,
+  onCall,
+  onRoute,
+  onDelete,
+}: {
+  visible: boolean;
+  position: { x: number; y: number };
+  place: Place | null;
+  onClose: () => void;
+  onCall: () => void;
+  onRoute: () => void;
+  onDelete: () => void;
+}) {
+  if (!visible || !place) return null;
   return (
-    <Button
-      iconPosition="top"
-      title="Zadzwoń"
-      icon={{ name: 'phone', color: Colors.white }}
-      containerStyle={styles.buttonContainer}
-      buttonStyle={[styles.buttonStyle, { backgroundColor: Colors.primary }]}
-      titleStyle={styles.buttonTitleStyle}
-      onPress={() => Linking.openURL(`tel:${place.phone}`)}
-    />
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={contextMenuStyles.overlay} onPress={onClose}>
+        <Pressable
+          style={[
+            contextMenuStyles.menu,
+            { left: position.x, top: position.y + 12 },
+          ]}
+          onPress={e => e.stopPropagation()}
+        >
+          <Pressable
+            style={contextMenuStyles.option}
+            onPress={() => {
+              onClose();
+              onCall();
+            }}
+          >
+            <PhoneIcon color={Colors.black} size={20} />
+            <Text style={contextMenuStyles.optionText}>Zadzwoń</Text>
+          </Pressable>
+          <View style={contextMenuStyles.separator} />
+          <Pressable
+            style={contextMenuStyles.option}
+            onPress={() => {
+              onClose();
+              onRoute();
+            }}
+          >
+            <Icon
+              name="map-marker"
+              type="material-community"
+              color={Colors.black}
+              size={20}
+            />
+            <Text style={contextMenuStyles.optionText}>Wyznacz trasę</Text>
+          </Pressable>
+          <View style={contextMenuStyles.separator} />
+          <Pressable
+            style={contextMenuStyles.option}
+            onPress={() => {
+              onClose();
+              onDelete();
+            }}
+          >
+            <TrashIcon color={Colors.red} size={20} />
+            <Text
+              style={[
+                contextMenuStyles.optionText,
+                contextMenuStyles.optionTextDanger,
+              ]}
+            >
+              Usuń z listy
+            </Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
-function RowRightContent({
-  place,
-  onDelete,
-}: {
-  place: Place;
-  onDelete: (id: number) => void;
-}) {
-  return (
-    <Button
-      iconPosition="top"
-      title="Usuń"
-      icon={{
-        name: 'user',
-        type: 'antdesign',
-        color: Colors.white,
-      }}
-      containerStyle={styles.buttonContainer}
-      buttonStyle={[styles.buttonStyle, styles.deleteButtonStyle]}
-      titleStyle={styles.buttonTitleStyle}
-      onPress={() => onDelete(place.id)}
-    />
-  );
+const contextMenuStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: Colors.blackHalfOpacity,
+  },
+  menu: {
+    position: 'absolute',
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    gap: 12,
+  },
+  optionText: {
+    fontSize: 16,
+    color: Colors.black,
+  },
+  optionTextDanger: {
+    color: Colors.red,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#E0E0E0',
+    marginVertical: 0,
+  },
+});
+
+function formatListCreatedDate(createdDate?: string): string {
+  if (!createdDate) return '—';
+  try {
+    const d = new Date(createdDate);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('pl-PL', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  } catch {
+    return '—';
+  }
 }
 
 function ClientListRow({
@@ -86,7 +189,9 @@ function ClientListRow({
       style={styles.clientsList}
     >
       <Text style={styles.clientsListsItemText}>{clientsList.nazwa}</Text>
-      <ArrowRightIcon color={Colors.black} />
+      <Text style={styles.clientsListDateText}>
+        {formatListCreatedDate(clientsList.created_date)}
+      </Text>
     </Pressable>
   );
 }
@@ -118,9 +223,17 @@ function AddClientModal({
     },
   });
 
+  const windowHeight = Dimensions.get('window').height;
+  const TAB_BAR_HEIGHT = 75;
+  const modalHeight = windowHeight - TAB_BAR_HEIGHT;
+
   const addClientStyles = StyleSheet.create({
+    modalOverlay: {
+      justifyContent: 'flex-start' as const,
+    },
     modalContent: {
-      height: '80%',
+      top: 0,
+      height: modalHeight,
     },
     clientList: {
       display: 'flex',
@@ -154,7 +267,7 @@ function AddClientModal({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
+      <View style={[styles.modalOverlay, addClientStyles.modalOverlay]}>
         <View style={[styles.modalContent, addClientStyles.modalContent]}>
           <View style={addClientStyles.headerButtonsStyles}>
             <Text style={styles.modalTitle}>Dodaj klienta</Text>
@@ -200,79 +313,46 @@ function AddClientModal({
 function PlaceRow({
   place,
   onDelete,
-  onCloseAllSwipes,
-  registerSwipeRef,
+  onCall,
+  onOpenContextMenu,
 }: {
   place: Place;
   onDelete: (id: number) => void;
-  onCloseAllSwipes: () => void;
-  registerSwipeRef: (id: number, ref: any) => void;
+  onCall: () => void;
+  onOpenContextMenu: (place: Place, pageX: number, pageY: number) => void;
 }) {
-  const swipeRef = useRef<any>(null);
-
-  // Użyj callback ref zamiast useRef + useEffect
-  const swipeRefCallback = useCallback(
-    (ref: any) => {
-      swipeRef.current = ref;
-      registerSwipeRef(place.id, ref);
-    },
-    [place.id, registerSwipeRef],
-  );
-
-  const handleSwipeBegin = () => {
-    onCloseAllSwipes();
-  };
-
-  const handleSwipeEnd = useCallback(() => {
-    if (swipeRef.current) {
-      registerSwipeRef(place.id, swipeRef.current);
-    }
-  }, [place.id, registerSwipeRef]);
-
-  const handlePress = () => {
-    openGoogleMaps();
-  };
-
-  const openGoogleMaps = () => {
-    const url = `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
-    Linking.openURL(url);
-  };
-
   const fullName = `${place.firstName} ${place.lastName}`.trim();
   const displayName = fullName || place.name;
 
+  const handleLongPress = (e: any) => {
+    const { pageX, pageY } = e.nativeEvent ?? {};
+    if (typeof pageX === 'number' && typeof pageY === 'number') {
+      onOpenContextMenu(place, pageX, pageY);
+    }
+  };
+
   return (
-    <ListItem.Swipeable
-      ref={swipeRefCallback}
-      key={place.id}
-      onLongPress={() => {
-        /* @ToDo */
-        Alert.alert('Long press');
-      }}
-      onPress={handlePress}
-      leftContent={<RowLeftContent place={place} />}
-      rightContent={<RowRightContent place={place} onDelete={onDelete} />}
-      leftWidth={80}
-      rightWidth={80}
-      containerStyle={styles.listItem}
-      onSwipeBegin={handleSwipeBegin}
-      onSwipeEnd={handleSwipeEnd}
+    <Pressable
+      style={({ pressed }) => [
+        styles.placeRowContainer,
+        pressed && { backgroundColor: CONTEXT_MENU_PRESS_BG },
+      ]}
+      onLongPress={handleLongPress}
     >
-      <Avatar
-        rounded
-        size={42}
-        icon={{ name: 'user', type: 'antdesign' }}
-        containerStyle={styles.avatarContainer}
-        overlayContainerStyle={styles.avatarOverlayContainer}
-      />
-      <ListItem.Content>
-        <ListItem.Title>{displayName}</ListItem.Title>
-        <ListItem.Subtitle>
-          {place.companyName} {place.phone ? `- Tel: ${place.phone}` : ''} -{' '}
-          {place.lat.toFixed(4)}, {place.lng.toFixed(4)}
-        </ListItem.Subtitle>
-      </ListItem.Content>
-    </ListItem.Swipeable>
+      <View style={styles.placeRowContent}>
+        <ListItem.Content>
+          <ListItem.Title>{displayName}</ListItem.Title>
+          <ListItem.Subtitle>
+            {[place.companyName?.trim(), place.address?.trim()]
+              .filter(Boolean)
+              .join(' – ') || '—'}
+          </ListItem.Subtitle>
+        </ListItem.Content>
+        <Pressable style={styles.phoneButton} onPress={onCall} hitSlop={8}>
+          <PhoneIcon color={Colors.black} size={14} />
+        </Pressable>
+      </View>
+    </Pressable>
   );
 }
 
@@ -287,11 +367,19 @@ const ClientsTab = forwardRef<
     onDataChange?: () => Promise<any>;
     isActive?: boolean;
     onClientsListOpenChange?: (open: boolean) => void;
+    listsSearchQuery?: string;
   }
 >(function ClientsTab(
-  { places, onDataChange, isActive = false, onClientsListOpenChange },
+  {
+    places,
+    onDataChange,
+    isActive = false,
+    onClientsListOpenChange,
+    listsSearchQuery: listsSearchQueryProp = '',
+  },
   ref,
 ) {
+  const insets = useSafeAreaInsets();
   const { execute: deleteClient } = useApi({
     path: 'remove_klient',
   });
@@ -306,25 +394,40 @@ const ClientsTab = forwardRef<
   const [isMutating, setIsMutating] = useState(false);
   const [isLoadingListClients, setIsLoadingListClients] = useState(false);
   const [currentListClients, setCurrentListClients] = useState<Place[]>([]);
-  const swipeRefs = useRef<Map<number, any>>(new Map());
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    position: { x: number; y: number };
+    place: Place | null;
+  }>({ visible: false, position: { x: 0, y: 0 }, place: null });
 
-  // Funkcja do zamykania wszystkich swipe elementów
-  const closeAllSwipes = useCallback(() => {
-    swipeRefs.current.forEach((ref, placeId) => {
-      if (ref && ref.close) {
-        ref.close();
-      }
-    });
+  const openContextMenu = useCallback(
+    (place: Place, pageX: number, pageY: number) => {
+      setContextMenu({
+        visible: true,
+        position: { x: pageX, y: pageY },
+        place,
+      });
+    },
+    [],
+  );
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(c => ({ ...c, visible: false, place: null }));
   }, []);
 
-  // Funkcja do rejestrowania referencji swipe elementów
-  const registerSwipeRef = useCallback((id: number, ref: any) => {
-    if (ref) {
-      swipeRefs.current.set(id, ref);
-    } else {
-      swipeRefs.current.delete(id);
-    }
+  const openGoogleMapsForPlace = useCallback((place: Place) => {
+    const url = `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
+    Linking.openURL(url);
   }, []);
+
+  const filteredClientsLists = React.useMemo(() => {
+    if (!listsSearchQueryProp.trim()) return clientsLists;
+    const q = listsSearchQueryProp.toLowerCase().trim();
+    return clientsLists.filter(
+      list =>
+        list.nazwa?.toLowerCase().includes(q) ||
+        formatListCreatedDate(list.created_date).toLowerCase().includes(q),
+    );
+  }, [clientsLists, listsSearchQueryProp]);
 
   useEffect(() => {
     onClientsListOpenChange?.(clientsTabOpen);
@@ -677,7 +780,7 @@ const ClientsTab = forwardRef<
       )}
       {!clientsTabOpen && (
         <FlashList<ClientsLists>
-          data={clientsLists}
+          data={filteredClientsLists}
           renderItem={({ item }) => (
             <ClientListRow
               clientsList={item}
@@ -687,81 +790,181 @@ const ClientsTab = forwardRef<
               }}
             />
           )}
+          contentContainerStyle={styles.clientsListsContainer}
           estimatedItemSize={70}
         />
       )}
-      {clientsTabOpen && (
-        <>
-          <View style={styles.listHeader}>
-            <IconButton
-              icon={<ArrowLeftIcon color={Colors.black} size={16} />}
-              onPress={() => {
-                setClientsTabOpen(false);
-                setCurrentClientsList(null);
-              }}
-              withoutBackground
-            />
-            <Text style={styles.listHeaderTitle} numberOfLines={1}>
-              {clientsLists.find(l => l.id === currentClientsList)?.nazwa ??
-                'Lista klientów'}
-            </Text>
-          </View>
-          <FlashList<Place>
-            data={currentListClients}
-            renderItem={({ item }) => (
-              <PlaceRow
-                place={item}
-                onDelete={onDelete}
-                onCloseAllSwipes={closeAllSwipes}
-                registerSwipeRef={registerSwipeRef}
+
+      {/* Modal z listą klientów - nie zasłania BottomTabNavigation */}
+      <Modal
+        visible={clientsTabOpen}
+        animationType="slide"
+        onRequestClose={() => {
+          setClientsTabOpen(false);
+          setCurrentClientsList(null);
+        }}
+      >
+        <View style={styles.listModalWrapper}>
+          <View
+            style={[
+              styles.listOverlayContent,
+              {
+                paddingTop: insets.top,
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: TAB_BAR_HEIGHT,
+              },
+            ]}
+          >
+            <View style={styles.listHeader}>
+              <IconButton
+                icon={<ArrowLeftIcon color={Colors.black} size={16} />}
+                onPress={() => {
+                  setClientsTabOpen(false);
+                  setCurrentClientsList(null);
+                }}
+                withoutBackground
+              />
+              <View style={styles.listHeaderTitleContainer}>
+                <Text style={styles.listHeaderTitle} numberOfLines={1}>
+                  {clientsLists.find(l => l.id === currentClientsList)?.nazwa ??
+                    'Lista klientów'}
+                </Text>
+                <Text style={styles.listHeaderDateText}>
+                  {formatListCreatedDate(
+                    clientsLists.find(l => l.id === currentClientsList)
+                      ?.created_date,
+                  ) ?? '—'}
+                </Text>
+              </View>
+              <View />
+            </View>
+            {isLoadingListClients ? (
+              <View style={styles.loaderOverlay}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+              </View>
+            ) : (
+              <FlashList<Place>
+                data={currentListClients}
+                renderItem={({ item }) => (
+                  <PlaceRow
+                    place={item}
+                    onDelete={onDelete}
+                    onCall={() =>
+                      item.phone && Linking.openURL(`tel:${item.phone}`)
+                    }
+                    onOpenContextMenu={openContextMenu}
+                  />
+                )}
+                estimatedItemSize={70}
+                contentContainerStyle={styles.listItemsContainer}
               />
             )}
-            estimatedItemSize={70}
-          />
-          <AddClientModal
-            visible={addModalVisible}
-            onClose={() => {
-              setAddModalVisible(false);
-            }}
-            // eslint-disable-next-line react/jsx-no-bind
-            onClientPress={handleAddClientToList}
-            clients={clients?.filter(x => x.lista_klientow == null) ?? []}
-            key={currentClientsList}
-          />
-        </>
-      )}
+            <ClientContextMenu
+              visible={contextMenu.visible}
+              position={contextMenu.position}
+              place={contextMenu.place}
+              onClose={closeContextMenu}
+              onCall={() =>
+                contextMenu.place?.phone &&
+                Linking.openURL(`tel:${contextMenu.place.phone}`)
+              }
+              onRoute={() =>
+                contextMenu.place && openGoogleMapsForPlace(contextMenu.place)
+              }
+              onDelete={() => {
+                const id = contextMenu.place?.id;
+                closeContextMenu();
+                if (id != null) onDelete(id);
+              }}
+            />
+            <AddClientModal
+              visible={addModalVisible}
+              onClose={() => {
+                setAddModalVisible(false);
+              }}
+              onClientPress={handleAddClientToList}
+              clients={clients?.filter(x => x.lista_klientow == null) ?? []}
+              key={currentClientsList}
+            />
+            <FloatingActionButton
+              onPress={() => setAddModalVisible(true)}
+              backgroundColor={Colors.galleryFabButtonBackground}
+              right={20}
+              bottom={24}
+              iconColor={Colors.black}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 });
+
+const TAB_BAR_HEIGHT = 75;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     position: 'relative',
   },
+  listItemsContainer: {
+    padding: 10,
+  },
+  listModalWrapper: {
+    flex: 1,
+    backgroundColor: Colors.white,
+  },
+  listOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: Colors.white,
+    zIndex: 100,
+  },
+  listOverlayContent: {
+    position: 'absolute',
+    backgroundColor: Colors.white,
+    width: '100%',
+  },
   clientsList: {
     height: 50,
     width: '100%',
     display: 'flex',
     flexDirection: 'row',
-    paddingHorizontal: 30,
+    paddingHorizontal: 20,
     justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: Colors.mapRowBackground,
+    marginBottom: 10,
+    borderRadius: 14,
   },
   listItem: {
     height: 50,
     width: '100%',
   },
-  avatarContainer: {
-    backgroundColor: Colors.avatarContainer,
-    padding: 0,
-    margin: 0,
+  placeRowContainer: {
+    backgroundColor: Colors.white,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 1,
+    borderRadius: 8,
   },
-  avatarOverlayContainer: {
-    shadowColor: Colors.avatarOverlay,
-    shadowOpacity: 0.9,
-    shadowRadius: 8,
-    shadowOffset: { width: -1, height: 7 },
+  placeRowContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  phoneButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.mapDivider,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   buttonContainer: {
     borderRadius: 0,
@@ -806,22 +1009,45 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  clientsListsContainer: {
+    padding: 20,
+  },
   clientsListsItemText: {
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: 'bold',
     color: Colors.black,
+  },
+  clientsListDateText: {
+    fontSize: 12,
+    color: Colors.black,
+    opacity: 0.8,
   },
   listHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.white,
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingBottom: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: Colors.mapDivider,
   },
   listHeaderTitle: {
     flex: 1,
     fontSize: 12,
     fontWeight: 'bold',
     color: Colors.black,
-    marginLeft: 8,
+  },
+  listHeaderTitleContainer: {
+    paddingLeft: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    marginLeft: -40,
+  },
+  listHeaderDateText: {
+    fontSize: 12,
+    color: Colors.companyText,
   },
 });
 
