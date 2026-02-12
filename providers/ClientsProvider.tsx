@@ -29,7 +29,8 @@ export type Client = {
   ulica: string | null;
   numer_domu: string | null;
   client_status: string | null;
-  lista_klientow: number | null;
+  lista_klientow: number[] | null; // Backend returns 'listy_klientow' but we map it to 'lista_klientow'
+  listy_klientow?: number[] | null; // Backend field name (for compatibility)
   has_account: boolean;
 };
 

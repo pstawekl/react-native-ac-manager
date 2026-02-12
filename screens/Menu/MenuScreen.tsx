@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DrawerNavigationProp } from '@react-navigation/drawer';
-import { useNavigation } from '@react-navigation/native';
+import { CommonActions, useNavigation } from '@react-navigation/native';
 import Separator from '../../components/Separator';
 import ArchiveTickIcon from '../../components/icons/ArchiveTickIcon';
 import Book2Icon from '../../components/icons/Book2Icon';
@@ -173,6 +173,144 @@ function MenuScreen() {
   }, [permissions]);
 
   const handleMenuItemPress = (item: MenuItem) => {
+    // Resetuj nawigację modułu do początkowego ekranu
+    if (item.navigateTo === 'Clients') {
+      // Użyj reset z odpowiednią strukturą dla nested navigatora
+      // Pobierz aktualny stan Drawer Navigatora
+      const state = navigation.getState();
+      const routes = state?.routes || [];
+
+      // Znajdź indeks modułu Clients
+      let clientsIndex = routes.findIndex(r => r.name === 'Clients');
+
+      // Jeśli Clients nie istnieje w routes, dodaj go
+      if (clientsIndex === -1) {
+        clientsIndex = routes.length;
+      }
+
+      // Zbuduj nowe routes z zresetowanym stanem Clients
+      const newRoutes = routes.map((route, index) => {
+        if (route.name === 'Clients') {
+          return {
+            ...route,
+            state: {
+              index: 0,
+              routes: [{ name: 'List' }],
+            },
+          };
+        }
+        return route;
+      });
+
+      // Jeśli Clients nie był w routes, dodaj go
+      if (clientsIndex >= routes.length) {
+        newRoutes.push({
+          name: 'Clients',
+          key: `Clients-${Date.now()}`,
+          params: undefined,
+          state: {
+            index: 0,
+            routes: [{ name: 'List' }],
+          },
+        });
+      }
+
+      navigation.dispatch(
+        CommonActions.reset({
+          index: clientsIndex,
+          routes: newRoutes,
+        }),
+      );
+      return;
+    }
+
+    if (item.navigateTo === 'Map') {
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Map',
+          params: undefined,
+        }),
+      );
+      return;
+    }
+
+    if (item.navigateTo === 'Tasks') {
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Tasks',
+          params: item.params || { screen: 'Menu', params: { tab: 'tasks' } },
+          state: {
+            routes: [{ name: 'Menu' as const, params: { tab: 'tasks' } }],
+            index: 0,
+          },
+        }),
+      );
+      return;
+    }
+
+    if (item.navigateTo === 'Calendar') {
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Calendar',
+          params: item.params || {
+            screen: 'Menu',
+            params: { tab: 'calendar' },
+          },
+          state: {
+            routes: [{ name: 'Menu' as const, params: { tab: 'calendar' } }],
+            index: 0,
+          },
+        }),
+      );
+      return;
+    }
+
+    if (item.navigateTo === 'Catalogs') {
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Catalogs',
+          params: item.params || {
+            screen: 'Menu',
+            params: { tab: 'Katalogi' },
+          },
+          state: {
+            routes: [{ name: 'Menu' as const, params: { tab: 'Katalogi' } }],
+            index: 0,
+          },
+        }),
+      );
+      return;
+    }
+
+    if (item.navigateTo === 'Prices') {
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Prices',
+          params: item.params || { screen: 'Menu', params: { tab: 'Cennik' } },
+          state: {
+            routes: [{ name: 'Menu' as const, params: { tab: 'Cennik' } }],
+            index: 0,
+          },
+        }),
+      );
+      return;
+    }
+
+    if (item.navigateTo === 'Invoices') {
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Invoices',
+          params: item.params || { screen: 'List' },
+          state: {
+            routes: [{ name: 'List' as const }],
+            index: 0,
+          },
+        }),
+      );
+      return;
+    }
+
+    // Dla pozostałych modułów - użyj standardowej nawigacji
     if (item.params) {
       navigation.navigate(item.navigateTo, item.params as any);
     } else {

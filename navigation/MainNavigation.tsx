@@ -17,7 +17,7 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import HomeScreen from '../screens/Home/HomeScreen';
-import MapScreen from '../screens/Map/MapScreen';
+import MapNavigation from './MapNavigation';
 
 import CustomDrawerContent from './components/CustomDrawerContent';
 import HeaderBackground from './components/HeaderBackground';
@@ -373,7 +373,7 @@ function MainNavigation() {
       {permissions.map && (
         <Main.Screen
           name="Map"
-          component={MapScreen}
+          component={MapNavigation}
           options={{
             headerTitle: 'Mapa',
             drawerLabel: 'Mapa',
@@ -386,12 +386,6 @@ function MainNavigation() {
               />
             ),
             headerShown: false,
-            // headerBackground: MapHeaderBackground,
-            // headerLeft: HeaderLeft,
-            // headerStyle: {
-            //   height: insets.top + Styles.headerWithSubNavigationHeight,
-            // },
-            // headerRight: () => <HeaderRightWithNotifications origin="Map" />,
           }}
         />
       )}

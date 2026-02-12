@@ -34,7 +34,7 @@ export type NotificationsParamList = {
 export type MainParamList = {
   Home: undefined;
   Clients: undefined;
-  Map: undefined;
+  Map: NavigatorScreenParams<MapParamList>;
   Tasks: TasksParamList;
   Calendar: TasksParamList;
   Invoices: undefined;
@@ -194,6 +194,11 @@ export type ChatParamList = {
   ConversationsList: undefined;
   ChatScreen: { conversationId: number; otherParticipantName: string };
   ClientSelector: undefined;
+};
+
+export type MapParamList = {
+  Main: undefined;
+  ClientsList: { listId: number };
 };
 
 export type GalleryScreenProps = CompositeScreenProps<

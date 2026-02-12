@@ -2114,6 +2114,7 @@ function ClientsMenu({
       client?: Client;
       activeTab?: TabType;
       autoShowInstallationOverlay?: boolean;
+      fromMap?: boolean;
     }
   >;
 }) {
@@ -2279,7 +2280,15 @@ function ClientsMenu({
   return (
     <View style={styles.linearGradient}>
       <View style={styles.container}>
-        <ButtonsHeader onBackPress={() => navigation.goBack()} />
+        <ButtonsHeader
+          onBackPress={() => {
+            if (route.params.fromMap) {
+              (navigation as any).navigate('Map');
+            } else {
+              navigation.goBack();
+            }
+          }}
+        />
         {title && (
           <View style={styles.clientTitleContainer}>
             <Text style={styles.clientTitle}>{title}</Text>

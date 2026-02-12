@@ -1,5 +1,5 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Text } from '@rneui/themed';
 import { FlashList } from '@shopify/flash-list';
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
@@ -291,6 +291,18 @@ export default function ClientsList() {
       getClients(1, false);
     }
   }, [clients, getClients]);
+
+  // Reset state when returning to ClientsList screen from other modules
+  useFocusEffect(
+    useCallback(() => {
+      // Reset search and refresh clients list
+      setSearchValue('');
+      if (getClients) {
+        resetClients();
+        getClients(1, false);
+      }
+    }, [getClients, resetClients]),
+  );
 
   // Filtruj klientów lokalnie (po wyszukiwaniu)
   useEffect(() => {

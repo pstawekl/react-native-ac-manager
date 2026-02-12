@@ -1,4 +1,4 @@
-import { Icon, ListItem, Text } from '@rneui/themed';
+import { Text } from '@rneui/themed';
 import { FlashList } from '@shopify/flash-list';
 import Constants from 'expo-constants';
 import React, {
@@ -22,14 +22,9 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useForm } from 'react-hook-form';
 import { ScrollView } from 'react-native-gesture-handler';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconButton } from '../../components/Button';
-import FloatingActionButton from '../../components/FloatingActionButton';
-import ArrowLeftIcon from '../../components/icons/ArrowLeftIcon';
 import CloseIcon from '../../components/icons/CloseIcon';
-import PhoneIcon from '../../components/icons/PhoneIcon';
 import PlusIcon from '../../components/icons/PlusIcon';
-import TrashIcon from '../../components/icons/TrashIcon';
 import Colors from '../../consts/Colors';
 import {
   getClientDisplayPrimary,
@@ -39,130 +34,6 @@ import useApi from '../../hooks/useApi';
 import useAuth from '../../providers/AuthProvider';
 import useClients, { Client } from '../../providers/ClientsProvider';
 import { ClientsLists, Place } from './MapScreen';
-
-const CONTEXT_MENU_PRESS_BG = '#F5F5F5';
-
-function ClientContextMenu({
-  visible,
-  position,
-  place,
-  onClose,
-  onCall,
-  onRoute,
-  onDelete,
-}: {
-  visible: boolean;
-  position: { x: number; y: number };
-  place: Place | null;
-  onClose: () => void;
-  onCall: () => void;
-  onRoute: () => void;
-  onDelete: () => void;
-}) {
-  if (!visible || !place) return null;
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <Pressable style={contextMenuStyles.overlay} onPress={onClose}>
-        <Pressable
-          style={[
-            contextMenuStyles.menu,
-            { left: position.x, top: position.y + 12 },
-          ]}
-          onPress={e => e.stopPropagation()}
-        >
-          <Pressable
-            style={contextMenuStyles.option}
-            onPress={() => {
-              onClose();
-              onCall();
-            }}
-          >
-            <PhoneIcon color={Colors.black} size={20} />
-            <Text style={contextMenuStyles.optionText}>Zadzwoń</Text>
-          </Pressable>
-          <View style={contextMenuStyles.separator} />
-          <Pressable
-            style={contextMenuStyles.option}
-            onPress={() => {
-              onClose();
-              onRoute();
-            }}
-          >
-            <Icon
-              name="map-marker"
-              type="material-community"
-              color={Colors.black}
-              size={20}
-            />
-            <Text style={contextMenuStyles.optionText}>Wyznacz trasę</Text>
-          </Pressable>
-          <View style={contextMenuStyles.separator} />
-          <Pressable
-            style={contextMenuStyles.option}
-            onPress={() => {
-              onClose();
-              onDelete();
-            }}
-          >
-            <TrashIcon color={Colors.red} size={20} />
-            <Text
-              style={[
-                contextMenuStyles.optionText,
-                contextMenuStyles.optionTextDanger,
-              ]}
-            >
-              Usuń z listy
-            </Text>
-          </Pressable>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
-const contextMenuStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: Colors.blackHalfOpacity,
-  },
-  menu: {
-    position: 'absolute',
-    backgroundColor: Colors.white,
-    borderRadius: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    minWidth: 200,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    gap: 12,
-  },
-  optionText: {
-    fontSize: 16,
-    color: Colors.black,
-  },
-  optionTextDanger: {
-    color: Colors.red,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: '#E0E0E0',
-    marginVertical: 0,
-  },
-});
 
 function formatListCreatedDate(createdDate?: string): string {
   if (!createdDate) return '—';
@@ -336,75 +207,9 @@ function AddClientModal({
   );
 }
 
-function PlaceRow({
-  place,
-  onDelete,
-  onCall,
-  onOpenContextMenu,
-}: {
-  place: Place;
-  onDelete: (id: number) => void;
-  onCall: () => void;
-  onOpenContextMenu: (place: Place, pageX: number, pageY: number) => void;
-}) {
-  const isCompany = place.rodzaj_klienta === 'firma';
-  const companyName =
-    place.companyName?.trim() && place.companyName !== 'Osoba'
-      ? place.companyName.trim()
-      : '';
-  const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
-  const contactName = `${cap((place.firstName ?? '').trim())} ${cap(
-    (place.lastName ?? '').trim(),
-  )}`.trim();
-  const contactNameReverse = `${cap((place.lastName ?? '').trim())} ${cap(
-    (place.firstName ?? '').trim(),
-  )}`.trim();
-  const primaryTitle = isCompany
-    ? companyName || contactNameReverse || place.name
-    : contactNameReverse || companyName || place.name;
-  const secondaryParts: string[] = [];
-  if (isCompany && contactNameReverse) {
-    secondaryParts.push(contactNameReverse);
-  }
-  if (place.address?.trim()) {
-    secondaryParts.push(place.address.trim());
-  }
-  const subtitle = secondaryParts.length
-    ? secondaryParts.join(' – ')
-    : isCompany
-      ? '—'
-      : [companyName, place.address?.trim()].filter(Boolean).join(' – ') || '—';
-
-  const handleLongPress = (e: any) => {
-    const { pageX, pageY } = e.nativeEvent ?? {};
-    if (typeof pageX === 'number' && typeof pageY === 'number') {
-      onOpenContextMenu(place, pageX, pageY);
-    }
-  };
-
-  return (
-    <Pressable
-      style={({ pressed }) => [
-        styles.placeRowContainer,
-        pressed && { backgroundColor: CONTEXT_MENU_PRESS_BG },
-      ]}
-      onLongPress={handleLongPress}
-    >
-      <View style={styles.placeRowContent}>
-        <ListItem.Content>
-          <ListItem.Title>{primaryTitle || 'Klient'}</ListItem.Title>
-          <ListItem.Subtitle>{subtitle}</ListItem.Subtitle>
-        </ListItem.Content>
-        <Pressable style={styles.phoneButton} onPress={onCall} hitSlop={8}>
-          <PhoneIcon color={Colors.black} size={14} />
-        </Pressable>
-      </View>
-    </Pressable>
-  );
-}
-
 export type ClientsTabRef = {
   openAddClientModal: () => void;
+  refreshLists: () => void;
 };
 
 const ClientsTab = forwardRef<
@@ -426,40 +231,11 @@ const ClientsTab = forwardRef<
   },
   ref,
 ) {
-  const insets = useSafeAreaInsets();
-  const { execute: deleteClient } = useApi({
-    path: 'remove_klient',
+  const { execute: addClientsList } = useApi({
+    path: 'listy_klientow_add',
   });
-  const [visible, setVisible] = useState(false);
-  const [idToDelete, setIdToDelete] = useState<number | null>(null);
   const [clientsLists, setClientsLists] = useState<ClientsLists[]>([]);
-  const [clientsTabOpen, setClientsTabOpen] = useState(false);
-  const [currentClientsList, setCurrentClientsList] = useState<number | null>(
-    null,
-  );
   const [isLoadingLists, setIsLoadingLists] = useState(false);
-  const [isMutating, setIsMutating] = useState(false);
-  const [isLoadingListClients, setIsLoadingListClients] = useState(false);
-  const [currentListClients, setCurrentListClients] = useState<Place[]>([]);
-  const [contextMenu, setContextMenu] = useState<{
-    visible: boolean;
-    position: { x: number; y: number };
-    place: Place | null;
-  }>({ visible: false, position: { x: 0, y: 0 }, place: null });
-
-  const openContextMenu = useCallback(
-    (place: Place, pageX: number, pageY: number) => {
-      setContextMenu({
-        visible: true,
-        position: { x: pageX, y: pageY },
-        place,
-      });
-    },
-    [],
-  );
-  const closeContextMenu = useCallback(() => {
-    setContextMenu(c => ({ ...c, visible: false, place: null }));
-  }, []);
 
   const openGoogleMapsForPlace = useCallback((place: Place) => {
     const url = `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}`;
@@ -476,10 +252,6 @@ const ClientsTab = forwardRef<
     );
   }, [clientsLists, listsSearchQueryProp]);
 
-  useEffect(() => {
-    onClientsListOpenChange?.(clientsTabOpen);
-  }, [clientsTabOpen, onClientsListOpenChange]);
-
   const API_URL: string =
     Constants?.expoConfig?.extra?.apiUrl ?? 'http://api.acmanager.usermd.net';
   const API_PORT: string = Constants?.expoConfig?.extra?.apiPort ?? '';
@@ -489,21 +261,6 @@ const ClientsTab = forwardRef<
       : `${API_URL}/api/`;
   const { clients, getClients } = useClients();
   const { token } = useAuth();
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      openAddClientModal: () => {
-        console.log('[Map/ClientsTab] openAddClientModal (FAB) called', {
-          currentClientsList,
-          availableClientsCount:
-            clients?.filter(x => x.lista_klientow == null).length ?? 0,
-        });
-        setAddModalVisible(true);
-      },
-    }),
-    [currentClientsList, clients],
-  );
 
   const formatClientAddress = useCallback(
     (client: Client) =>
@@ -532,8 +289,14 @@ const ClientsTab = forwardRef<
       phone: client.numer_telefonu ?? '',
       address: formatClientAddress(client),
       lista_klientow:
-        client.lista_klientow !== null
-          ? Number(client.lista_klientow)
+        ((client as any).listy_klientow || client.lista_klientow) &&
+          Array.isArray(
+            (client as any).listy_klientow || client.lista_klientow,
+          ) &&
+          ((client as any).listy_klientow || client.lista_klientow).length > 0
+          ? ((client as any).listy_klientow || client.lista_klientow).map(
+            (id: any) => Number(id),
+          )
           : undefined,
     }),
     [formatClientAddress],
@@ -557,133 +320,16 @@ const ClientsTab = forwardRef<
     return [...list].sort((a, b) => sortKey(a).localeCompare(sortKey(b), 'pl'));
   }, []);
 
-  const loadClientsForList = useCallback(
-    async (listId: number | null) => {
-      console.log('[Map/ClientsTab] loadClientsForList called', { listId });
-      if (!listId) {
-        setCurrentListClients([]);
-        return;
-      }
-
-      setIsLoadingListClients(true);
-      try {
-        const response = await getClients();
-        const clientsData = response?.klient_list ?? [];
-        const mapped = clientsData.map(mapClientToPlace);
-        const filtered = mapped.filter(
-          place => place.lista_klientow === listId,
-        );
-        setCurrentListClients(sortPlacesByName(filtered));
-      } catch (error) {
-        Alert.alert('Błąd', 'Nie udało się pobrać klientów dla listy');
-      } finally {
-        setIsLoadingListClients(false);
-      }
-    },
-    [getClients, mapClientToPlace, sortPlacesByName],
-  );
-
-  useEffect(() => {
-    if (!clientsTabOpen || !currentClientsList || !clients) {
-      return;
-    }
-
-    const mapped = clients
-      .map(mapClientToPlace)
-      .filter(place => place.lista_klientow === currentClientsList);
-    setCurrentListClients(sortPlacesByName(mapped));
-  }, [
-    clients,
-    clientsTabOpen,
-    currentClientsList,
-    mapClientToPlace,
-    sortPlacesByName,
-  ]);
-
-  useEffect(() => {
-    if (clientsTabOpen && currentClientsList) {
-      setCurrentListClients([]);
-      loadClientsForList(currentClientsList);
-    }
-  }, [clientsTabOpen, currentClientsList, loadClientsForList]);
-
-  useEffect(() => {
-    if (!clientsTabOpen || !currentClientsList) {
-      return;
-    }
-
-    if (clients && clients.length > 0) {
-      return;
-    }
-
-    const fallback = sortPlacesByName(
-      places.filter(place => place.lista_klientow === currentClientsList),
-    );
-    setCurrentListClients(fallback);
-  }, [clients, clientsTabOpen, currentClientsList, places, sortPlacesByName]);
-
-  const onDeleteConfirmed = () => {
-    if (idToDelete) {
-      deleteClient({ data: { klient_id: idToDelete } });
-      toggleOverlay();
-      getClients();
-    }
-  };
-
-  const onDelete = async (id: number) => {
-    if (!currentClientsList) {
-      return;
-    }
-
-    try {
-      setIsMutating(true);
-      const response = await fetch(
-        `${API_PATH}listy_klientow_remove_klient_from_lista/`,
-        {
-          method: 'POST',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            token,
-            klient_id: id,
-            lista_id: currentClientsList,
-          }),
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error('Remove client request failed');
-      }
-
-      await loadClientsForList(currentClientsList);
-      if (onDataChange && onDataChange !== getClients) {
-        await onDataChange();
-      }
-    } catch (error) {
-      Alert.alert('Błąd', 'Nie udało się usunąć klienta z listy');
-    } finally {
-      setIsMutating(false);
-    }
-  };
-
-  const toggleOverlay = useCallback(() => {
-    setVisible(!visible);
-  }, [visible]);
-
   const navigation = useNavigation();
 
-  const [addModalVisible, setAddModalVisible] = useState(false);
-
   const fetchClientsLists = useCallback(async () => {
-    setIsLoadingLists(true);
-    if (!token) {
+    if (!token || !API_PATH) {
       setClientsLists([]);
       setIsLoadingLists(false);
       return;
     }
 
+    setIsLoadingLists(true);
     try {
       const response = await fetch(`${API_PATH}listy_klientow/`, {
         method: 'POST',
@@ -697,7 +343,8 @@ const ClientsTab = forwardRef<
       });
 
       if (!response.ok) {
-        Alert.alert('Błąd', 'Nie udało się pobrać list klientów');
+        console.error('[ClientsTab] Failed to fetch lists:', response.status);
+        setClientsLists([]);
         return;
       }
 
@@ -710,25 +357,36 @@ const ClientsTab = forwardRef<
       );
       setClientsLists(sortedLists);
     } catch (error) {
-      Alert.alert('Błąd', 'Nie udało się pobrać list klientów');
+      console.error('[ClientsTab] Error fetching lists:', error);
+      setClientsLists([]);
     } finally {
       setIsLoadingLists(false);
     }
   }, [API_PATH, token]);
 
-  useEffect(() => {
-    fetchClientsLists();
-  }, [fetchClientsLists]);
+  // Expose refreshLists method
+  useImperativeHandle(
+    ref,
+    () => ({
+      openAddClientModal: () => {
+        // This is no longer used - navigation is handled by ClientsListScreen
+      },
+      refreshLists: () => {
+        fetchClientsLists();
+      },
+    }),
+    [fetchClientsLists],
+  );
 
+  // Load lists when tab becomes active or when token/API_PATH become available
   useEffect(() => {
-    if (isActive) {
+    if (isActive && token && API_PATH) {
       fetchClientsLists();
     }
-  }, [fetchClientsLists, isActive]);
+  }, [fetchClientsLists, isActive, token, API_PATH]);
 
   const handleAddList = async (data: { name: string }) => {
     try {
-      setIsMutating(true);
       await addClientsList({
         data: {
           nazwa: data.name,
@@ -737,221 +395,31 @@ const ClientsTab = forwardRef<
       await fetchClientsLists();
     } catch (error) {
       Alert.alert('Błąd', 'Nie udało się dodać listy');
-    } finally {
-      setIsMutating(false);
     }
   };
 
-  async function handleAddClientToList(clientId: number) {
-    console.log('[Map/ClientsTab] handleAddClientToList called', {
-      clientId,
-      currentClientsList,
-      hasToken: !!token,
-      API_PATH,
-    });
-    if (!currentClientsList) {
-      console.warn(
-        '[Map/ClientsTab] handleAddClientToList aborted: no currentClientsList',
-      );
-      return;
-    }
-
-    try {
-      setIsMutating(true);
-      const body = {
-        token,
-        klient_id: clientId,
-        lista_id: currentClientsList,
-      };
-      const url = `${API_PATH}listy_klientow_add_klient_to_lista/`;
-      console.log('[Map/ClientsTab] POST add client to list', { url, body });
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      });
-
-      const responseText = await response.text();
-      let responseJson: unknown = null;
-      try {
-        responseJson = responseText ? JSON.parse(responseText) : null;
-      } catch {
-        // ignore
-      }
-      console.log('[Map/ClientsTab] add client response', {
-        status: response.status,
-        ok: response.ok,
-        responseText: responseText.slice(0, 500),
-        responseJson,
-      });
-
-      if (!response.ok) {
-        throw new Error(
-          `Add client request failed: ${response.status} ${responseText.slice(
-            0,
-            200,
-          )}`,
-        );
-      }
-
-      // Aktualizacja optymistyczna: getClients() zwraca tylko pierwszą stronę (20 klientów)
-      // i backend cache'uje odpowiedź, więc odświeżenie mogłoby nie pokazać dodanego klienta.
-      // Dodajemy klienta do listy z lokalnych danych (był w modalu, więc mamy go w clients).
-      const addedClient = clients?.find(c => c.id === clientId);
-      if (addedClient) {
-        const newPlace = mapClientToPlace({
-          ...addedClient,
-          lista_klientow: currentClientsList,
-        });
-        setCurrentListClients(prev => sortPlacesByName([...prev, newPlace]));
-      } else {
-        // Fallback: odśwież z API (może klient jest na pierwszej stronie)
-        await loadClientsForList(currentClientsList);
-      }
-
-      if (onDataChange && onDataChange !== getClients) {
-        await onDataChange();
-      }
-      setAddModalVisible(false);
-      console.log('[Map/ClientsTab] handleAddClientToList success');
-    } catch (error) {
-      console.warn('[Map/ClientsTab] handleAddClientToList error', error);
-      Alert.alert('Błąd', 'Nie udało się dodać klienta do listy');
-    } finally {
-      setIsMutating(false);
-    }
-  }
-
   return (
     <View style={styles.container}>
-      {(isLoadingLists || isMutating || isLoadingListClients) && (
+      {isLoadingLists && (
         <View style={styles.loaderOverlay} pointerEvents="auto">
           <ActivityIndicator size="large" color={Colors.primary} />
         </View>
       )}
-      {!clientsTabOpen && (
-        <FlashList<ClientsLists>
-          data={filteredClientsLists}
-          renderItem={({ item }) => (
-            <ClientListRow
-              clientsList={item}
-              onPress={() => {
-                setClientsTabOpen(true);
-                setCurrentClientsList(item.id);
-              }}
-            />
-          )}
-          contentContainerStyle={styles.clientsListsContainer}
-          estimatedItemSize={70}
-        />
-      )}
-
-      {/* Modal z listą klientów - nie zasłania BottomTabNavigation */}
-      <Modal
-        visible={clientsTabOpen}
-        animationType="slide"
-        onRequestClose={() => {
-          setClientsTabOpen(false);
-          setCurrentClientsList(null);
-        }}
-      >
-        <View style={styles.listModalWrapper}>
-          <View
-            style={[
-              styles.listOverlayContent,
-              {
-                paddingTop: insets.top,
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: TAB_BAR_HEIGHT,
-              },
-            ]}
-          >
-            <View style={styles.listHeader}>
-              <IconButton
-                icon={<ArrowLeftIcon color={Colors.black} size={16} />}
-                onPress={() => {
-                  setClientsTabOpen(false);
-                  setCurrentClientsList(null);
-                }}
-                withoutBackground
-              />
-              <View style={styles.listHeaderTitleContainer}>
-                <Text style={styles.listHeaderTitle} numberOfLines={1}>
-                  {clientsLists.find(l => l.id === currentClientsList)?.nazwa ??
-                    'Lista klientów'}
-                </Text>
-                <Text style={styles.listHeaderDateText}>
-                  {formatListCreatedDate(
-                    clientsLists.find(l => l.id === currentClientsList)
-                      ?.created_date,
-                  ) ?? '—'}
-                </Text>
-              </View>
-              <View />
-            </View>
-            {isLoadingListClients ? (
-              <View style={styles.loaderOverlay}>
-                <ActivityIndicator size="large" color={Colors.primary} />
-              </View>
-            ) : (
-              <FlashList<Place>
-                data={currentListClients}
-                renderItem={({ item }) => (
-                  <PlaceRow
-                    place={item}
-                    onDelete={onDelete}
-                    onCall={() =>
-                      item.phone && Linking.openURL(`tel:${item.phone}`)
-                    }
-                    onOpenContextMenu={openContextMenu}
-                  />
-                )}
-                estimatedItemSize={70}
-                contentContainerStyle={styles.listItemsContainer}
-              />
-            )}
-            <ClientContextMenu
-              visible={contextMenu.visible}
-              position={contextMenu.position}
-              place={contextMenu.place}
-              onClose={closeContextMenu}
-              onCall={() =>
-                contextMenu.place?.phone &&
-                Linking.openURL(`tel:${contextMenu.place.phone}`)
-              }
-              onRoute={() =>
-                contextMenu.place && openGoogleMapsForPlace(contextMenu.place)
-              }
-              onDelete={() => {
-                const id = contextMenu.place?.id;
-                closeContextMenu();
-                if (id != null) onDelete(id);
-              }}
-            />
-            <AddClientModal
-              visible={addModalVisible}
-              onClose={() => {
-                setAddModalVisible(false);
-              }}
-              onClientPress={handleAddClientToList}
-              clients={clients?.filter(x => x.lista_klientow == null) ?? []}
-              key={currentClientsList}
-            />
-            <FloatingActionButton
-              onPress={() => setAddModalVisible(true)}
-              backgroundColor={Colors.galleryFabButtonBackground}
-              right={20}
-              bottom={24}
-              iconColor={Colors.black}
-            />
-          </View>
-        </View>
-      </Modal>
+      <FlashList<ClientsLists>
+        data={filteredClientsLists}
+        renderItem={({ item }) => (
+          <ClientListRow
+            clientsList={item}
+            onPress={() => {
+              (navigation as any).navigate('ClientsList', {
+                listId: item.id,
+              });
+            }}
+          />
+        )}
+        contentContainerStyle={styles.clientsListsContainer}
+        estimatedItemSize={70}
+      />
     </View>
   );
 });
@@ -1012,7 +480,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  phoneButton: {
+  placeRowTextContent: {
+    flex: 1,
+    marginRight: 8,
+  },
+  addressLine1: {
+    marginTop: 2,
+  },
+  addressLine2: {
+    marginTop: 2,
+  },
+  placeRowButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -1102,6 +585,17 @@ const styles = StyleSheet.create({
   listHeaderDateText: {
     fontSize: 12,
     color: Colors.companyText,
+  },
+  emptyListContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 50,
+  },
+  emptyListText: {
+    fontSize: 14,
+    color: Colors.grayerText,
+    fontFamily: 'Archivo_400Regular',
   },
 });
 

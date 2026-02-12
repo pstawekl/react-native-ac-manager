@@ -7,7 +7,9 @@ import React, {
 } from 'react';
 
 import { DrawerScreenProps } from '@react-navigation/drawer';
+import { useFocusEffect } from '@react-navigation/native';
 import { Text } from '@rneui/base';
+import Constants from 'expo-constants';
 import { useForm } from 'react-hook-form';
 import {
   Alert,
@@ -19,16 +21,16 @@ import {
 } from 'react-native';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import Container from '../../components/Container';
-import FloatingActionButton from '../../components/FloatingActionButton';
 import { FormInput } from '../../components/Input';
 import Tabs from '../../components/Tabs';
 import SearchIcon from '../../components/icons/SearchIcon';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import { MainParamList } from '../../navigation/types';
+import useAuth from '../../providers/AuthProvider';
 import useClients, { Client } from '../../providers/ClientsProvider';
 import ClientsTab, { ClientsTabRef } from './ClientsTab';
-import MapTab from './MapTab';
+import MapTab, { MapTabRef } from './MapTab';
 
 export type Place = {
   id: number;
@@ -41,7 +43,7 @@ export type Place = {
   rodzaj_klienta?: string | null;
   phone: string;
   address: string;
-  lista_klientow?: number;
+  lista_klientow?: number[];
 };
 
 export type ClientsLists = {
@@ -278,8 +280,14 @@ async function updateClientsPlaces(
           phone: client.numer_telefonu || '',
           address: displayAddress,
           lista_klientow:
-            client.lista_klientow !== null
-              ? Number(client.lista_klientow)
+            ((client as any).listy_klientow || client.lista_klientow) &&
+              Array.isArray(
+                (client as any).listy_klientow || client.lista_klientow,
+              ) &&
+              ((client as any).listy_klientow || client.lista_klientow).length > 0
+              ? ((client as any).listy_klientow || client.lista_klientow).map(
+                (id: any) => Number(id),
+              )
               : undefined,
         },
         needsSave,
@@ -302,13 +310,25 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
   const [listsSearchQuery, setListsSearchQuery] = useState('');
   const [clientsTabOpen, setClientsTabOpen] = useState(false);
   const clientsTabRef = useRef<ClientsTabRef>(null);
+  const mapTabRef = useRef<MapTabRef>(null);
+  const { token } = useAuth();
+  const API_URL: string =
+    Constants?.expoConfig?.extra?.apiUrl ?? 'http://api.acmanager.usermd.net';
+  const API_PORT: string = Constants?.expoConfig?.extra?.apiPort ?? '';
+  const API_PATH: string =
+    API_URL.length > 0 && API_PORT.length > 0
+      ? `${API_URL}:${API_PORT}/api/`
+      : `${API_URL}/api/`;
   const { execute: updateClientCoordinates } = useApi<{
     message: string;
     error?: string;
   }>({
     path: 'change_child_data',
   });
-  const { execute: addClientsList } = useApi({
+  const { execute: addClientsList } = useApi<{
+    id: number;
+    nazwa: string;
+  }>({
     path: 'listy_klientow_add',
   });
   useEffect(() => {
@@ -333,7 +353,14 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
         }> = [];
 
         const placesWithCoordinates = await updateClientsPlaces(
-          clients.filter(x => x.lista_klientow !== null),
+          clients.filter(x => {
+            const listaKlientow = (x as any).listy_klientow || x.lista_klientow;
+            return (
+              listaKlientow &&
+              Array.isArray(listaKlientow) &&
+              listaKlientow.length > 0
+            );
+          }),
         );
 
         if (placesWithCoordinates.length > 0) {
@@ -390,8 +417,15 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
                 phone: client.numer_telefonu ?? '',
                 address: displayAddress,
                 lista_klientow:
-                  client.lista_klientow !== null
-                    ? Number(client.lista_klientow)
+                  ((client as any).listy_klientow || client.lista_klientow) &&
+                    Array.isArray(
+                      (client as any).listy_klientow || client.lista_klientow,
+                    ) &&
+                    ((client as any).listy_klientow || client.lista_klientow)
+                      .length > 0
+                    ? (
+                      (client as any).listy_klientow || client.lista_klientow
+                    ).map((id: any) => Number(id))
                     : undefined,
               });
             }
@@ -445,23 +479,121 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
     }
   }, [getClients]);
 
+  // Track if user was in Lists tab before navigating to ClientsListScreen
+  const wasInListsTabRef = useRef<boolean>(false);
+
+  // Track listTabIndex changes
+  useEffect(() => {
+    if (listTabIndex === 1) {
+      wasInListsTabRef.current = true;
+    } else if (listTabIndex === 0) {
+      wasInListsTabRef.current = false;
+    }
+  }, [listTabIndex]);
+
+  // Reset state when returning to Map screen from other modules (not from ClientsListScreen)
+  useFocusEffect(
+    useCallback(() => {
+      // If user was in Lists tab before navigating to ClientsListScreen, preserve it
+      if (wasInListsTabRef.current) {
+        // We're returning from ClientsListScreen, restore Lists tab
+        setListTabIndex(1);
+        wasInListsTabRef.current = false; // Reset flag after restoring
+        return;
+      }
+
+      // Reset to initial state when screen receives focus from other modules
+      // This ensures we always start from the beginning when coming from Home
+      setListTabIndex(0);
+      setListsSearchQuery('');
+      setClientsTabOpen(false);
+      setAddModalVisible(false);
+      // Reset ClientsTab state by calling a method if available
+      // The ClientsTab will reset its internal state when isActive changes
+    }, []),
+  );
+
   const mapTabComponent = useMemo(
-    () => <MapTab places={filteredClients} isLoading={isLoadingPlaces} />,
+    () => (
+      <MapTab
+        ref={mapTabRef}
+        places={filteredClients}
+        isLoading={isLoadingPlaces}
+      />
+    ),
     [filteredClients, isLoadingPlaces],
   );
 
   const handleAddList = async (data: { name: string }) => {
     try {
-      await addClientsList({
+      // Create the list
+      const newList = await addClientsList({
         data: {
           nazwa: data.name,
         },
       });
+
+      if (!newList || !newList.id) {
+        throw new Error('Failed to create list');
+      }
+
+      // Get visible places from the map
+      const visiblePlaces = mapTabRef.current?.getVisiblePlaces() || [];
+
+      console.log('[MapScreen] handleAddList - visible places:', {
+        count: visiblePlaces.length,
+        placeIds: visiblePlaces.map(p => p.id),
+      });
+
+      if (visiblePlaces.length > 0) {
+        // Add all visible clients to the newly created list
+        const addPromises = visiblePlaces.map(place => {
+          const body = {
+            token,
+            klient_id: place.id,
+            lista_id: newList.id,
+          };
+          const url = `${API_PATH}listy_klientow_add_klient_to_lista/`;
+          return fetch(url, {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          }).then(response => {
+            if (!response.ok) {
+              throw new Error(`Failed to add client ${place.id} to list`);
+            }
+            return response.json();
+          });
+        });
+
+        await Promise.all(addPromises);
+      }
+
+      // Refresh clients data to get updated lista_klientow from API
+      // This is important so that when user opens the list, it shows the clients
       if (getClients) {
         await getClients();
+        // Wait a bit for the data to propagate
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
+
+      // Refresh only the clients lists, not the entire module
+      if (clientsTabRef.current) {
+        clientsTabRef.current.refreshLists();
+      }
+
+      console.log('[MapScreen] handleAddList completed:', {
+        listId: newList.id,
+        listName: newList.nazwa,
+        visiblePlacesCount: visiblePlaces.length,
+        clientsRefreshed: !!getClients,
+      });
     } catch (error) {
-      Alert.alert('Błąd', 'Nie udało się dodać listy');
+      console.error('Error creating list:', error);
+      Alert.alert('Błąd', 'Nie udało się dodać listy lub klientów do listy');
     }
   };
 
@@ -495,7 +627,19 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
 
   return (
     <Container style={styles.container}>
-      <ButtonsHeader onBackPress={navigation.goBack} title="Mapa" />
+      <View style={styles.headerContainer}>
+        <ButtonsHeader onBackPress={navigation.goBack} title="Mapa" />
+        {listTabIndex === 0 && (
+          <TouchableOpacity
+            style={styles.createListButton}
+            onPress={() => setAddModalVisible(true)}
+          >
+            <Text style={styles.createListButtonText}>
+              Stwórz listę klientów
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
       <Text style={styles.title}>Lista klientów</Text>
       {listTabIndex === 1 && (
         <View style={styles.listsSearchContainer}>
@@ -526,18 +670,6 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
         onClose={() => setAddModalVisible(false)}
         onSave={handleAddList}
       />
-
-      {/* FAB - Floating Action Button: dodaj klienta do listy gdy otwarta lista, w przeciwnym razie dodaj nową listę */}
-      <FloatingActionButton
-        onPress={() => {
-          if (listTabIndex === 1 && clientsTabOpen) {
-            clientsTabRef.current?.openAddClientModal();
-          } else {
-            setAddModalVisible(true);
-          }
-        }}
-        backgroundColor={Colors.yellow}
-      />
     </Container>
   );
 }
@@ -546,6 +678,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 40,
+  },
+  headerContainer: {
+    position: 'relative',
+  },
+  createListButton: {
+    backgroundColor: Colors.transparent,
+    paddingHorizontal: 5,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginHorizontal: 20,
+    marginVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.gray,
+  },
+  createListButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.black,
   },
   title: {
     fontSize: 20,
