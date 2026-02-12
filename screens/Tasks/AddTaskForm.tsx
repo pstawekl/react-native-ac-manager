@@ -14,6 +14,7 @@ import {
 
 import ButtonsHeader from '../../components/ButtonsHeader';
 import { Dropdown } from '../../components/Input';
+import { getClientDisplayPrimary } from '../../helpers/clientDisplay';
 import useApi from '../../hooks/useApi';
 import useClients from '../../providers/ClientsProvider';
 import useStaff from '../../providers/StaffProvider';
@@ -228,10 +229,7 @@ export default function AddTaskForm({ navigation, route }: any) {
           control={control}
           options={
             clients?.map(c => ({
-              label:
-                c.rodzaj_klienta === 'firma'
-                  ? `Firma: ${c.nazwa_firmy}`
-                  : `Osoba prywatna: ${c.first_name} ${c.last_name}`,
+              label: getClientDisplayPrimary(c),
               value: c.id,
             })) ?? []
           }

@@ -20,6 +20,10 @@ import ButtonsHeader from '../../components/ButtonsHeader';
 import Container from '../../components/Container';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import Colors from '../../consts/Colors';
+import {
+  getClientDisplayPrimary,
+  getClientDisplaySecondary,
+} from '../../helpers/clientDisplay';
 import { ChatParamList, MainParamList } from '../../navigation/types';
 import useAuth from '../../providers/AuthProvider';
 import useChat from '../../providers/ChatProvider';
@@ -110,7 +114,7 @@ function ConversationsListScreen() {
           setModalVisible(false);
 
           // Używamy bezpośrednio danych klienta, ponieważ wiemy że to jest nowa konwersacja
-          const clientName = `${client.first_name} ${client.last_name}`;
+          const clientName = getClientDisplayPrimary(client);
 
           navigation.navigate('ChatScreen', {
             conversationId: conversation.id,
@@ -162,13 +166,18 @@ function ConversationsListScreen() {
       >
         <View style={styles.clientAvatar}>
           <Text style={styles.clientAvatarText}>
-            {item.first_name.charAt(0).toUpperCase()}
+            {item.last_name?.charAt(0).toUpperCase() ||
+              item.first_name?.charAt(0).toUpperCase() ||
+              '?'}
           </Text>
         </View>
         <View style={styles.clientInfo}>
-          <Text style={styles.clientName}>
-            {item.first_name} {item.last_name}
-          </Text>
+          <Text style={styles.clientName}>{getClientDisplayPrimary(item)}</Text>
+          {getClientDisplaySecondary(item) ? (
+            <Text style={styles.clientSubtitle}>
+              {getClientDisplaySecondary(item)}
+            </Text>
+          ) : null}
           <Text style={styles.clientEmail}>{item.email}</Text>
         </View>
       </TouchableOpacity>
@@ -268,9 +277,7 @@ function ConversationsListScreen() {
   return (
     <Container style={{ flex: 1, paddingTop: 20 }}>
       <View style={styles.container}>
-        <ButtonsHeader
-          onBackPress={() => navigation.goBack()}
-        />
+        <ButtonsHeader onBackPress={() => navigation.goBack()} />
         <FlatList
           data={conversations || []}
           renderItem={renderConversationItem}
@@ -517,11 +524,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: Colors.text,
-    marginBottom: 4,
+  },
+  clientSubtitle: {
+    fontSize: 13,
+    color: Colors.companyText ?? '#616161',
+    marginTop: 2,
   },
   clientEmail: {
     fontSize: 14,
     color: Colors.grayText,
+    marginTop: 4,
   },
   loadingOverlay: {
     position: 'absolute',

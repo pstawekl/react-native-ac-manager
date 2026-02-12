@@ -1,7 +1,4 @@
-import {
-  DrawerNavigationProp,
-  DrawerScreenProps,
-} from '@react-navigation/drawer';
+import { DrawerScreenProps } from '@react-navigation/drawer';
 import {
   CompositeScreenProps,
   NavigatorScreenParams,
@@ -167,12 +164,16 @@ export type ClientsParamList = {
     activeTab?: TabType;
     returnTab?: TabType;
     selectedDevice?: Device;
+    /** Wynik wyboru multisplit: jednostki wewnętrzne i agregaty */
+    selectedMultisplitDevices?: { internal: Device[]; aggregates: Device[] };
   };
   InstallationForm: undefined;
   AgreementForm: { installationId: string; clientId: string };
   DeviceSelector: {
     installationId: string;
     montageId?: number;
+    /** Określa flow w oknie: split (Producent+Typ+lista) lub multi_split (Producent→jednostki wewn.→agregaty) */
+    montageType?: 'split' | 'multi_split';
   };
 };
 

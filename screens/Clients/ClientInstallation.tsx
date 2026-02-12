@@ -2,9 +2,15 @@
 import { Route, useNavigation } from '@react-navigation/native';
 import { Divider } from '@rneui/base';
 import { Text } from '@rneui/themed';
-import { useCallback, useEffect, useState } from 'react';
-import { Control, useForm } from 'react-hook-form';
-import { Alert, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Control, useForm, UseFormSetValue, useWatch } from 'react-hook-form';
+import {
+  Alert,
+  FlatList,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { ButtonGroup, SubmitButton } from '../../components/Button';
@@ -18,11 +24,14 @@ import useApi from '../../hooks/useApi';
 import useMontages, { Montage } from '../../providers/MontageProvider';
 import useOffers, { Device } from '../../providers/OffersProvider';
 
-type MontageData = Montage & {
+type MontageData = Omit<Montage, 'split_multisplit'> & {
+  // W formularzu dropdown używa 'split' | 'multi_split'; API zwraca boolean
+  split_multisplit?: boolean | 'split' | 'multi_split' | null;
   // Dodatkowe pola dla formularza
   deviceManufacturer?: string;
   deviceType?: string;
   device_split?: number;
+  devices_multisplit?: number[];
   deviceModel?: string;
   devicePower?: string;
   dlugosc_instalacji?: number | string;
@@ -40,6 +49,8 @@ const montageDefaultValues = {
   split_multisplit: null,
   deviceManufacturer: '',
   deviceType: '',
+  device_split: undefined,
+  devices_multisplit: [] as number[],
   devicePower: '',
   dlugosc_instalacji: undefined,
   gaz: undefined,
@@ -92,8 +103,15 @@ export function InstallationToolForm(props: {
   setType?: (type: string | undefined) => void;
   setSplitManufacturer?: (manufacturer: string | undefined) => void;
   setDeviceType?: (type: string | undefined) => void;
+  setValue?: UseFormSetValue<MontageData>;
 }) {
-  const { control, setType, setSplitManufacturer, setDeviceType } = props;
+  const { control, setType, setSplitManufacturer, setDeviceType, setValue } =
+    props;
+  const watchedDeviceSplit = useWatch({
+    control,
+    name: 'device_split',
+    defaultValue: undefined,
+  });
 
   const [type, setTypeLocal] = useState<string | undefined>(undefined);
   const [splitManufacturer, setSplitManufacturerLocal] = useState<
@@ -102,7 +120,13 @@ export function InstallationToolForm(props: {
   const [multisplitManufacturer, setMultisplitManufacturer] = useState<
     string | undefined
   >();
-  const [aggregate, setAggregate] = useState<string | undefined>();
+  const [multisplitStep, setMultisplitStep] = useState<
+    'internal' | 'aggregate'
+  >('internal');
+  const [selectedInternalUnits, setSelectedInternalUnits] = useState<number[]>(
+    [],
+  );
+  const [selectedAggregates, setSelectedAggregates] = useState<number[]>([]);
   const [deviceType, setDeviceTypeLocal] = useState<string | undefined>();
 
   // Użyj przekazanych funkcji lub lokalnych stanów
@@ -136,6 +160,79 @@ export function InstallationToolForm(props: {
       setDevicesList(devicesMultisplit);
     }
   }, [devicesSplit, devicesMultisplit, type]);
+
+  const watchedDevicesMultisplitRaw = useWatch({
+    control,
+    name: 'devices_multisplit',
+  });
+  const watchedDevicesMultisplit: number[] = Array.isArray(
+    watchedDevicesMultisplitRaw,
+  )
+    ? watchedDevicesMultisplitRaw
+    : [];
+  const watchedManufacturer = useWatch({
+    control,
+    name: 'deviceManufacturer',
+    defaultValue: '',
+  });
+  const multisplitIds = Array.isArray(watchedDevicesMultisplit)
+    ? watchedDevicesMultisplit.filter(Boolean)
+    : [];
+
+  useEffect(() => {
+    if (type === 'multi_split' && watchedManufacturer) {
+      setMultisplitManufacturer(watchedManufacturer);
+    }
+  }, [type, watchedManufacturer]);
+
+  useEffect(() => {
+    if (
+      type !== 'multi_split' ||
+      !Array.isArray(devicesList) ||
+      devicesList.length === 0
+    )
+      return;
+    const internal: number[] = [];
+    const aggregate: number[] = [];
+    multisplitIds.forEach((id: number) => {
+      const dev = devicesList.find((d: Device) => d.id === id);
+      if (dev) {
+        if (dev.rodzaj === 'agregat') aggregate.push(id);
+        else internal.push(id);
+      }
+    });
+    setSelectedInternalUnits(internal);
+    setSelectedAggregates(aggregate);
+  }, [type, devicesList, JSON.stringify(multisplitIds)]);
+
+  useEffect(() => {
+    if (type !== 'multi_split' || typeof setValue !== 'function') return;
+    const combined = [...selectedInternalUnits, ...selectedAggregates];
+    const current = Array.isArray(watchedDevicesMultisplit)
+      ? watchedDevicesMultisplit.filter(Boolean)
+      : [];
+    if (combined.length === 0 && current.length > 0) return;
+    if (
+      combined.length !== current.length ||
+      combined.some((id, i) => id !== current[i])
+    ) {
+      setValue('devices_multisplit', combined);
+    }
+  }, [
+    type,
+    selectedInternalUnits,
+    selectedAggregates,
+    setValue,
+    watchedDevicesMultisplit,
+  ]);
+
+  useEffect(() => {
+    if (type === 'multi_split' && !multisplitManufacturer) {
+      setMultisplitStep('internal');
+      setSelectedInternalUnits([]);
+      setSelectedAggregates([]);
+    }
+  }, [type, multisplitManufacturer]);
 
   return (
     <View>
@@ -241,27 +338,75 @@ export function InstallationToolForm(props: {
               )}
             </View>
             {splitManufacturer && deviceType && (
-              <Dropdown
-                name="device_split"
-                control={control}
-                label="Model urządzenia"
-                options={Array.from(
-                  new Set(
-                    devicesList.filter(
-                      item =>
-                        item.producent === splitManufacturer &&
-                        item.typ === deviceType,
-                    ),
-                  ),
-                ).map(item => ({
-                  label: item.nazwa_modelu_producenta,
-                  value: item.id,
-                }))}
-                isBordered
-                isThin
-                customWidth="48%"
-                zIndex={7}
-              />
+              <View style={styles.deviceListSection}>
+                <Text style={styles.deviceListLabel}>Model urządzenia</Text>
+                <FlatList
+                  data={devicesList.filter(
+                    item =>
+                      item.producent === splitManufacturer &&
+                      item.typ === deviceType,
+                  )}
+                  keyExtractor={item => String(item.id)}
+                  scrollEnabled={false}
+                  renderItem={({ item }) => {
+                    const isSelected = watchedDeviceSplit === item.id;
+                    return (
+                      <TouchableOpacity
+                        style={[
+                          styles.deviceListItem,
+                          isSelected && styles.deviceListItemSelected,
+                        ]}
+                        onPress={() => {
+                          if (typeof setValue === 'function') {
+                            setValue('device_split', item.id);
+                            setValue('deviceManufacturer', item.producent);
+                            setValue('deviceType', item.typ);
+                            const mocStr =
+                              item.moc_chlodnicza != null ||
+                                item.moc_grzewcza != null
+                                ? [
+                                  item.moc_chlodnicza != null
+                                    ? `${Number(item.moc_chlodnicza).toFixed(
+                                      2,
+                                    )} kW (chłod.)`
+                                    : '',
+                                  item.moc_grzewcza != null
+                                    ? `${Number(item.moc_grzewcza).toFixed(
+                                      2,
+                                    )} kW (grz.)`
+                                    : '',
+                                ]
+                                  .filter(Boolean)
+                                  .join(' ')
+                                : '';
+                            setValue('devicePower', mocStr || undefined);
+                          }
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.deviceListItemText,
+                            isSelected && styles.deviceListItemTextSelected,
+                          ]}
+                        >
+                          {item.nazwa_modelu_producenta}
+                          {(item.moc_chlodnicza != null ||
+                            item.moc_grzewcza != null) &&
+                            ` (${item.moc_chlodnicza != null
+                              ? `${Number(item.moc_chlodnicza).toFixed(2)} kW`
+                              : ''
+                            }${item.moc_grzewcza != null
+                              ? ` / ${Number(item.moc_grzewcza).toFixed(
+                                2,
+                              )} kW grz.`
+                              : ''
+                            })`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+              </View>
             )}
           </>
         )}
@@ -273,11 +418,7 @@ export function InstallationToolForm(props: {
                 control={control}
                 label="Producent urządzenia"
                 options={Array.from(
-                  new Set(
-                    devicesList
-                      .filter(item => item.rodzaj === 'agregat')
-                      .map(item => item.producent),
-                  ),
+                  new Set(devicesList.map(item => item.producent)),
                 ).map(item => ({
                   label: item,
                   value: item,
@@ -288,98 +429,211 @@ export function InstallationToolForm(props: {
                 zIndex={8}
                 onChange={setMultisplitManufacturer}
               />
-              {multisplitManufacturer && (
-                <Dropdown
-                  name="aggregate"
-                  control={control}
-                  label="Agregat"
-                  options={Array.from(
-                    new Set(
-                      devicesList
-                        .filter(
-                          item =>
-                            item.rodzaj === 'agregat' &&
-                            item.producent === multisplitManufacturer,
-                        )
-                        .map(item => item.nazwa_modelu_producenta),
-                    ),
-                  ).map(item => ({
-                    label: item,
-                    value: item,
-                  }))}
-                  isBordered
-                  isThin
-                  customWidth="48%"
-                  zIndex={8}
-                  onChange={setAggregate}
-                />
-              )}
             </View>
-            {aggregate && multisplitManufacturer && (
-              <View style={styles.formContainer}>
-                {Array.from({
-                  length: devicesList.filter(
-                    item => item.nazwa_modelu_producenta === aggregate,
-                  )[0].maks_ilosc_jedn_wew,
-                }).map((_item, index) => (
-                  <Dropdown
-                    name={`devices_multisplit.${index}`}
-                    control={control}
-                    label={`Urządzenie ${index + 1}`}
-                    options={Array.from(
-                      new Set(
-                        devicesList.filter(
-                          device =>
-                            device.rodzaj !== 'agregat' &&
-                            device.producent === multisplitManufacturer,
-                        ),
-                      ),
-                    ).map(device => ({
-                      label: device.nazwa_modelu_producenta,
-                      value: device.id,
-                    }))}
-                    isBordered
-                    isThin
-                    customWidth="48%"
-                    zIndex={index > 1 ? 7 - Math.floor((index - 2) / 2) : 7}
-                  />
-                ))}
-              </View>
+            {multisplitManufacturer && (
+              <>
+                <View style={styles.multisplitStepRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.multisplitStepButton,
+                      multisplitStep === 'internal' &&
+                      styles.multisplitStepButtonActive,
+                    ]}
+                    onPress={() => setMultisplitStep('internal')}
+                  >
+                    <Text
+                      style={[
+                        styles.multisplitStepText,
+                        multisplitStep === 'internal' &&
+                        styles.multisplitStepTextActive,
+                      ]}
+                    >
+                      Jednostki wewnętrzne
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.multisplitStepButton,
+                      multisplitStep === 'aggregate' &&
+                      styles.multisplitStepButtonActive,
+                    ]}
+                    onPress={() => setMultisplitStep('aggregate')}
+                  >
+                    <Text
+                      style={[
+                        styles.multisplitStepText,
+                        multisplitStep === 'aggregate' &&
+                        styles.multisplitStepTextActive,
+                      ]}
+                    >
+                      Agregaty
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {multisplitStep === 'internal' && (
+                  <View style={styles.deviceListSection}>
+                    <Text style={styles.deviceListLabel}>
+                      Wybierz jednostki wewnętrzne (dowolna liczba)
+                    </Text>
+                    <FlatList
+                      data={devicesList.filter(
+                        (d: Device) =>
+                          d.producent === multisplitManufacturer &&
+                          d.rodzaj !== 'agregat',
+                      )}
+                      keyExtractor={item => String(item.id)}
+                      scrollEnabled={false}
+                      renderItem={({ item }) => {
+                        const isSelected = selectedInternalUnits.includes(
+                          item.id,
+                        );
+                        return (
+                          <TouchableOpacity
+                            style={[
+                              styles.deviceListItem,
+                              isSelected && styles.deviceListItemSelected,
+                            ]}
+                            onPress={() => {
+                              setSelectedInternalUnits(prev =>
+                                isSelected
+                                  ? prev.filter(id => id !== item.id)
+                                  : [...prev, item.id],
+                              );
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.deviceListItemText,
+                                isSelected && styles.deviceListItemTextSelected,
+                              ]}
+                            >
+                              {item.nazwa_modelu_producenta}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      }}
+                    />
+                  </View>
+                )}
+                {multisplitStep === 'aggregate' && (
+                  <View style={styles.deviceListSection}>
+                    <Text style={styles.deviceListLabel}>
+                      Wybierz agregaty (dowolna liczba)
+                    </Text>
+                    <FlatList
+                      data={devicesList.filter(
+                        (d: Device) =>
+                          d.producent === multisplitManufacturer &&
+                          d.rodzaj === 'agregat',
+                      )}
+                      keyExtractor={item => String(item.id)}
+                      scrollEnabled={false}
+                      renderItem={({ item }) => {
+                        const isSelected = selectedAggregates.includes(item.id);
+                        return (
+                          <TouchableOpacity
+                            style={[
+                              styles.deviceListItem,
+                              isSelected && styles.deviceListItemSelected,
+                            ]}
+                            onPress={() => {
+                              setSelectedAggregates(prev =>
+                                isSelected
+                                  ? prev.filter(id => id !== item.id)
+                                  : [...prev, item.id],
+                              );
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.deviceListItemText,
+                                isSelected && styles.deviceListItemTextSelected,
+                              ]}
+                            >
+                              {item.nazwa_modelu_producenta}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      }}
+                    />
+                  </View>
+                )}
+                <View style={styles.multisplitSummary}>
+                  <Text style={styles.multisplitSummaryText}>
+                    Wybrano: {selectedInternalUnits.length} jednostek
+                    wewnętrznych, {selectedAggregates.length} agregatów
+                  </Text>
+                </View>
+              </>
             )}
           </>
         )}
       </View>
-      <View style={{ marginBottom: 24 }}>
-        <View style={styles.deviceRow}>
-          <Text>Nazwa urządzenia</Text>
-          <Text />
+      {type === 'split' && (
+        <View style={{ marginBottom: 24 }}>
+          {(() => {
+            const selectedDevice = Array.isArray(devicesList)
+              ? devicesList.find((d: Device) => d.id === watchedDeviceSplit)
+              : null;
+            const nazwa = selectedDevice?.nazwa_modelu ?? '';
+            const nazwaWew = selectedDevice?.nazwa_jedn_wew ?? '';
+            const nazwaZew = selectedDevice?.nazwa_jedn_zew ?? '';
+            const mocChlod =
+              selectedDevice?.moc_chlodnicza != null
+                ? `${Number(selectedDevice.moc_chlodnicza).toFixed(2)} kW`
+                : '';
+            const mocGrz =
+              selectedDevice?.moc_grzewcza != null
+                ? `${Number(selectedDevice.moc_grzewcza).toFixed(2)} kW`
+                : '';
+            return (
+              <>
+                <View style={styles.deviceRow}>
+                  <Text>Nazwa urządzenia</Text>
+                  <Text />
+                </View>
+                <Divider style={styles.divider} />
+                <View style={styles.deviceRow}>
+                  <Text style={styles.rowText}>Nazwa jednostki:</Text>
+                  <Text style={[styles.rowText, styles.boldText]}>{nazwa}</Text>
+                </View>
+                <Divider style={styles.divider} />
+                <View style={styles.deviceRow}>
+                  <Text style={styles.rowText}>
+                    Nazwa jednostki wewnętrznej:
+                  </Text>
+                  <Text style={[styles.rowText, styles.boldText]}>
+                    {nazwaWew}
+                  </Text>
+                </View>
+                <Divider style={styles.divider} />
+                <View style={styles.deviceRow}>
+                  <Text style={styles.rowText}>
+                    Nazwa jednostki zewnętrznej:
+                  </Text>
+                  <Text style={[styles.rowText, styles.boldText]}>
+                    {nazwaZew}
+                  </Text>
+                </View>
+                <Divider style={styles.divider} />
+                <View style={styles.deviceRow}>
+                  <Text style={styles.rowText}>Moc nominalna chłodzenia:</Text>
+                  <Text style={[styles.rowText, styles.boldText]}>
+                    {mocChlod}
+                  </Text>
+                </View>
+                <Divider style={styles.divider} />
+                <View style={styles.deviceRow}>
+                  <Text style={styles.rowText}>Moc nominalna grzania:</Text>
+                  <Text style={[styles.rowText, styles.boldText]}>
+                    {mocGrz}
+                  </Text>
+                </View>
+              </>
+            );
+          })()}
         </View>
-        <Divider style={styles.divider} />
-        <View style={styles.deviceRow}>
-          <Text style={styles.rowText}>Nazwa jednostki:</Text>
-          <Text style={[styles.rowText, styles.boldText]}>CO18</Text>
-        </View>
-        <Divider style={styles.divider} />
-        <View style={styles.deviceRow}>
-          <Text style={styles.rowText}>Nazwa jednostki wewnętrznej:</Text>
-          <Text style={[styles.rowText, styles.boldText]} />
-        </View>
-        <Divider style={styles.divider} />
-        <View style={styles.deviceRow}>
-          <Text style={styles.rowText}>Nazwa jednostki zewnętrznej:</Text>
-          <Text style={[styles.rowText, styles.boldText]} />
-        </View>
-        <Divider style={styles.divider} />
-        <View style={styles.deviceRow}>
-          <Text style={styles.rowText}>Moc nominalna chłodzenia:</Text>
-          <Text style={[styles.rowText, styles.boldText]}>5,20 kW</Text>
-        </View>
-        <Divider style={styles.divider} />
-        <View style={styles.deviceRow}>
-          <Text style={styles.rowText}>Moc nominalna grzania:</Text>
-          <Text style={[styles.rowText, styles.boldText]}>5,33 kW</Text>
-        </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -854,6 +1108,33 @@ const protocolStyles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  multisplitSummaryBlock: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: Colors.homeScreenBackground,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.borderInput,
+  },
+  multisplitSummaryTitle: {
+    fontSize: 14,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+    marginBottom: 8,
+  },
+  multisplitListTitle: {
+    fontSize: 12,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  multisplitListItem: {
+    fontSize: 12,
+    color: Colors.black,
+    marginLeft: 8,
+    marginBottom: 2,
+  },
   protocolLabel: {
     fontSize: 10,
     fontFamily: 'Archivo_600SemiBold',
@@ -947,12 +1228,14 @@ export function MontageProtocolForm({
   onSave,
   onCancel,
   selectedDevice: initialSelectedDevice,
+  selectedMultisplitDevices: initialMultisplitDevices,
 }: {
   installationId: string;
   montage: Montage | null;
   onSave?: () => void;
   onCancel?: () => void;
   selectedDevice?: Device;
+  selectedMultisplitDevices?: { internal: Device[]; aggregates: Device[] };
 }) {
   const navigation = useNavigation();
   const { control, handleSubmit, setValue } = useForm<MontageData>({
@@ -981,6 +1264,53 @@ export function MontageProtocolForm({
     useState<string>('');
   const [nominalHeatingCapacity, setNominalHeatingCapacity] =
     useState<string>('');
+  /** Zestaw multisplit wczytany z API (gdy brak initialMultisplitDevices z nawigacji) */
+  const [loadedMultisplitDevices, setLoadedMultisplitDevices] = useState<{
+    internal: Array<Record<string, unknown>>;
+    aggregates: Array<Record<string, unknown>>;
+  } | null>(null);
+
+  const watchedDeviceManufacturer = useWatch({
+    control,
+    name: 'deviceManufacturer',
+    defaultValue: '',
+  });
+
+  /** Dla Multisplit: zestaw pogrupowany po modelu (nazwa + moc) z liczbą sztuk */
+  const multisplitGroupedForDisplay = useMemo(() => {
+    const source = initialMultisplitDevices ?? loadedMultisplitDevices;
+    const internal = (source?.internal ?? []) as Array<
+      Device | Record<string, unknown>
+    >;
+    const aggregates = (source?.aggregates ?? []) as Array<
+      Device | Record<string, unknown>
+    >;
+    const group = (
+      list: Array<Device | Record<string, unknown>>,
+    ): Array<{ label: string; count: number }> => {
+      const map = new Map<string, { label: string; count: number }>();
+      list.forEach(d => {
+        const prod = (d as any).producent ?? '';
+        const name =
+          (d as any).nazwa_modelu_producenta ||
+          (d as any).nazwa_modelu ||
+          String((d as any).id ?? '');
+        const mocVal = (d as any).moc_chlodnicza;
+        const moc = mocVal != null ? `${Number(mocVal).toFixed(1)}kW` : '';
+        const label = [prod, name, moc].filter(Boolean).join(' ');
+        const key = `${prod}|${name}|${(d as any).moc_chlodnicza}|${(d as any).moc_grzewcza
+          }`;
+        const prev = map.get(key);
+        if (prev) prev.count += 1;
+        else map.set(key, { label, count: 1 });
+      });
+      return Array.from(map.values());
+    };
+    return {
+      internal: group(internal),
+      aggregates: group(aggregates),
+    };
+  }, [initialMultisplitDevices, loadedMultisplitDevices]);
 
   const { execute: fetchMontageData } = useApi<MontageData>({
     path: 'montaz_data',
@@ -1057,6 +1387,7 @@ export function MontageProtocolForm({
         return;
       }
       if (!montageData || typeof montageData !== 'object') return;
+      setLoadedMultisplitDevices(null);
       const rawDate = montageData.data_montazu;
       const dateValue =
         rawDate != null
@@ -1081,7 +1412,85 @@ export function MontageProtocolForm({
         setDeviceType(montageData.deviceType);
       }
       if (montageData.devices_split && montageData.devices_split.length > 0) {
-        setValue('device_split', montageData.devices_split[0]);
+        const first = montageData.devices_split[0];
+        const deviceId =
+          typeof first === 'object' && first !== null && 'id' in first
+            ? (first as any).id
+            : first;
+        setValue('device_split', deviceId);
+        if (
+          typeof first === 'object' &&
+          first !== null &&
+          ('moc_chlodnicza' in first || 'moc_grzewcza' in first)
+        ) {
+          const dev = first as any;
+          if (dev.producent != null) {
+            setValue('deviceManufacturer', String(dev.producent));
+            if (typeof setSplitManufacturer === 'function') {
+              setSplitManufacturer(String(dev.producent));
+            }
+          }
+          if (typeof setUnitName === 'function') {
+            setUnitName(dev.nazwa_modelu ?? '');
+          }
+          if (typeof setIndoorUnitName === 'function') {
+            setIndoorUnitName(dev.nazwa_jedn_wew ?? '');
+          }
+          if (typeof setOutdoorUnitName === 'function') {
+            setOutdoorUnitName(dev.nazwa_jedn_zew ?? '');
+          }
+          if (typeof setNominalCoolingCapacity === 'function') {
+            const v = dev.moc_chlodnicza;
+            if (v != null) {
+              const num = typeof v === 'number' ? v : parseFloat(String(v));
+              setNominalCoolingCapacity(
+                !Number.isNaN(num) ? `${num.toFixed(2)} kW` : '',
+              );
+            } else {
+              setNominalCoolingCapacity('');
+            }
+          }
+          if (typeof setNominalHeatingCapacity === 'function') {
+            const v = dev.moc_grzewcza;
+            if (v != null) {
+              const num = typeof v === 'number' ? v : parseFloat(String(v));
+              setNominalHeatingCapacity(
+                !Number.isNaN(num) ? `${num.toFixed(2)} kW` : '',
+              );
+            } else {
+              setNominalHeatingCapacity('');
+            }
+          }
+        }
+      }
+      if (
+        montageData.devices_multi_split &&
+        Array.isArray(montageData.devices_multi_split)
+      ) {
+        const list = montageData.devices_multi_split as Array<
+          number | Record<string, unknown>
+        >;
+        const isObjects =
+          list.length > 0 &&
+          typeof list[0] === 'object' &&
+          list[0] !== null &&
+          'id' in (list[0] as object);
+        if (isObjects) {
+          const ids = (list as Array<Record<string, unknown>>).map(
+            x => x.id as number,
+          );
+          setValue('devices_multisplit', ids);
+          const internal = (list as Array<Record<string, unknown>>).filter(
+            x => String((x.rodzaj as string) ?? '').toLowerCase() !== 'agregat',
+          );
+          const aggregates = (list as Array<Record<string, unknown>>).filter(
+            x => String((x.rodzaj as string) ?? '').toLowerCase() === 'agregat',
+          );
+          setLoadedMultisplitDevices({ internal, aggregates });
+        } else {
+          setValue('devices_multisplit', list as number[]);
+          setLoadedMultisplitDevices(null);
+        }
       }
 
       if (montageData.split_multisplit !== null) {
@@ -1089,6 +1498,7 @@ export function MontageProtocolForm({
           ? 'multi_split'
           : 'split';
         setType(montageType);
+        setValue('split_multisplit', montageType);
 
         if (montageType === 'split' && typeof getDevicesSplit === 'function') {
           getDevicesSplit();
@@ -1158,6 +1568,12 @@ export function MontageProtocolForm({
       setDeviceType,
       getDevicesSplit,
       getDevicesMultisplit,
+      setUnitName,
+      setIndoorUnitName,
+      setOutdoorUnitName,
+      setNominalCoolingCapacity,
+      setNominalHeatingCapacity,
+      setLoadedMultisplitDevices,
     ],
   );
 
@@ -1463,6 +1879,23 @@ export function MontageProtocolForm({
     }
   }, [initialSelectedDevice, setValue, getDevicesSplit, devicesSplit]);
 
+  // Obsługa powrotu z ekranu wyboru urządzeń multisplit
+  useEffect(() => {
+    if (
+      initialMultisplitDevices &&
+      (initialMultisplitDevices.internal?.length > 0 ||
+        initialMultisplitDevices.aggregates?.length > 0)
+    ) {
+      const ids: number[] = [
+        ...(initialMultisplitDevices.internal || []).map(d => d.id),
+        ...(initialMultisplitDevices.aggregates || []).map(d => d.id),
+      ];
+      setType('multi_split');
+      setValue('split_multisplit', true);
+      setValue('devices_multisplit', ids);
+    }
+  }, [initialMultisplitDevices, setValue]);
+
   const uploadPhoto = async (
     photo: File | undefined,
     montazId: number,
@@ -1685,28 +2118,32 @@ export function MontageProtocolForm({
         <View style={protocolStyles.protocolSection}>
           <View style={protocolStyles.protocolSectionHeader}>
             <Text style={protocolStyles.protocolSectionTitle}>Urządzenie</Text>
-            <TouchableOpacity
-              style={protocolStyles.editIconButton}
-              onPress={() => {
-                try {
-                  const nav = navigation as any;
-                  if (nav && typeof nav.navigate === 'function') {
-                    nav.navigate('DeviceSelector', {
-                      installationId,
-                      montageId: montage?.id,
-                    });
-                  }
-                } catch (_) { }
-              }}
-            >
-              <EditIcon color={Colors.black} size={20} />
-            </TouchableOpacity>
+            {type === 'split' || type === 'multi_split' ? (
+              <TouchableOpacity
+                style={protocolStyles.editIconButton}
+                onPress={() => {
+                  try {
+                    const nav = navigation as any;
+                    if (nav && typeof nav.navigate === 'function') {
+                      nav.navigate('DeviceSelector', {
+                        installationId,
+                        montageId: montage?.id,
+                        montageType:
+                          type === 'multi_split' ? 'multi_split' : 'split',
+                      });
+                    }
+                  } catch (_) { }
+                }}
+              >
+                <EditIcon color={Colors.black} size={20} />
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           <Dropdown
             name="split_multisplit"
             control={control}
-            label="Split / Multisplit"
+            label="Typ montażu"
             options={[
               { label: 'Split', value: 'split' },
               { label: 'Multisplit', value: 'multi_split' },
@@ -1719,178 +2156,106 @@ export function MontageProtocolForm({
             }
           />
 
-          {type === 'split' &&
-            devicesList &&
-            devicesList.length > 0 &&
-            (() => {
-              const manufacturerOptions = Array.from(
-                new Set(
-                  devicesList
-                    .map(item => item?.producent)
-                    .filter((p): p is string => p != null && p !== ''),
-                ),
-              ).map(item => ({
-                label: String(item),
-                value: item,
-              }));
-
-              return (
-                <>
-                  <Dropdown
-                    name="deviceManufacturer"
-                    control={control}
-                    label="Producent urządzenia"
-                    options={manufacturerOptions}
-                    isBordered={false}
-                    onChange={
-                      typeof setSplitManufacturer === 'function'
-                        ? (value: string) => setSplitManufacturer(value)
-                        : () => { }
-                    }
-                  />
-                  {splitManufacturer && (
-                    <Dropdown
-                      name="deviceType"
-                      control={control}
-                      label="Typ urządzenia"
-                      options={Array.from(
-                        new Set(
-                          devicesList
-                            .filter(
-                              item => item?.producent === splitManufacturer,
-                            )
-                            .map(item => item?.typ)
-                            .filter((t): t is string => t != null && t !== ''),
-                        ),
-                      ).map(item => ({
-                        label: String(item),
-                        value: item,
-                      }))}
-                      isBordered={false}
-                      onChange={
-                        typeof setDeviceType === 'function'
-                          ? (value: string) => setDeviceType(value)
-                          : () => { }
-                      }
-                    />
-                  )}
-                  {splitManufacturer && deviceType && (
-                    <>
-                      <Dropdown
-                        name="device_split"
-                        control={control}
-                        label="Model urządzenia"
-                        options={devicesList
-                          .filter(
-                            item =>
-                              item?.producent === splitManufacturer &&
-                              item?.typ === deviceType,
-                          )
-                          .map(item => ({
-                            label:
-                              item?.nazwa_modelu_producenta != null
-                                ? String(item.nazwa_modelu_producenta)
-                                : `ID ${item?.id ?? '?'}`,
-                            value: item?.id ?? 0,
-                          }))
-                          .filter(opt => opt.value != null && opt.value !== 0)}
-                        isBordered={false}
-                      />
-                      <FormInput
-                        name="devicePower"
-                        control={control}
-                        label="Moc urządzenia"
-                        noPadding
-                      />
-                    </>
-                  )}
-                </>
-              );
-            })()}
-
-          {type === 'multi_split' && devicesList && devicesList.length > 0 && (
-            <>
-              <Dropdown
-                name="deviceManufacturer"
-                control={control}
-                label="Producent urządzenia"
-                options={Array.from(
-                  new Set(
-                    devicesList
-                      .filter(item => item.rodzaj === 'agregat')
-                      .map(item => item.producent),
+          {type === 'multi_split' && (
+            <View style={protocolStyles.multisplitSummaryBlock}>
+              <Text style={protocolStyles.multisplitListTitle}>
+                Jednostki wewnętrzne:
+              </Text>
+              {multisplitGroupedForDisplay.internal.length === 0 ? (
+                <Text style={protocolStyles.multisplitListItem}>
+                  • Brak wybranych
+                </Text>
+              ) : (
+                multisplitGroupedForDisplay.internal.map(
+                  (item: { label: string; count: number }, idx: number) => (
+                    <Text
+                      key={`in-${idx}`}
+                      style={protocolStyles.multisplitListItem}
+                    >
+                      • {item.label} x {item.count}
+                    </Text>
                   ),
-                ).map(item => ({
-                  label: item,
-                  value: item,
-                }))}
-                isBordered={false}
-              />
-              <FormInput
-                name="deviceType"
-                control={control}
-                label="Typ urządzenia"
-                noPadding
-              />
-              <FormInput
-                name="deviceModel"
-                control={control}
-                label="Model urządzenia"
-                noPadding
-              />
-              <FormInput
-                name="devicePower"
-                control={control}
-                label="Moc urządzenia"
-                noPadding
-              />
-            </>
+                )
+              )}
+              <Text
+                style={[protocolStyles.multisplitListTitle, { marginTop: 12 }]}
+              >
+                Agregaty:
+              </Text>
+              {multisplitGroupedForDisplay.aggregates.length === 0 ? (
+                <Text style={protocolStyles.multisplitListItem}>
+                  • Brak wybranych
+                </Text>
+              ) : (
+                multisplitGroupedForDisplay.aggregates.map(
+                  (item: { label: string; count: number }, idx: number) => (
+                    <Text
+                      key={`ag-${idx}`}
+                      style={protocolStyles.multisplitListItem}
+                    >
+                      • {item.label} x {item.count}
+                    </Text>
+                  ),
+                )
+              )}
+            </View>
           )}
         </View>
 
-        {/* Pola tylko do odczytu */}
-        <View style={protocolStyles.readOnlySection}>
-          <View style={protocolStyles.readOnlyRow}>
-            <Text style={protocolStyles.readOnlyLabel}>Nazwa jednostki:</Text>
-            <Text style={protocolStyles.readOnlyValue}>{unitName || '-'}</Text>
+        {/* Pola tylko do odczytu – tylko dla Typu montażu Split */}
+        {type === 'split' && (
+          <View style={protocolStyles.readOnlySection}>
+            <View style={protocolStyles.readOnlyRow}>
+              <Text style={protocolStyles.readOnlyLabel}>Producent:</Text>
+              <Text style={protocolStyles.readOnlyValue}>
+                {watchedDeviceManufacturer || splitManufacturer || '-'}
+              </Text>
+            </View>
+            <Divider style={protocolStyles.readOnlyDivider} />
+            <View style={protocolStyles.readOnlyRow}>
+              <Text style={protocolStyles.readOnlyLabel}>Nazwa jednostki:</Text>
+              <Text style={protocolStyles.readOnlyValue}>
+                {unitName || '-'}
+              </Text>
+            </View>
+            <Divider style={protocolStyles.readOnlyDivider} />
+            <View style={protocolStyles.readOnlyRow}>
+              <Text style={protocolStyles.readOnlyLabel}>
+                Nazwa jednostki wewnętrznej:
+              </Text>
+              <Text style={protocolStyles.readOnlyValue}>
+                {indoorUnitName || '-'}
+              </Text>
+            </View>
+            <Divider style={protocolStyles.readOnlyDivider} />
+            <View style={protocolStyles.readOnlyRow}>
+              <Text style={protocolStyles.readOnlyLabel}>
+                Nazwa jednostki zewnętrznej:
+              </Text>
+              <Text style={protocolStyles.readOnlyValue}>
+                {outdoorUnitName || '-'}
+              </Text>
+            </View>
+            <Divider style={protocolStyles.readOnlyDivider} />
+            <View style={protocolStyles.readOnlyRow}>
+              <Text style={protocolStyles.readOnlyLabel}>
+                Moc nominalna chłodzenia:
+              </Text>
+              <Text style={protocolStyles.readOnlyValue}>
+                {nominalCoolingCapacity || '-'}
+              </Text>
+            </View>
+            <Divider style={protocolStyles.readOnlyDivider} />
+            <View style={protocolStyles.readOnlyRow}>
+              <Text style={protocolStyles.readOnlyLabel}>
+                Moc nominalna grzania:
+              </Text>
+              <Text style={protocolStyles.readOnlyValue}>
+                {nominalHeatingCapacity || '-'}
+              </Text>
+            </View>
           </View>
-          <Divider style={protocolStyles.readOnlyDivider} />
-          <View style={protocolStyles.readOnlyRow}>
-            <Text style={protocolStyles.readOnlyLabel}>
-              Nazwa jednostki wewnętrznej:
-            </Text>
-            <Text style={protocolStyles.readOnlyValue}>
-              {indoorUnitName || '-'}
-            </Text>
-          </View>
-          <Divider style={protocolStyles.readOnlyDivider} />
-          <View style={protocolStyles.readOnlyRow}>
-            <Text style={protocolStyles.readOnlyLabel}>
-              Nazwa jednostki zewnętrznej:
-            </Text>
-            <Text style={protocolStyles.readOnlyValue}>
-              {outdoorUnitName || '-'}
-            </Text>
-          </View>
-          <Divider style={protocolStyles.readOnlyDivider} />
-          <View style={protocolStyles.readOnlyRow}>
-            <Text style={protocolStyles.readOnlyLabel}>
-              Moc nominalna chłodzenia:
-            </Text>
-            <Text style={protocolStyles.readOnlyValue}>
-              {nominalCoolingCapacity || '-'}
-            </Text>
-          </View>
-          <Divider style={protocolStyles.readOnlyDivider} />
-          <View style={protocolStyles.readOnlyRow}>
-            <Text style={protocolStyles.readOnlyLabel}>
-              Moc nominalna grzania:
-            </Text>
-            <Text style={protocolStyles.readOnlyValue}>
-              {nominalHeatingCapacity || '-'}
-            </Text>
-          </View>
-        </View>
+        )}
 
         {/* Dropdowny */}
         <View style={protocolStyles.protocolSection}>
@@ -2290,7 +2655,33 @@ export default function ClientInstallation({
         setDeviceType(montageData.deviceType);
       }
       if (montageData.devices_split && montageData.devices_split.length > 0) {
-        setValue('device_split', montageData.devices_split[0]);
+        const first = montageData.devices_split[0];
+        const deviceId =
+          typeof first === 'object' && first !== null && 'id' in first
+            ? (first as any).id
+            : first;
+        setValue('device_split', deviceId);
+      }
+      if (
+        montageData.devices_multi_split &&
+        Array.isArray(montageData.devices_multi_split)
+      ) {
+        const list = montageData.devices_multi_split as Array<
+          number | Record<string, unknown>
+        >;
+        const isObjects =
+          list.length > 0 &&
+          typeof list[0] === 'object' &&
+          list[0] !== null &&
+          'id' in (list[0] as object);
+        if (isObjects) {
+          setValue(
+            'devices_multisplit',
+            (list as Array<Record<string, unknown>>).map(x => x.id as number),
+          );
+        } else {
+          setValue('devices_multisplit', list as number[]);
+        }
       }
 
       // Ustaw typ (split/multisplit) i pobierz urządzenia
@@ -2299,6 +2690,7 @@ export default function ClientInstallation({
           ? 'multi_split'
           : 'split';
         setType(montageType);
+        setValue('split_multisplit', montageType);
 
         // Pobierz urządzenia dla danego typu
         if (montageType === 'split' && getDevicesSplit) {
@@ -2537,6 +2929,7 @@ export default function ClientInstallation({
           setType={setType}
           setSplitManufacturer={setSplitManufacturer}
           setDeviceType={setDeviceType}
+          setValue={setValue}
         />
         <Text>Szczegóły montażu</Text>
         <Divider style={styles.divider} />
@@ -2615,5 +3008,77 @@ const styles = StyleSheet.create({
   },
   boldText: {
     fontFamily: 'Poppins_600SemiBold',
+  },
+  deviceListSection: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  deviceListLabel: {
+    fontSize: 14,
+    marginBottom: 8,
+    fontFamily: 'Archivo_400Regular',
+  },
+  deviceListItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.grayBorder,
+    backgroundColor: Colors.white,
+  },
+  deviceListItemSelected: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.greenWithOpacity,
+  },
+  deviceListItemText: {
+    fontSize: 14,
+    fontFamily: 'Archivo_400Regular',
+    color: Colors.text,
+  },
+  deviceListItemTextSelected: {
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.primary,
+  },
+  multisplitStepRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  multisplitStepButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.grayBorder,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+  },
+  multisplitStepButtonActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.greenWithOpacity,
+  },
+  multisplitStepText: {
+    fontSize: 14,
+    fontFamily: 'Archivo_400Regular',
+    color: Colors.text,
+  },
+  multisplitStepTextActive: {
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.primary,
+  },
+  multisplitSummary: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    backgroundColor: Colors.grayBorder,
+    borderRadius: 8,
+  },
+  multisplitSummaryText: {
+    fontSize: 14,
+    fontFamily: 'Archivo_500Medium',
+    color: Colors.text,
   },
 });

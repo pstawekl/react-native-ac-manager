@@ -11,6 +11,10 @@ import {
 } from 'react-native';
 
 import Colors from '../consts/Colors';
+import {
+  getClientDisplayPrimary,
+  getClientDisplaySecondary,
+} from '../helpers/clientDisplay';
 import useClients, { Client } from '../providers/ClientsProvider';
 
 interface ClientSelectorModalProps {
@@ -69,9 +73,8 @@ function ClientSelectorModal({
 
   const renderClientItem = useCallback(
     ({ item }: { item: Client }) => {
-      const clientName = `${item.first_name} ${item.last_name}`;
-      const displayName =
-        item.nazwa_firmy || clientName || item.email || `Klient ${item.id}`;
+      const primary = getClientDisplayPrimary(item);
+      const secondary = getClientDisplaySecondary(item);
 
       return (
         <TouchableOpacity
@@ -84,10 +87,11 @@ function ClientSelectorModal({
             </Text>
           </View>
           <View style={styles.clientInfo}>
-            <Text style={styles.clientName}>{displayName}</Text>
-            {item.email && (
-              <Text style={styles.clientEmail}>{item.email}</Text>
-            )}
+            <Text style={styles.clientName}>{primary}</Text>
+            {secondary ? (
+              <Text style={styles.clientSubtitle}>{secondary}</Text>
+            ) : null}
+            {item.email && <Text style={styles.clientEmail}>{item.email}</Text>}
           </View>
         </TouchableOpacity>
       );
@@ -145,7 +149,9 @@ function ClientSelectorModal({
             keyExtractor={item => item.id.toString()}
             ListEmptyComponent={renderEmptyState}
             contentContainerStyle={
-              filteredClients.length === 0 ? styles.emptyListContainer : undefined
+              filteredClients.length === 0
+                ? styles.emptyListContainer
+                : undefined
             }
           />
         </View>
@@ -229,11 +235,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: Colors.text,
-    marginBottom: 4,
+  },
+  clientSubtitle: {
+    fontSize: 13,
+    color: Colors.companyText ?? '#616161',
+    marginTop: 2,
   },
   clientEmail: {
     fontSize: 14,
     color: Colors.grayText,
+    marginTop: 4,
   },
   emptyState: {
     flex: 1,
@@ -251,4 +262,3 @@ const styles = StyleSheet.create({
 });
 
 export default ClientSelectorModal;
-

@@ -19,6 +19,7 @@ import HorizontalTabs, { TabItem } from '../../components/HorizontalTabs';
 import { Dropdown, FormInput, Textarea } from '../../components/Input';
 import Photo from '../../components/Photo';
 import SegmentedControl from '../../components/SegmentedControl';
+import EditIcon from '../../components/icons/EditIcon';
 import FilesIcon from '../../components/icons/FilesIcon';
 import InfoCircle from '../../components/icons/InfoCircle';
 import MoneyReciveIcon from '../../components/icons/MoneyReciveIcon';
@@ -26,6 +27,7 @@ import NoteTextIcon from '../../components/icons/NoteTextIcon';
 import SearchStatusIcon from '../../components/icons/SearchStatusIcon';
 import TaskListIcon from '../../components/icons/TaskIcon';
 import Colors from '../../consts/Colors';
+import { getClientDisplayPrimary } from '../../helpers/clientDisplay';
 import { getImageUrl } from '../../helpers/image';
 import useApi from '../../hooks/useApi';
 import { ClientMenuScreenProps } from '../../navigation/types';
@@ -35,12 +37,20 @@ import useOffers from '../../providers/OffersProvider';
 import useStaff from '../../providers/StaffProvider';
 import useTasks from '../../providers/TasksProvider';
 import {
+  Agreement,
+  AgreementListResponse,
   ClientInstallationsListResponse,
   ClientsInstallationListItem,
 } from '../../types/clients.types';
 
 // Typy dla zakładek
-type TabType = 'dane' | 'zadania' | 'instalacje' | 'oferty';
+type TabType =
+  | 'dane'
+  | 'zadania'
+  | 'instalacje'
+  | 'oferty'
+  | 'faktury'
+  | 'umowy';
 
 // Typy dla formularza oględzin
 type ClientInspectionData = {
@@ -121,6 +131,8 @@ const clientTabs: TabItem[] = [
   { id: 'zadania', label: 'Zadania' },
   { id: 'instalacje', label: 'Instalacje' },
   { id: 'oferty', label: 'Oferty' },
+  { id: 'faktury', label: 'Faktury' },
+  { id: 'umowy', label: 'Umowy' },
 ];
 
 // Helper function to geocode addresses
@@ -196,6 +208,7 @@ function DaneView({
   const [clientType, setClientType] = useState<string | undefined>(
     client?.rodzaj_klienta ?? 'firma',
   );
+  const [isEditing, setIsEditing] = useState(false);
   const [invitationTimeout, setInvitationTimeout] = useState<number>(0);
   const timeoutIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
@@ -388,11 +401,10 @@ function DaneView({
 
       if (response?.message === 'User and user data updated successfully') {
         Alert.alert('Klient zaktualizowany.');
-
+        setIsEditing(false);
         if (getClients) {
           await getClients();
         }
-
         if (onClientUpdate) {
           onClientUpdate();
         }
@@ -405,6 +417,82 @@ function DaneView({
     },
     [execute, getClients, client, onClientUpdate],
   );
+
+  const handleCancelEdit = useCallback(() => {
+    reset({
+      first_name: client.first_name ?? '',
+      last_name: client.last_name ?? '',
+      email: client.email ?? '',
+      nazwa_firmy: client.nazwa_firmy ?? '',
+      numer_telefonu: client.numer_telefonu ?? '',
+      miasto: client.miasto ?? '',
+      ulica: client.ulica ?? '',
+      numer_domu: client.numer_domu ?? '',
+      rodzaj_klienta: client.rodzaj_klienta ?? 'firma',
+      mieszkanie: client.mieszkanie ?? '',
+      kod_pocztowy: client.kod_pocztowy ?? '',
+      nip: client.nip ?? '',
+      url: client.url ?? 'http://51.68.143.33/static/default_user.png',
+      client_status: client.client_status || '0',
+    });
+    setClientType(client?.rodzaj_klienta ?? 'firma');
+    setIsEditing(false);
+  }, [client, reset]);
+
+  const previewAddress =
+    [
+      client?.ulica,
+      client?.numer_domu,
+      client?.mieszkanie ? `m. ${client.mieszkanie}` : null,
+      client?.kod_pocztowy,
+      client?.miasto,
+    ]
+      .filter(Boolean)
+      .join(', ') || '—';
+
+  if (!isEditing) {
+    const previewRows: { label: string; value: string }[] = [
+      {
+        label: 'Nazwa / Imię i nazwisko',
+        value: getClientDisplayPrimary(client),
+      },
+      { label: 'E-mail', value: client?.email || '—' },
+      { label: 'Telefon', value: client?.numer_telefonu || '—' },
+      { label: 'Adres', value: previewAddress },
+    ];
+    if (client?.rodzaj_klienta === 'firma') {
+      previewRows.push({
+        label: 'NIP',
+        value: client?.nip || '—',
+      });
+    }
+    return (
+      <View style={styles.formView}>
+        <View style={styles.danePreviewCard}>
+          {previewRows.map((row, index) => (
+            <View
+              key={row.label}
+              style={[
+                styles.danePreviewRow,
+                index === previewRows.length - 1 && styles.danePreviewRowLast,
+              ]}
+            >
+              <Text style={styles.danePreviewLabel}>{row.label}</Text>
+              <Text style={styles.danePreviewValue}>{row.value}</Text>
+            </View>
+          ))}
+        </View>
+        <TouchableOpacity
+          style={styles.daneEditButton}
+          onPress={() => setIsEditing(true)}
+          activeOpacity={0.7}
+        >
+          <EditIcon color={Colors.black} size={22} />
+          <Text style={styles.daneEditButtonText}>Edytuj dane klienta</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.formView}>
@@ -588,12 +676,19 @@ function DaneView({
           </View>
         )}
 
-        {/* Przycisk Zapisz na dole formularza */}
+        {/* Przyciski Anuluj i Zapisz na dole formularza */}
         <View style={styles.formFooter}>
+          <TouchableOpacity
+            style={styles.daneCancelButton}
+            onPress={handleCancelEdit}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.daneCancelButtonText}>Anuluj</Text>
+          </TouchableOpacity>
           <SubmitButton
             title="Zapisz"
             onPress={handleSubmit(onSubmit)}
-            style={styles.submitButton}
+            style={[styles.submitButton, styles.daneSaveButton]}
             titleStyle={styles.submitButtonTitle}
           />
         </View>
@@ -696,6 +791,16 @@ function ClientTaskRow({
           </View>
         )}
       </View>
+      {task.instalacja_info?.name != null ||
+        task.instalacja_info?.id != null ? (
+        <View style={styles.rowInstallation}>
+          <Text style={styles.rowInstallationText}>
+            Instalacja:{' '}
+            {task.instalacja_info?.name ??
+              `Instalacja ${task.instalacja_info?.id}`}
+          </Text>
+        </View>
+      ) : null}
     </TouchableOpacity>
   );
 }
@@ -801,17 +906,15 @@ function InstallationCard({
     return [address, city].filter(Boolean).join(', ') || null;
   };
 
-  // Formatowanie daty montażu (na razie placeholder, bo nie ma w API)
+  // Formatowanie daty montażu (na razie z created_date instalacji)
   const formatInstallationDate = () => {
-    // TODO: Pobierz datę montażu z Montage gdy będzie dostępna w API
-    return format(parseISO(installation.created_date), 'dd.MM.yyyy'); // Placeholder
+    return format(parseISO(installation.created_date), 'dd.MM.yyyy');
   };
 
-  // Nazwa urządzenia (na razie placeholder, bo nie ma w API)
-  const getDeviceName = () => {
-    // TODO: Pobierz urządzenie z Montage gdy będzie dostępne w API
-    return 'Samsung DualCool Deluxe Soft Air'; // Placeholder
-  };
+  const hasDevice =
+    installation.montaz_device_producent != null ||
+    installation.montaz_device_typ != null ||
+    installation.montaz_device_moc != null;
 
   return (
     <TouchableOpacity style={styles.installationCard} onPress={onPress}>
@@ -836,12 +939,51 @@ function InstallationCard({
             </Text>
           </View>
         )}
-        {/* <View style={styles.installationCardInfoRow}>
-          <Text style={styles.installationCardInfoLabel}>Urządzenie:</Text>
-          <Text style={styles.installationCardInfoValue}>
-            {getDeviceName()}
-          </Text>
-        </View> */}
+        {installation.montaz_is_multisplit ? (
+          <View style={styles.installationCardInfoRow}>
+            <Text style={styles.installationCardInfoLabel}>
+              Montaż multisplit:
+            </Text>
+            <Text style={styles.installationCardInfoValue}>
+              {installation.montaz_multisplit_jedn_wew_count ?? 0} jednostek
+              wewnętrznych, {installation.montaz_multisplit_agregat_count ?? 0}{' '}
+              agregatów
+            </Text>
+          </View>
+        ) : null}
+        {hasDevice && !installation.montaz_is_multisplit && (
+          <>
+            {installation.montaz_device_producent != null &&
+              installation.montaz_device_producent !== '' ? (
+              <View style={styles.installationCardInfoRow}>
+                <Text style={styles.installationCardInfoLabel}>Producent:</Text>
+                <Text style={styles.installationCardInfoValue}>
+                  {installation.montaz_device_producent}
+                </Text>
+              </View>
+            ) : null}
+            {installation.montaz_device_typ != null &&
+              installation.montaz_device_typ !== '' ? (
+              <View style={styles.installationCardInfoRow}>
+                <Text style={styles.installationCardInfoLabel}>Typ:</Text>
+                <Text style={styles.installationCardInfoValue}>
+                  {installation.montaz_device_typ}
+                </Text>
+              </View>
+            ) : null}
+            {installation.montaz_device_moc != null &&
+              installation.montaz_device_moc !== '' ? (
+              <View style={styles.installationCardInfoRow}>
+                <Text style={styles.installationCardInfoLabel}>
+                  Moc urządzenia:
+                </Text>
+                <Text style={styles.installationCardInfoValue}>
+                  {installation.montaz_device_moc}
+                </Text>
+              </View>
+            ) : null}
+          </>
+        )}
       </View>
 
       {/* Divider oddzielający informacje od przycisków */}
@@ -1468,11 +1610,14 @@ function ClientOfferRow({
   offer,
   navigation,
   clientId,
+  installations,
 }: {
   offer: any;
   navigation: any;
   clientId: number;
+  installations: ClientsInstallationListItem[];
 }) {
+  const installation = installations.find(i => i.id === offer.instalacja);
   const handleOfferPress = () => {
     navigation.navigate('Offers', {
       screen: 'Overview',
@@ -1518,6 +1663,14 @@ function ClientOfferRow({
         <View style={styles.clientOfferDetails}>
           <Text style={styles.clientOfferTitle}>{offerTitle}</Text>
           <Text style={styles.clientOfferDate}>{formattedDate}</Text>
+          {installation ? (
+            <View style={styles.rowInstallation}>
+              <Text style={styles.rowInstallationText}>
+                Instalacja:{' '}
+                {installation.name || `Instalacja ${installation.id}`}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
     </TouchableOpacity>
@@ -1594,6 +1747,317 @@ function OfertyView({
             offer={item}
             navigation={navigation}
             clientId={clientId}
+            installations={installations}
+          />
+        )}
+        keyExtractor={item => item.id.toString()}
+      />
+    </View>
+  );
+}
+
+// Typ faktury z API faktura_list
+type ClientInvoice = {
+  id: number;
+  client_name?: string;
+  instalacja?: number | string | null;
+  issue_date: string;
+  numer_faktury: string;
+  status: string;
+};
+
+// Komponent wiersza faktury w widoku klienta
+function ClientInvoiceRow({
+  invoice,
+  installations,
+  navigation,
+}: {
+  invoice: ClientInvoice;
+  installations: ClientsInstallationListItem[];
+  navigation: any;
+}) {
+  const handlePress = () => {
+    navigation.navigate('Invoices', {
+      screen: 'Details',
+      params: { id: invoice.id },
+    });
+  };
+
+  let statusBgColor = '#E6F7D9';
+  let statusTextColor = '#52C41A';
+  let statusText = 'Wystawiona';
+  switch (invoice.status) {
+    case 'paid':
+      statusBgColor = '#E6F7D9';
+      statusTextColor = '#52C41A';
+      statusText = 'Opłacona';
+      break;
+    case 'partial':
+      statusBgColor = '#FFF4E5';
+      statusTextColor = '#FF9800';
+      statusText = 'Częściowo opł.';
+      break;
+    default:
+      statusBgColor = Colors.grayBorder;
+      statusTextColor = Colors.black;
+      break;
+  }
+
+  const formattedDate = invoice.issue_date
+    ? format(parseISO(invoice.issue_date), 'dd/MM/yyyy')
+    : 'Brak daty';
+
+  const installation =
+    invoice.instalacja != null
+      ? installations.find(i => i.id === Number(invoice.instalacja))
+      : null;
+
+  return (
+    <TouchableOpacity
+      style={styles.clientInvoiceItem}
+      onPress={handlePress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.clientInvoiceContent}>
+        <View style={styles.clientInvoiceLeft}>
+          <Text style={styles.clientInvoiceType}>Faktura VAT</Text>
+          <Text style={styles.clientInvoiceNumberDate}>
+            {invoice.numer_faktury} • {formattedDate}
+          </Text>
+          {installation ? (
+            <View style={styles.rowInstallation}>
+              <Text style={styles.rowInstallationText}>
+                Instalacja:{' '}
+                {installation.name || `Instalacja ${installation.id}`}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        <View
+          style={[
+            styles.clientInvoiceStatusBadge,
+            { backgroundColor: statusBgColor },
+          ]}
+        >
+          <Text
+            style={[styles.clientInvoiceStatusText, { color: statusTextColor }]}
+          >
+            {statusText}
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// Widok "Faktury" w menu klienta (wszystkie instalacje)
+function FakturyView({
+  clientId,
+  installations,
+  navigation,
+}: {
+  clientId: number;
+  installations: ClientsInstallationListItem[];
+  navigation: any;
+}) {
+  const {
+    result: invoicesResult,
+    execute: fetchInvoices,
+    loading,
+  } = useApi<{
+    faktura_list: ClientInvoice[];
+  }>({ path: 'faktura_list' });
+  const [clientInvoices, setClientInvoices] = useState<ClientInvoice[]>([]);
+
+  useEffect(() => {
+    if (fetchInvoices) {
+      fetchInvoices({});
+    }
+  }, [fetchInvoices]);
+
+  useEffect(() => {
+    if (invoicesResult?.faktura_list != null && installations.length > 0) {
+      const installationIds = installations.map(i => i.id);
+      const filtered = invoicesResult.faktura_list.filter(
+        inv =>
+          inv.instalacja == null ||
+          installationIds.includes(Number(inv.instalacja)),
+      );
+      const sorted = filtered.sort(
+        (a, b) =>
+          new Date(b.issue_date).getTime() - new Date(a.issue_date).getTime(),
+      );
+      setClientInvoices(sorted);
+    } else if (
+      invoicesResult?.faktura_list != null &&
+      installations.length === 0
+    ) {
+      setClientInvoices([]);
+    } else if (invoicesResult?.faktura_list != null) {
+      const sorted = [...invoicesResult.faktura_list].sort(
+        (a, b) =>
+          new Date(b.issue_date).getTime() - new Date(a.issue_date).getTime(),
+      );
+      setClientInvoices(sorted);
+    } else {
+      setClientInvoices([]);
+    }
+  }, [invoicesResult, installations]);
+
+  if (loading) {
+    return (
+      <View style={styles.contentView}>
+        <Text style={styles.emptyText}>Ładowanie faktur...</Text>
+      </View>
+    );
+  }
+
+  if (clientInvoices.length === 0) {
+    return (
+      <View style={styles.contentView}>
+        <Text style={styles.emptyText}>Brak faktur dla tego klienta.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.contentView}>
+      <FlatList
+        data={clientInvoices}
+        contentContainerStyle={styles.clientOffersList}
+        renderItem={({ item }) => (
+          <ClientInvoiceRow
+            invoice={item}
+            installations={installations}
+            navigation={navigation}
+          />
+        )}
+        keyExtractor={item => item.id.toString()}
+      />
+    </View>
+  );
+}
+
+// Komponent wiersza umowy w widoku klienta
+function ClientAgreementRow({
+  agreement,
+  installations,
+  clientId,
+  navigation,
+}: {
+  agreement: Agreement;
+  installations: ClientsInstallationListItem[];
+  clientId: number;
+  navigation: any;
+}) {
+  const installation = installations.find(i => i.id === agreement.instalacja);
+  const handlePress = () => {
+    navigation.navigate('Settings', {
+      installationId: agreement.instalacja.toString(),
+      clientId: clientId.toString(),
+      activeTab: 'umowa',
+    });
+  };
+
+  const formattedDate = agreement.created_date
+    ? format(parseISO(agreement.created_date), 'dd/MM/yyyy')
+    : 'Brak daty';
+
+  return (
+    <TouchableOpacity
+      style={styles.clientAgreementItem}
+      onPress={handlePress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.clientAgreementContent}>
+        <View style={styles.clientAgreementLeft}>
+          <Text style={styles.clientAgreementTitle}>
+            Umowa montażu nr {agreement.id}
+          </Text>
+          <Text style={styles.clientAgreementDate}>{formattedDate}</Text>
+          {installation ? (
+            <View style={styles.rowInstallation}>
+              <Text style={styles.rowInstallationText}>
+                Instalacja:{' '}
+                {installation.name || `Instalacja ${installation.id}`}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// Widok "Umowy" w menu klienta (zbieranie po wszystkich instalacjach)
+function UmowyView({
+  clientId,
+  installations,
+  navigation,
+}: {
+  clientId: number;
+  installations: ClientsInstallationListItem[];
+  navigation: any;
+}) {
+  const { execute: fetchAgreements } = useApi<AgreementListResponse>({
+    path: 'agreement_list',
+  });
+  const [allAgreements, setAllAgreements] = useState<Agreement[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!installations.length) {
+      setAllAgreements([]);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      const merged: Agreement[] = [];
+      for (const inst of installations) {
+        if (cancelled) break;
+        const res = await fetchAgreements({
+          data: { instalacja_id: inst.id },
+        });
+        if (res?.umowy) merged.push(...res.umowy);
+      }
+      if (!cancelled) {
+        setAllAgreements(merged);
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [installations, fetchAgreements]);
+
+  if (loading) {
+    return (
+      <View style={styles.contentView}>
+        <Text style={styles.emptyText}>Ładowanie umów...</Text>
+      </View>
+    );
+  }
+
+  if (allAgreements.length === 0) {
+    return (
+      <View style={styles.contentView}>
+        <Text style={styles.emptyText}>Brak umów dla tego klienta.</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.contentView}>
+      <FlatList
+        data={allAgreements}
+        contentContainerStyle={styles.clientOffersList}
+        renderItem={({ item }) => (
+          <ClientAgreementRow
+            agreement={item}
+            installations={installations}
+            clientId={clientId}
+            navigation={navigation}
           />
         )}
         keyExtractor={item => item.id.toString()}
@@ -1678,17 +2142,7 @@ function ClientsMenu({
 
   useEffect(() => {
     if (client) {
-      if (client.first_name && client.last_name) {
-        setTitle(
-          `${client.first_name
-            .charAt(0)
-            .toUpperCase()}${client.first_name.slice(1)} ${client.last_name
-              .charAt(0)
-              .toUpperCase()}${client.last_name.slice(1)}`,
-        );
-      } else if (client.nip && client.nazwa_firmy) {
-        setTitle(`${client.nazwa_firmy}`);
-      }
+      setTitle(getClientDisplayPrimary(client));
     }
   }, [client]);
 
@@ -1786,6 +2240,22 @@ function ClientsMenu({
       case 'oferty':
         return (
           <OfertyView
+            clientId={client.id}
+            installations={installations}
+            navigation={navigation}
+          />
+        );
+      case 'faktury':
+        return (
+          <FakturyView
+            clientId={client.id}
+            installations={installations}
+            navigation={navigation}
+          />
+        );
+      case 'umowy':
+        return (
+          <UmowyView
             clientId={client.id}
             installations={installations}
             navigation={navigation}
@@ -1970,6 +2440,72 @@ const styles = StyleSheet.create({
   formFooter: {
     width: '100%',
     paddingBottom: 65,
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+  },
+  daneCancelButton: {
+    minHeight: 48,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 60,
+    borderWidth: 1,
+    borderColor: Colors.black,
+    backgroundColor: Colors.white,
+  },
+  daneCancelButtonText: {
+    color: Colors.black,
+    fontFamily: 'Archivo_600SemiBold',
+    fontSize: 12,
+  },
+  daneSaveButton: {
+    flex: 1,
+  },
+  danePreviewCard: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 14,
+    marginTop: 8,
+  },
+  danePreviewRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.grayBorder,
+  },
+  danePreviewRowLast: {
+    borderBottomWidth: 0,
+  },
+  danePreviewLabel: {
+    fontSize: 12,
+    color: Colors.companyText ?? '#616161',
+    marginBottom: 4,
+    fontFamily: 'Archivo_400Regular',
+  },
+  danePreviewValue: {
+    fontSize: 15,
+    color: Colors.black,
+    fontFamily: 'Archivo_600SemiBold',
+  },
+  daneEditButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 14,
+    marginTop: 16,
+    paddingVertical: 14,
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.grayBorder,
+  },
+  daneEditButtonText: {
+    fontSize: 14,
+    color: Colors.black,
+    fontFamily: 'Archivo_600SemiBold',
   },
   // buttonGroup: {
   //   position: 'absolute',
@@ -2252,6 +2788,14 @@ const styles = StyleSheet.create({
     fontFamily: 'Archivo_400Regular',
     color: '#D66B99',
   },
+  rowInstallation: {
+    marginTop: 8,
+  },
+  rowInstallationText: {
+    fontSize: 12,
+    fontFamily: 'Archivo_400Regular',
+    color: Colors.grayText,
+  },
   // Style dla listy ofert klienta
   clientOffersList: {
     paddingHorizontal: 14,
@@ -2295,6 +2839,79 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   clientOfferDate: {
+    fontSize: 12,
+    color: '#616161',
+    fontFamily: 'Archivo_400Regular',
+  },
+  // Style dla listy faktur klienta
+  clientInvoiceItem: {
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    marginBottom: 12,
+    padding: 16,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  clientInvoiceContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  clientInvoiceLeft: {
+    flex: 1,
+  },
+  clientInvoiceType: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.black,
+    fontFamily: 'Archivo_600SemiBold',
+    marginBottom: 4,
+  },
+  clientInvoiceNumberDate: {
+    fontSize: 13,
+    color: '#777777',
+    fontFamily: 'Archivo_400Regular',
+  },
+  clientInvoiceStatusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 20,
+    marginLeft: 16,
+  },
+  clientInvoiceStatusText: {
+    fontSize: 12,
+    fontFamily: 'Archivo_500Medium',
+  },
+  // Style dla listy umów klienta
+  clientAgreementItem: {
+    backgroundColor: Colors.white,
+    borderRadius: 10,
+    marginBottom: 12,
+    padding: 16,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  clientAgreementContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  clientAgreementLeft: {
+    flex: 1,
+  },
+  clientAgreementTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.black,
+    fontFamily: 'Archivo_600SemiBold',
+    marginBottom: 4,
+  },
+  clientAgreementDate: {
     fontSize: 12,
     color: '#616161',
     fontFamily: 'Archivo_400Regular',

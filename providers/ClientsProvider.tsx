@@ -117,8 +117,7 @@ export function ClientsProvider({ children }: { children: ReactElement }) {
 
   useEffect(() => {
     if (result) {
-      // Sortowanie jest teraz wykonywane po stronie serwera
-      // Klienci przychodzą już posortowani
+      // Sortowanie po stronie serwera: po nazwisku (osoba) i nazwie firmy (firma)
       if (result.pagination) {
         // Paginacja jest obsługiwana
         const newClients = result.klient_list || [];

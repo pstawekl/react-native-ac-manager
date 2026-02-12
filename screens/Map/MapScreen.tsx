@@ -38,6 +38,7 @@ export type Place = {
   firstName: string;
   lastName: string;
   companyName: string;
+  rodzaj_klienta?: string | null;
   phone: string;
   address: string;
   lista_klientow?: number;
@@ -273,6 +274,7 @@ async function updateClientsPlaces(
           firstName: client.first_name,
           lastName: client.last_name,
           companyName: client.nazwa_firmy || '',
+          rodzaj_klienta: client.rodzaj_klienta ?? undefined,
           phone: client.numer_telefonu || '',
           address: displayAddress,
           lista_klientow:
@@ -384,6 +386,7 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
                 firstName: client.first_name,
                 lastName: client.last_name,
                 companyName: client.nazwa_firmy ?? 'Osoba',
+                rodzaj_klienta: client.rodzaj_klienta ?? undefined,
                 phone: client.numer_telefonu ?? '',
                 address: displayAddress,
                 lista_klientow:

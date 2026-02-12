@@ -154,6 +154,7 @@ function MontazView({
   onSave,
   onCancel,
   selectedDevice,
+  selectedMultisplitDevices,
 }: {
   installationId: string;
   montageList: Montage[] | null;
@@ -162,6 +163,7 @@ function MontazView({
   onSave?: () => void;
   onCancel?: () => void;
   selectedDevice?: any;
+  selectedMultisplitDevices?: { internal: any[]; aggregates: any[] };
 }) {
   // Pobierz montaż dla tej instalacji (jedna instalacja = jeden montaż)
   const montage = montageList && montageList.length > 0 ? montageList[0] : null;
@@ -173,6 +175,7 @@ function MontazView({
       onSave={onSave}
       onCancel={onCancel}
       selectedDevice={selectedDevice}
+      selectedMultisplitDevices={selectedMultisplitDevices}
     />
   );
 }
@@ -1561,7 +1564,14 @@ function MontageDeleteOverlay({
 
 function ClientSettings({
   route: {
-    params: { installationId, clientId, activeTab, returnTab, selectedDevice },
+    params: {
+      installationId,
+      clientId,
+      activeTab,
+      returnTab,
+      selectedDevice,
+      selectedMultisplitDevices,
+    },
   },
 }: {
   route: Route<
@@ -1572,6 +1582,7 @@ function ClientSettings({
       activeTab?: TabType;
       returnTab?: TabType;
       selectedDevice?: any;
+      selectedMultisplitDevices?: { internal: any[]; aggregates: any[] };
     }
   >;
 }) {
@@ -1786,6 +1797,7 @@ function ClientSettings({
               fetchMontageList();
             }}
             selectedDevice={selectedDevice}
+            selectedMultisplitDevices={selectedMultisplitDevices}
             onCancel={() => {
               if (returnTab) {
                 navigate('ClientsMenu', {

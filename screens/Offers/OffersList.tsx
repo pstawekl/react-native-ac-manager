@@ -24,6 +24,7 @@ import CloseIcon from '../../components/icons/CloseIcon';
 import FilesIcon from '../../components/icons/FilesIcon';
 import TrashIcon from '../../components/icons/TrashIcon';
 import Colors from '../../consts/Colors';
+import { getClientDisplayPrimary } from '../../helpers/clientDisplay';
 import useApi from '../../hooks/useApi';
 import { OffersParamList } from '../../navigation/types';
 import useAuth from '../../providers/AuthProvider';
@@ -59,8 +60,7 @@ function getOfferClientAndInstallationInfo(
     };
   }
 
-  const clientInfo =
-    client.nazwa_firmy || `${client.first_name} ${client.last_name}`;
+  const clientInfo = getClientDisplayPrimary(client);
   const installationInfo = installation.name || `Instalacja ${installation.id}`;
 
   return { clientInfo, installationInfo };
@@ -370,10 +370,7 @@ function OfferOverlay({
 
   const buildOfferName = useCallback(
     (clientData?: any, installationValue?: number | null) => {
-      const clientName = [clientData?.first_name, clientData?.last_name]
-        .filter(Boolean)
-        .join(' ')
-        .trim();
+      const clientName = clientData ? getClientDisplayPrimary(clientData) : '';
       const resolvedInstallation =
         installationValue ?? watch('installation') ?? undefined;
 
@@ -477,28 +474,7 @@ function OfferOverlay({
       let clientsToDisplay: { label: string; value: number }[] = [];
 
       clients.forEach(item => {
-        // Buduj label - priorytet: nazwa_firmy, imię i nazwisko, NIP, ID
-        let label = '';
-
-        if (item.nazwa_firmy && item.nazwa_firmy.trim()) {
-          label = item.nazwa_firmy.trim();
-        } else if (item.first_name || item.last_name) {
-          const fullName = `${item.first_name || ''} ${item.last_name || ''
-            }`.trim();
-          if (fullName) {
-            label = fullName;
-          }
-        }
-
-        // Jeśli nadal nie ma labela, użyj NIP lub ID
-        if (!label) {
-          if (item.nip && item.nip.trim()) {
-            label = `NIP: ${item.nip.trim()}`;
-          } else {
-            label = `Klient #${item.id}`;
-          }
-        }
-
+        const label = getClientDisplayPrimary(item) || `Klient #${item.id}`;
         clientsToDisplay = [
           ...clientsToDisplay,
           {

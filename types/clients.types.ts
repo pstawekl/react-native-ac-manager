@@ -11,6 +11,16 @@ export type ClientsInstallationListItem = {
   mieszkanie?: string | null;
   kod_pocztowy?: string | null;
   miasto?: string | null;
+  /** Urządzenie z montażu (Producent) – tylko gdy w montażu wybrano urządzenie */
+  montaz_device_producent?: string | null;
+  /** Urządzenie z montażu (Typ) */
+  montaz_device_typ?: string | null;
+  /** Urządzenie z montażu (Moc) */
+  montaz_device_moc?: string | null;
+  /** Montaż multisplit – wyświetlanie liczby jednostek wewnętrznych i agregatów */
+  montaz_is_multisplit?: boolean;
+  montaz_multisplit_jedn_wew_count?: number;
+  montaz_multisplit_agregat_count?: number;
 };
 
 export type ClientInstallationsListResponse = {

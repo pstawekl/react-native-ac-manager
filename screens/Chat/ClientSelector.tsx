@@ -12,46 +12,48 @@ import {
 } from 'react-native';
 import Container from '../../components/Container';
 import Colors from '../../consts/Colors';
+import {
+  getClientDisplayPrimary,
+  getClientDisplaySecondary,
+} from '../../helpers/clientDisplay';
 import { ChatParamList } from '../../navigation/types';
 import useAuth from '../../providers/AuthProvider';
 import useChat from '../../providers/ChatProvider';
-import useClients from '../../providers/ClientsProvider';
+import useClients, { Client } from '../../providers/ClientsProvider';
 
 type NavigationProp = StackNavigationProp<ChatParamList, 'ClientSelector'>;
 
-interface Client {
-  id: number;
-  first_name: string;
-  last_name: string;
-  email: string;
-}
-
 function ClientSelectorScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { clients, loading, fetchClients } = useClients();
+  const { clients, loading, getClients } = useClients();
   const { startConversation } = useChat();
   const { user } = useAuth();
-  
+
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredClients, setFilteredClients] = useState<Client[]>([]);
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
-    if (clients.length === 0) {
-      fetchClients();
+    if (!clients && getClients) {
+      getClients(1, false);
     }
-  }, []);
+  }, [clients, getClients]);
 
   useEffect(() => {
+    if (!clients) {
+      setFilteredClients([]);
+      return;
+    }
     if (searchQuery.trim() === '') {
       setFilteredClients(clients);
     } else {
       const query = searchQuery.toLowerCase();
       const filtered = clients.filter(
         (client: Client) =>
-          client.first_name.toLowerCase().includes(query) ||
-          client.last_name.toLowerCase().includes(query) ||
-          client.email.toLowerCase().includes(query)
+          client.first_name?.toLowerCase().includes(query) ||
+          client.last_name?.toLowerCase().includes(query) ||
+          client.email?.toLowerCase().includes(query) ||
+          client.nazwa_firmy?.toLowerCase().includes(query),
       );
       setFilteredClients(filtered);
     }
@@ -69,13 +71,13 @@ function ClientSelectorScreen() {
           const otherParticipant =
             conversation.participant_1 === user?.id
               ? {
-                  name: conversation.participant_2_name,
-                  email: conversation.participant_2_email,
-                }
+                name: conversation.participant_2_name,
+                email: conversation.participant_2_email,
+              }
               : {
-                  name: conversation.participant_1_name,
-                  email: conversation.participant_1_email,
-                };
+                name: conversation.participant_1_name,
+                email: conversation.participant_1_email,
+              };
 
           navigation.replace('ChatScreen', {
             conversationId: conversation.id,
@@ -88,30 +90,37 @@ function ClientSelectorScreen() {
         setStarting(false);
       }
     },
-    [starting, startConversation, navigation, user]
+    [starting, startConversation, navigation, user],
   );
 
   const renderClientItem = useCallback(
-    ({ item }: { item: Client }) => (
-      <TouchableOpacity
-        style={styles.clientItem}
-        onPress={() => handleClientSelect(item)}
-        disabled={starting}
-      >
-        <View style={styles.avatarContainer}>
-          <Text style={styles.avatarText}>
-            {item.first_name.charAt(0).toUpperCase()}
-          </Text>
-        </View>
-        <View style={styles.clientInfo}>
-          <Text style={styles.clientName}>
-            {item.first_name} {item.last_name}
-          </Text>
-          <Text style={styles.clientEmail}>{item.email}</Text>
-        </View>
-      </TouchableOpacity>
-    ),
-    [handleClientSelect, starting]
+    ({ item }: { item: Client }) => {
+      const primary = getClientDisplayPrimary(item);
+      const secondary = getClientDisplaySecondary(item);
+      return (
+        <TouchableOpacity
+          style={styles.clientItem}
+          onPress={() => handleClientSelect(item)}
+          disabled={starting}
+        >
+          <View style={styles.avatarContainer}>
+            <Text style={styles.avatarText}>
+              {item.first_name?.charAt(0).toUpperCase() || '?'}
+            </Text>
+          </View>
+          <View style={styles.clientInfo}>
+            <Text style={styles.clientName}>{primary}</Text>
+            {secondary ? (
+              <Text style={styles.clientSubtitle}>{secondary}</Text>
+            ) : null}
+            {item.email ? (
+              <Text style={styles.clientEmail}>{item.email}</Text>
+            ) : null}
+          </View>
+        </TouchableOpacity>
+      );
+    },
+    [handleClientSelect, starting],
   );
 
   const renderEmptyState = useCallback(() => {
@@ -147,7 +156,7 @@ function ClientSelectorScreen() {
         <FlatList
           data={filteredClients}
           renderItem={renderClientItem}
-          keyExtractor={(item) => item.id.toString()}
+          keyExtractor={item => item.id.toString()}
           ListEmptyComponent={renderEmptyState}
           contentContainerStyle={
             filteredClients.length === 0 ? styles.emptyListContainer : undefined
@@ -212,7 +221,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     color: Colors.text,
-    marginBottom: 4,
+  },
+  clientSubtitle: {
+    fontSize: 13,
+    color: Colors.companyText ?? '#616161',
+    marginTop: 2,
   },
   clientEmail: {
     fontSize: 14,
@@ -243,4 +256,3 @@ const styles = StyleSheet.create({
     color: Colors.text,
   },
 });
-

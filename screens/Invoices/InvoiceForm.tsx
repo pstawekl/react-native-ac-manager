@@ -14,6 +14,7 @@ import { Dropdown, FormInput } from '../../components/Input';
 import PlusIcon from '../../components/icons/PlusIcon';
 import TrashIcon from '../../components/icons/TrashIcon';
 import Colors from '../../consts/Colors';
+import { getClientDisplayPrimary } from '../../helpers/clientDisplay';
 import useApi from '../../hooks/useApi';
 import { InvoiceFormScreenProps } from '../../navigation/types';
 import useClients, { Client } from '../../providers/ClientsProvider';
@@ -159,9 +160,13 @@ function BuyerDetailsForm({
           control={control}
           label="Klient"
           options={clients
-            .filter(item => item && item?.first_name && item?.last_name)
+            .filter(
+              item =>
+                item &&
+                (item?.first_name || item?.last_name || item?.nazwa_firmy),
+            )
             .map(item => ({
-              label: `${item?.first_name} ${item?.last_name}`,
+              label: getClientDisplayPrimary(item),
               value: item.id,
             }))}
           onChange={onClientIdChange}
@@ -763,19 +768,13 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
       const client = clients.find(item => item.id === clientId);
 
       if (client) {
-        setValue(
-          'buyerName',
-          `${client.first_name ?? ''} ${client.last_name ?? ''}`.trim(),
-        );
+        setValue('buyerName', getClientDisplayPrimary(client));
         setValue('buyerNip', client.nip ?? null);
         setValue('buyerStreet', client.ulica ?? null);
         setValue('buyerCode', client.kod_pocztowy ?? null);
         setValue('buyerCity', client.miasto ?? null);
         setValue('client', clientId);
-        setValue(
-          'receivedBy',
-          `${client.first_name ?? ''} ${client.last_name ?? ''}`.trim(),
-        );
+        setValue('receivedBy', getClientDisplayPrimary(client));
         setValue(
           'buyer',
           client.rodzaj_klienta === 'firma' ? 'company' : 'private',

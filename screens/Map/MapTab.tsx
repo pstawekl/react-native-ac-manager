@@ -85,14 +85,22 @@ export default function MapTab({
   };
 
   const renderPlaceCard = (place: Place) => {
-    const displayName =
-      `${place.firstName} ${place.lastName}`.trim() || place.name || '';
+    const cap = (s: string) =>
+      s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+    const lastNameFirst = `${cap((place.lastName ?? '').trim())} ${cap(
+      (place.firstName ?? '').trim(),
+    )}`.trim();
+    const displayName = lastNameFirst || place.name || '';
     const companyName =
       place.companyName?.trim() && place.companyName !== 'Osoba'
         ? place.companyName.trim()
         : '';
-    const primaryName = companyName || displayName || 'Klient';
-    const secondaryName = companyName && displayName ? displayName : null;
+    const isCompany = place.rodzaj_klienta === 'firma';
+    const primaryName = isCompany
+      ? companyName || displayName || 'Klient'
+      : displayName || companyName || 'Klient';
+    const secondaryName =
+      isCompany && companyName && displayName ? displayName : null;
 
     return (
       <View style={styles.placeCard}>
@@ -104,11 +112,11 @@ export default function MapTab({
         <Text style={styles.placeCardName} numberOfLines={2}>
           {primaryName}
         </Text>
-        {/* {secondaryName && secondaryName !== '' ? (
+        {secondaryName && secondaryName !== '' ? (
           <Text style={styles.placeCardSubtitle} numberOfLines={1}>
             {secondaryName}
           </Text>
-        ) : null} */}
+        ) : null}
         <Text style={styles.placeCardAddress} numberOfLines={2}>
           {place.address || '—'}
         </Text>
@@ -264,11 +272,11 @@ const styles = StyleSheet.create({
     color: Colors.black,
     textAlign: 'center',
   },
-  // placeCardSubtitle: {
-  //   fontSize: 14,
-  //   color: Colors.black,
-  //   textAlign: 'center',
-  // },
+  placeCardSubtitle: {
+    fontSize: 14,
+    color: Colors.black,
+    textAlign: 'center',
+  },
   placeCardAddress: {
     fontSize: 14,
     color: Colors.black,

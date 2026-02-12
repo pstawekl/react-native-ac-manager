@@ -11,6 +11,7 @@ import {
 
 import { SubmitButton } from '../../components/Button';
 import Colors from '../../consts/Colors';
+import { getClientDisplayPrimary } from '../../helpers/clientDisplay';
 import useMontazDates, { MontazProposal } from '../../hooks/useMontazDates';
 
 function MontazProposals() {
@@ -100,9 +101,7 @@ function MontazProposals() {
 
   const renderProposalItem = useCallback(
     ({ item }: { item: MontazProposal }) => {
-      const clientName =
-        item.klient.nazwa_firmy ||
-        `${item.klient.first_name} ${item.klient.last_name}`;
+      const clientName = getClientDisplayPrimary(item.klient);
 
       return (
         <View style={styles.proposalCard}>

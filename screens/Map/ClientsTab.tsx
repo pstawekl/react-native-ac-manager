@@ -31,6 +31,10 @@ import PhoneIcon from '../../components/icons/PhoneIcon';
 import PlusIcon from '../../components/icons/PlusIcon';
 import TrashIcon from '../../components/icons/TrashIcon';
 import Colors from '../../consts/Colors';
+import {
+  getClientDisplayPrimary,
+  getClientDisplaySecondary,
+} from '../../helpers/clientDisplay';
 import useApi from '../../hooks/useApi';
 import useAuth from '../../providers/AuthProvider';
 import useClients, { Client } from '../../providers/ClientsProvider';
@@ -249,8 +253,22 @@ function AddClientModal({
       justifyContent: 'space-between',
       alignItems: 'center',
       padding: 20,
-      height: 60,
+      minHeight: 60,
       width: '100%',
+    },
+    clientListItemTextWrap: {
+      flex: 1,
+      marginRight: 8,
+    },
+    clientListItemPrimary: {
+      fontSize: 16,
+      fontWeight: '500',
+      color: Colors.black,
+    },
+    clientListItemSecondary: {
+      fontSize: 12,
+      color: Colors.companyText,
+      marginTop: 2,
     },
     headerButtonsStyles: {
       display: 'flex',
@@ -280,27 +298,35 @@ function AddClientModal({
           <ScrollView contentContainerStyle={addClientStyles.clientList}>
             <FlashList<Client>
               data={clients || []}
-              renderItem={({ item }) => (
-                <View style={addClientStyles.clientListItem}>
-                  <Text>
-                    {item.first_name} {item.last_name}
-                  </Text>
-                  <IconButton
-                    icon={<PlusIcon color={Colors.black} />}
-                    onPress={() => {
-                      console.log(
-                        '[Map/ClientsTab] AddClientModal: user selected client',
-                        {
-                          clientId: item.id,
-                          name: `${item.first_name} ${item.last_name}`,
-                        },
-                      );
-                      onClientPress(item.id);
-                    }}
-                    withoutBackground
-                  />
-                </View>
-              )}
+              renderItem={({ item }) => {
+                const primary = getClientDisplayPrimary(item);
+                const secondary = getClientDisplaySecondary(item);
+                return (
+                  <View style={addClientStyles.clientListItem}>
+                    <View style={addClientStyles.clientListItemTextWrap}>
+                      <Text style={addClientStyles.clientListItemPrimary}>
+                        {primary}
+                      </Text>
+                      {secondary ? (
+                        <Text style={addClientStyles.clientListItemSecondary}>
+                          {secondary}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <IconButton
+                      icon={<PlusIcon color={Colors.black} />}
+                      onPress={() => {
+                        console.log(
+                          '[Map/ClientsTab] AddClientModal: user selected client',
+                          { clientId: item.id, name: primary },
+                        );
+                        onClientPress(item.id);
+                      }}
+                      withoutBackground
+                    />
+                  </View>
+                );
+              }}
               estimatedItemSize={70}
             />
           </ScrollView>
@@ -321,8 +347,33 @@ function PlaceRow({
   onCall: () => void;
   onOpenContextMenu: (place: Place, pageX: number, pageY: number) => void;
 }) {
-  const fullName = `${place.firstName} ${place.lastName}`.trim();
-  const displayName = fullName || place.name;
+  const isCompany = place.rodzaj_klienta === 'firma';
+  const companyName =
+    place.companyName?.trim() && place.companyName !== 'Osoba'
+      ? place.companyName.trim()
+      : '';
+  const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
+  const contactName = `${cap((place.firstName ?? '').trim())} ${cap(
+    (place.lastName ?? '').trim(),
+  )}`.trim();
+  const contactNameReverse = `${cap((place.lastName ?? '').trim())} ${cap(
+    (place.firstName ?? '').trim(),
+  )}`.trim();
+  const primaryTitle = isCompany
+    ? companyName || contactNameReverse || place.name
+    : contactNameReverse || companyName || place.name;
+  const secondaryParts: string[] = [];
+  if (isCompany && contactNameReverse) {
+    secondaryParts.push(contactNameReverse);
+  }
+  if (place.address?.trim()) {
+    secondaryParts.push(place.address.trim());
+  }
+  const subtitle = secondaryParts.length
+    ? secondaryParts.join(' – ')
+    : isCompany
+      ? '—'
+      : [companyName, place.address?.trim()].filter(Boolean).join(' – ') || '—';
 
   const handleLongPress = (e: any) => {
     const { pageX, pageY } = e.nativeEvent ?? {};
@@ -341,12 +392,8 @@ function PlaceRow({
     >
       <View style={styles.placeRowContent}>
         <ListItem.Content>
-          <ListItem.Title>{displayName}</ListItem.Title>
-          <ListItem.Subtitle>
-            {[place.companyName?.trim(), place.address?.trim()]
-              .filter(Boolean)
-              .join(' – ') || '—'}
-          </ListItem.Subtitle>
+          <ListItem.Title>{primaryTitle || 'Klient'}</ListItem.Title>
+          <ListItem.Subtitle>{subtitle}</ListItem.Subtitle>
         </ListItem.Content>
         <Pressable style={styles.phoneButton} onPress={onCall} hitSlop={8}>
           <PhoneIcon color={Colors.black} size={14} />
@@ -481,6 +528,7 @@ const ClientsTab = forwardRef<
       firstName: client.first_name,
       lastName: client.last_name,
       companyName: client.nazwa_firmy ?? 'Osoba',
+      rodzaj_klienta: client.rodzaj_klienta ?? undefined,
       phone: client.numer_telefonu ?? '',
       address: formatClientAddress(client),
       lista_klientow:
@@ -491,17 +539,23 @@ const ClientsTab = forwardRef<
     [formatClientAddress],
   );
 
-  const sortPlacesByName = useCallback(
-    (list: Place[]) =>
-      [...list].sort((a, b) => {
-        const nameA =
-          `${a.firstName ?? ''} ${a.lastName ?? ''}`.trim() || a.name;
-        const nameB =
-          `${b.firstName ?? ''} ${b.lastName ?? ''}`.trim() || b.name;
-        return nameA.localeCompare(nameB);
-      }),
-    [],
-  );
+  const sortPlacesByName = useCallback((list: Place[]) => {
+    const sortKey = (p: Place) => {
+      const isCompany = p.rodzaj_klienta === 'firma';
+      const companyName =
+        p.companyName?.trim() && p.companyName !== 'Osoba'
+          ? p.companyName.trim()
+          : '';
+      if (isCompany)
+        return companyName || `${p.lastName ?? ''} ${p.firstName ?? ''}`.trim();
+      return (
+        `${p.lastName ?? ''} ${p.firstName ?? ''}`.trim() ||
+        companyName ||
+        p.name
+      );
+    };
+    return [...list].sort((a, b) => sortKey(a).localeCompare(sortKey(b), 'pl'));
+  }, []);
 
   const loadClientsForList = useCallback(
     async (listId: number | null) => {

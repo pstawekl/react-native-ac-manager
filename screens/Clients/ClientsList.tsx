@@ -23,6 +23,10 @@ import FloatingActionButton from '../../components/FloatingActionButton';
 import PhoneIcon from '../../components/icons/PhoneIcon';
 import TrashIcon from '../../components/icons/TrashIcon';
 import Colors from '../../consts/Colors';
+import {
+  getClientDisplayPrimary,
+  getClientDisplaySecondary,
+} from '../../helpers/clientDisplay';
 import useApi from '../../hooks/useApi';
 import { ClientMenuScreenProps } from '../../navigation/types';
 import useClients, { Client } from '../../providers/ClientsProvider';
@@ -124,11 +128,8 @@ const ClientRow = memo(
     const { navigate } = useNavigation<ClientMenuScreenProps['navigation']>();
     const [isSwiping, setIsSwiping] = useState(false);
 
-    const clientName = `${client.first_name
-      .charAt(0)
-      .toUpperCase()}${client.first_name.slice(1)} ${client.last_name
-        .charAt(0)
-        .toUpperCase()}${client.last_name.slice(1)}`;
+    const primary = getClientDisplayPrimary(client);
+    const secondary = getClientDisplaySecondary(client);
 
     const swipeRefCallback = useCallback(
       (ref: any) => {
@@ -213,14 +214,10 @@ const ClientRow = memo(
             <UserIcon viewBox="0 0 90 90" color={Colors.white} />
           </View> */}
           <View style={styles.listItemContent}>
-            <Text style={styles.clientTitle}>
-              {clientName ?? client.nazwa_firmy ?? client.nip}
-            </Text>
-            {(client.nazwa_firmy || client.nip) && (
-              <Text style={styles.clientSubtitle}>
-                {client.nazwa_firmy ?? client.nip}
-              </Text>
-            )}
+            <Text style={styles.clientTitle}>{primary}</Text>
+            {secondary ? (
+              <Text style={styles.clientSubtitle}>{secondary}</Text>
+            ) : null}
           </View>
         </TouchableOpacity>
       </Swipeable>
@@ -303,10 +300,15 @@ export default function ClientsList() {
         setFilteredClients(clients);
       } else {
         // Filtruj po wyszukiwaniu
-        const filteredData = clients.filter(client =>
-          `${client.first_name} ${client.last_name}`
-            .toLocaleLowerCase()
-            .includes(searchValue.toLocaleLowerCase()),
+        const searchLower = searchValue.toLocaleLowerCase();
+        const filteredData = clients.filter(
+          client =>
+            getClientDisplayPrimary(client)
+              .toLocaleLowerCase()
+              .includes(searchLower) ||
+            (getClientDisplaySecondary(client) ?? '')
+              .toLocaleLowerCase()
+              .includes(searchLower),
         );
         setFilteredClients(filteredData);
       }
@@ -331,9 +333,15 @@ export default function ClientsList() {
   const handleLetterPress = useCallback(
     (letter: string) => {
       if (!filteredClients) return;
-      const index = filteredClients.findIndex(
-        item => item.first_name[0]?.toUpperCase() === letter,
-      );
+      const target = letter.toUpperCase();
+
+      const index = filteredClients.findIndex(client => {
+        const primary = getClientDisplayPrimary(client).trim();
+        if (!primary) return false;
+        const firstChar = primary[0]?.toUpperCase();
+        return firstChar === target;
+      });
+
       if (index !== -1) {
         listRef.current?.scrollToIndex({
           index,
@@ -370,7 +378,7 @@ export default function ClientsList() {
                 registerSwipeRef={registerSwipeRef}
               />
             )}
-            estimatedItemSize={80}
+            estimatedItemSize={45}
             onEndReached={loadMoreClients}
             onEndReachedThreshold={0.5}
             ListFooterComponent={
@@ -436,8 +444,8 @@ const styles = StyleSheet.create({
   },
   listItem: {
     width: '100%',
-    height: 60,
-    minHeight: 48,
+    height: 45,
+    minHeight: 44,
     paddingVertical: 0,
     flexDirection: 'row',
     alignItems: 'center',
@@ -463,7 +471,7 @@ const styles = StyleSheet.create({
   buttonStyle: {
     flex: 1,
     overflow: 'hidden',
-    height: 60,
+    height: 45,
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
@@ -504,8 +512,8 @@ const styles = StyleSheet.create({
   },
   letter: {
     textAlign: 'center',
-    color: Colors.grayerText,
-    fontSize: 12,
+    color: Colors.companyText,
+    fontSize: 14,
   },
   listWrapper: {
     position: 'relative',

@@ -24,6 +24,7 @@ import FilterIcon from '../../components/icons/FilterIcon';
 import SearchIcon from '../../components/icons/SearchIcon';
 import Colors from '../../consts/Colors';
 import { Scopes } from '../../consts/Permissions';
+import { getClientDisplayPrimary } from '../../helpers/clientDisplay';
 import useApi from '../../hooks/useApi';
 import { InvoicesListScreenProps } from '../../navigation/types';
 import useClients from '../../providers/ClientsProvider';
@@ -175,12 +176,10 @@ function InvoicesFiltersModal({
     const list = clients ?? [];
     const options = [{ label: 'Wszyscy klienci', value: '' }];
     list.forEach(c => {
-      const value = `${c.first_name || ''} ${c.last_name || ''}`.trim();
-      const label =
-        c.rodzaj_klienta === 'firma'
-          ? `Firma: ${c.nazwa_firmy || ''}`
-          : value || c.nazwa_firmy || 'Klient';
-      if (value) options.push({ label, value });
+      const label = getClientDisplayPrimary(c);
+      if (label) {
+        options.push({ label, value: label });
+      }
     });
     return options;
   }, [clients]);
