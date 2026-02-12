@@ -352,15 +352,18 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
           lng: number;
         }> = [];
 
+        // Filter clients that have a valid address (can be geocoded)
+        // Show all clients with valid addresses on the map, not just those in lists
+        const clientsWithAddress = clients.filter(client => {
+          const hasAddress =
+            Boolean(client.kod_pocztowy) &&
+            Boolean(client.miasto) &&
+            Boolean(client.ulica);
+          return hasAddress;
+        });
+
         const placesWithCoordinates = await updateClientsPlaces(
-          clients.filter(x => {
-            const listaKlientow = (x as any).listy_klientow || x.lista_klientow;
-            return (
-              listaKlientow &&
-              Array.isArray(listaKlientow) &&
-              listaKlientow.length > 0
-            );
-          }),
+          clientsWithAddress,
         );
 
         if (placesWithCoordinates.length > 0) {
@@ -577,7 +580,7 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
       if (getClients) {
         await getClients();
         // Wait a bit for the data to propagate
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise<void>(resolve => setTimeout(() => resolve(), 100));
       }
 
       // Refresh only the clients lists, not the entire module
