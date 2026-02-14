@@ -115,7 +115,14 @@ function AddSurchargeForm({
   navigation,
   route,
 }: OfferAddSurchargeFormScreenProps) {
-  const { type, installationId, devices, offerName, isTemplate } = route.params;
+  const {
+    type,
+    installationId,
+    devices,
+    offerName,
+    isTemplate,
+    multisplit_komplety,
+  } = route.params;
   const { devicesSplit, devicesMultisplit } = useOffers();
   // Pobierz szczegóły urządzeń na podstawie przekazanych id
   const allDevices = [...(devicesSplit ?? []), ...(devicesMultisplit ?? [])];
@@ -242,6 +249,7 @@ function AddSurchargeForm({
       allDevices: selectedDevices,
       surchargesList: surcharges,
       isTemplate,
+      multisplit_komplety,
     });
   };
 

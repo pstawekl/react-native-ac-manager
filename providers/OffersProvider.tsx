@@ -35,15 +35,15 @@ export type Device = {
 
 export type Offer = {
   creator: number;
-  devices_multi_split: number[];
-  devices_split: number[];
+  devices_multi_split?: number[];
+  devices_split?: number[];
   id: number;
   instalacja: number;
   is_accepted: boolean;
   is_template: boolean;
-  narzut: number[];
+  narzut?: number[];
   offer_type: 'split' | 'multi_split';
-  rabat: number[];
+  rabat?: number[];
   nazwa_oferty?: string;
   nazwa?: string; // Pole dla szablonów
   typ?: 'split' | 'multisplit'; // Pole dla szablonów

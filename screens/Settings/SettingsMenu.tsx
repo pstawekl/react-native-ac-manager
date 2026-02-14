@@ -97,21 +97,7 @@ function SettingsMenu({ navigation }: SettingsMenuScreenProps) {
               }
             />
           </PermissionGate>
-          <PermissionGate permission={Scopes.invoices}>
-            <MenuItem
-              title="Ustawienia faktur"
-              onPress={() => navigation.navigate('Invoices')}
-              icon={
-                <ReceiptIcon
-                  color={Colors.black}
-                  size={24}
-                  stroke={8}
-                  viewBox="0 0 100 80"
-                />
-              }
-            />
-          </PermissionGate>
-          <PermissionGate permission={Scopes.offers}>
+          <PermissionGate permission={Scopes.addOffers}>
             <MenuItem
               title="Ustawienia ofert"
               onPress={() => navigation.navigate('Offers')}
@@ -130,6 +116,20 @@ function SettingsMenu({ navigation }: SettingsMenuScreenProps) {
               title="Szablony tekstów"
               onPress={() => navigation.navigate('Texts')}
               icon={<TextIcon color={Colors.black} size={24} stroke={2} />}
+            />
+          </PermissionGate>
+          <PermissionGate permission={Scopes.addInvoices}>
+            <MenuItem
+              title="Ustawienia faktur"
+              onPress={() => navigation.navigate('Invoices')}
+              icon={
+                <ReceiptIcon
+                  color={Colors.black}
+                  size={24}
+                  stroke={8}
+                  viewBox="0 0 100 80"
+                />
+              }
               isLast
             />
           </PermissionGate>

@@ -6,8 +6,10 @@ import { format, parseISO } from 'date-fns';
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
+  Dimensions,
   StyleSheet,
   TouchableOpacity,
   View,
@@ -152,17 +154,18 @@ const OfferRow = memo(
     };
 
     const handlePress = () => {
+      // Lista ofert zwraca tylko lekkie dane – szczegóły ładujemy w Overview przez oferta_data/szablon_data
+      let navType: 'split' | 'multi_split' = offer.offer_type;
+      const rawType = offer.typ || offer.offer_type;
+      if (rawType === 'multisplit') navType = 'multi_split';
+      else if (rawType === 'split') navType = 'split';
       if (isTemplate) {
-        // Dla szablonów używamy innych pól
         (navigation as any).navigate('Overview', {
-          type: offer.typ || offer.offer_type,
-          installationId: null, // Szablony nie mają instalacji
-          devices:
-            (offer.typ || offer.offer_type) === 'split'
-              ? offer.devices_split || []
-              : offer.devices_multi_split || [],
-          surcharges: offer.narzuty || offer.narzut || [],
-          promos: offer.rabat || [],
+          type: navType,
+          installationId: null,
+          devices: [],
+          surcharges: [],
+          promos: [],
           offerId: offer.id,
           mode: 'view',
           isTemplate: true,
@@ -171,12 +174,9 @@ const OfferRow = memo(
         (navigation as any).navigate('Overview', {
           type: offer.offer_type,
           installationId: offer.instalacja,
-          devices:
-            offer.offer_type === 'split'
-              ? offer.devices_split || []
-              : offer.devices_multi_split || [],
-          surcharges: offer.narzut || [],
-          promos: offer.rabat || [],
+          devices: [],
+          surcharges: [],
+          promos: [],
           offerId: offer.id,
           mode: 'view',
           isTemplate: false,
@@ -185,12 +185,9 @@ const OfferRow = memo(
         (navigation as any).navigate('Overview', {
           type: offer.offer_type,
           installationId: offer.instalacja,
-          devices:
-            offer.offer_type === 'split'
-              ? offer.devices_split || []
-              : offer.devices_multi_split || [],
-          surcharges: offer.narzut || [],
-          promos: offer.rabat || [],
+          devices: [],
+          surcharges: [],
+          promos: [],
           offerId: offer.id,
           mode: 'accept',
           isTemplate: false,
@@ -280,6 +277,7 @@ function OfferOverlay({
   const [installationId, setInstallationId] = useState<number | null>(null);
   const [templateId, setTemplateId] = useState<number | null>(null);
   const [shouldAddClient, setShouldAddClient] = useState<boolean>(false);
+  const [formKey, setFormKey] = useState(0);
   const { result: templates, execute: getTemplates } = useApi<Offer[]>({
     path: 'oferta_list',
   });
@@ -362,6 +360,44 @@ function OfferOverlay({
     }
   }, [client, installation, templateId, visible, setValue]);
 
+  // Przy każdym otwarciu modala bez przekazanego klienta/instalacji – wyczyść formularz (świeża „Nowa oferta”)
+  const prevVisibleRef = useRef(visible);
+  useEffect(() => {
+    const justOpened = visible && !prevVisibleRef.current;
+    prevVisibleRef.current = visible;
+    if (!justOpened || client || installation) {
+      return;
+    }
+    setOfferType('split');
+    setOfferName('');
+    setClientId(null);
+    setInstallationId(null);
+    setTemplateId(null);
+    setShouldAddClient(false);
+    setFilteredInstallations(undefined);
+    setUseTemplate(false);
+    setSelectedTemplateId(null);
+    setFilteredOfferNames(undefined);
+    setFilteredTemplates(undefined);
+    setShowTemplateModal(false);
+    setTemplateName('');
+    reset({
+      client: undefined,
+      installation: undefined,
+      templateId: undefined,
+      offerName: '',
+      templateName: '',
+      template: undefined,
+    });
+    setValue('client', undefined);
+    setValue('installation', undefined);
+    setValue('templateId', undefined);
+    setValue('offerName', '');
+    setValue('templateName', '');
+    setValue('template', undefined);
+    setFormKey(k => k + 1);
+  }, [visible, client, installation, reset, setValue]);
+
   // Zawsze twórz ofertę, a po utworzeniu pytaj o szablon
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [templateName, setTemplateName] = useState('');
@@ -426,19 +462,28 @@ function OfferOverlay({
         }
       }
 
-      // Standardowy przepływ - przekieruj do AddToolForm
       const currentClientId = clientId || watch('client');
       const currentClient = clients?.find(x => x.id === currentClientId);
       const defaultOfferName = buildOfferName(currentClient, installationId);
-      navigation.navigate('AddToolForm', {
-        type: offerType,
-        installationId: shouldAddClient ? installationId : null,
-        offerName:
-          offerName ||
-          watch('offerName') ||
-          (isTemplate ? 'Nowy szablon' : defaultOfferName),
-        isTemplate,
-      });
+      const resolvedOfferName =
+        offerName ||
+        watch('offerName') ||
+        (isTemplate ? 'Nowy szablon' : defaultOfferName);
+
+      if (offerType === 'multi_split') {
+        navigation.navigate('MultisplitKompletyList', {
+          installationId: shouldAddClient ? installationId : null,
+          offerName: resolvedOfferName,
+          isTemplate,
+        });
+      } else {
+        navigation.navigate('AddToolForm', {
+          type: offerType,
+          installationId: shouldAddClient ? installationId : null,
+          offerName: resolvedOfferName,
+          isTemplate,
+        });
+      }
       onBackdropPress();
     }
   };
@@ -624,97 +669,99 @@ function OfferOverlay({
         onBackdropPress={handleClose}
         overlayStyle={styles.overlay}
       >
-        <View style={styles.overlayHeader}>
-          <Text style={styles.overlayHeaderTitle}>Nowa oferta</Text>
-          <View style={styles.overlayHeaderButton}>
-            <IconButton
-              withoutBackground
-              onPress={handleClose}
-              icon={<CloseIcon color={Colors.black} size={22} />}
-            />
+        <View key={formKey} style={styles.overlayContent}>
+          <View style={styles.overlayHeader}>
+            <Text style={styles.overlayHeaderTitle}>Nowa oferta</Text>
+            <View style={styles.overlayHeaderButton}>
+              <IconButton
+                withoutBackground
+                onPress={handleClose}
+                icon={<CloseIcon color={Colors.black} size={22} />}
+              />
+            </View>
           </View>
-        </View>
 
-        <View style={styles.overlayRadioContainer}>
-          <FormInput
-            label={isTemplate ? 'Nazwa szablonu' : 'Nazwa oferty'}
-            name="offerName"
-            control={control}
-            isBordered
-            noPadding
-            placeholder={
-              isTemplate ? 'Wprowadź nazwę szablonu' : 'Wprowadź nazwę oferty'
-            }
-            onChangeText={setOfferName}
-          />
-          {!isTemplate && (
-            <Switch
-              title="Dodaj klienta"
-              value={shouldAddClient}
-              onValueChange={handleClientSwitchChange}
-              color={Colors.offersTeal}
-            />
-          )}
-          {!isTemplate && shouldAddClient && filteredClients && (
-            <Dropdown
-              label="Klient"
-              name="client"
+          <View style={styles.overlayRadioContainer}>
+            <FormInput
+              label={isTemplate ? 'Nazwa szablonu' : 'Nazwa oferty'}
+              name="offerName"
               control={control}
-              options={filteredClients}
               isBordered
-              zIndex={10}
-              onChange={setClientId}
+              noPadding
+              placeholder={
+                isTemplate ? 'Wprowadź nazwę szablonu' : 'Wprowadź nazwę oferty'
+              }
+              onChangeText={setOfferName}
             />
-          )}
-          {!isTemplate && shouldAddClient && filteredInstallations && (
-            <Dropdown
-              label="Instalacja"
-              name="installation"
-              control={control}
-              options={filteredInstallations}
-              isBordered
-              zIndex={9}
-              onChange={setInstallationId}
-            />
-          )}
-          <RadioButtons
-            value={offerType}
-            onChange={value => setOfferType(value as string)}
-            iconRight
-            checkedColor={Colors.offersTeal}
-            uncheckedColor={Colors.grayBorder}
-            size={22}
-            textStyle={styles.radioButtons}
-            options={[
-              { label: 'Oferta Split', value: 'split' },
-              { label: 'Oferta Multisplit', value: 'multi_split' },
-            ]}
-          />
-          {!isTemplate && (
-            <>
+            {!isTemplate && (
               <Switch
-                value={useTemplate}
-                onValueChange={setUseTemplate}
-                title="Użyj szablonu"
+                title="Dodaj klienta"
+                value={shouldAddClient}
+                onValueChange={handleClientSwitchChange}
                 color={Colors.offersTeal}
               />
-              {useTemplate && (
-                <Dropdown
-                  label="Wybierz szablon"
-                  name="template"
-                  control={control}
-                  options={filteredTemplates || []}
-                  onChange={setSelectedTemplateId}
+            )}
+            {!isTemplate && shouldAddClient && filteredClients && (
+              <Dropdown
+                label="Klient"
+                name="client"
+                control={control}
+                options={filteredClients}
+                isBordered
+                zIndex={10}
+                onChange={setClientId}
+              />
+            )}
+            {!isTemplate && shouldAddClient && filteredInstallations && (
+              <Dropdown
+                label="Instalacja"
+                name="installation"
+                control={control}
+                options={filteredInstallations}
+                isBordered
+                zIndex={9}
+                onChange={setInstallationId}
+              />
+            )}
+            <RadioButtons
+              value={offerType}
+              onChange={value => setOfferType(value as string)}
+              iconRight
+              checkedColor={Colors.offersTeal}
+              uncheckedColor={Colors.grayBorder}
+              size={22}
+              textStyle={styles.radioButtons}
+              options={[
+                { label: 'Oferta Split', value: 'split' },
+                { label: 'Oferta Multisplit', value: 'multi_split' },
+              ]}
+            />
+            {!isTemplate && (
+              <>
+                <Switch
+                  value={useTemplate}
+                  onValueChange={setUseTemplate}
+                  title="Użyj szablonu"
+                  color={Colors.offersTeal}
                 />
-              )}
-            </>
-          )}
-          <SubmitButton
-            title={isTemplate ? 'Utwórz szablon' : 'Dalej'}
-            style={styles.continueButton}
-            onPress={onPress}
-            disabled={!isTemplate && shouldAddClient && !installationId}
-          />
+                {useTemplate && (
+                  <Dropdown
+                    label="Wybierz szablon"
+                    name="template"
+                    control={control}
+                    options={filteredTemplates || []}
+                    onChange={setSelectedTemplateId}
+                  />
+                )}
+              </>
+            )}
+            <SubmitButton
+              title={isTemplate ? 'Utwórz szablon' : 'Dalej'}
+              style={styles.continueButton}
+              onPress={onPress}
+              disabled={!isTemplate && shouldAddClient && !installationId}
+            />
+          </View>
         </View>
       </Overlay>
       {/* Modal do tworzenia szablonu */}
@@ -1012,25 +1059,34 @@ function OffersList({
     closeAllSwipes();
   }, [offers, route.params, clientInstallationsRes, closeAllSwipes]);
 
+  const isInitialLoad = offersLoading || filteredOffers == null;
+
   return (
     <View style={styles.container}>
       <View style={styles.listContainer}>
-        <FlashList<Offer>
-          data={filteredOffers || []}
-          renderItem={({ item }) => (
-            <OfferRow
-              onDeletePress={onDelete}
-              offer={item}
-              isTemplate={route.params?.isTemplate}
-              allInstallations={allInstallations}
-              clients={clients}
-              onCloseAllSwipes={closeAllSwipes}
-              registerSwipeRef={registerSwipeRef}
-            />
-          )}
-          estimatedItemSize={80}
-          contentContainerStyle={styles.offersList}
-        />
+        {isInitialLoad ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={Colors.teal} />
+            <Text style={styles.loadingText}>Trwa pobieranie ofert...</Text>
+          </View>
+        ) : (
+          <FlashList<Offer>
+            data={filteredOffers || []}
+            renderItem={({ item }) => (
+              <OfferRow
+                onDeletePress={onDelete}
+                offer={item}
+                isTemplate={route.params?.isTemplate}
+                allInstallations={allInstallations}
+                clients={clients}
+                onCloseAllSwipes={closeAllSwipes}
+                registerSwipeRef={registerSwipeRef}
+              />
+            )}
+            estimatedItemSize={80}
+            contentContainerStyle={styles.offersList}
+          />
+        )}
       </View>
 
       <Spinner
@@ -1059,6 +1115,8 @@ function OffersList({
 
 export default OffersList;
 
+const { height: windowHeight } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1068,6 +1126,19 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     alignSelf: 'center',
+    minHeight: Math.max(200, windowHeight * 0.3),
+    overflow: 'hidden',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minHeight: Math.max(200, windowHeight * 0.3),
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.grayerText,
   },
   offersList: {
     paddingHorizontal: 14,
@@ -1160,6 +1231,7 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     backgroundColor: Colors.white,
   },
+  overlayContent: {},
   overlayHeader: {
     paddingHorizontal: 8,
     display: 'flex',

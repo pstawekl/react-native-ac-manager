@@ -10,6 +10,7 @@ import {
 import GalleryContent from '../../components/GalleryContent';
 import Tabs from '../../components/Tabs';
 import CloseIcon from '../../components/icons/CloseIcon';
+import SearchIcon from '../../components/icons/SearchIcon';
 import Colors from '../../consts/Colors';
 import { GalleryScreenProps } from '../../navigation/types';
 
@@ -27,13 +28,13 @@ function GalleryScreen({ navigation }: GalleryScreenProps) {
 
   const tabItems = [
     {
-      title: 'Galeria',
+      title: 'Ulubione',
       component: (
         <GalleryContent
           navigation={navigation}
           tagQuery={tagQuery}
           onTagQueryChange={handleTagQueryChange}
-          galleryType="public"
+          galleryType="favorites"
         />
       ),
       onAddPress: () => navigation.navigate('AddPhoto'),
@@ -102,6 +103,7 @@ function GalleryScreen({ navigation }: GalleryScreenProps) {
         isWithLinearGradient={false}
         headerDividerColor={Colors.galleryBlue}
         onFilterPress={handleFilterPress}
+        headerFilterIcon={<SearchIcon color={Colors.black} />}
         headerContent={filterContent}
       />
     </SafeAreaView>

@@ -2,7 +2,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { Divider, Tab, TabView } from '@rneui/themed';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useState } from 'react';
+import React, { ReactNode, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import Colors from '../consts/Colors';
 import ButtonsHeader from './ButtonsHeader';
@@ -29,6 +29,7 @@ type TabsProps = {
   fabBgColor?: string;
   fabIconColor?: string;
   onFilterPress?: () => void;
+  headerFilterIcon?: ReactNode;
 };
 
 type TabMeasurement = {
@@ -50,6 +51,7 @@ export default function Tabs({
   fabBgColor,
   fabIconColor,
   onFilterPress,
+  headerFilterIcon,
 }: TabsProps): JSX.Element {
   const [index, setIndex] = useState(
     defaultTab ? items.findIndex(item => item.id === defaultTab) : 0,
@@ -86,6 +88,7 @@ export default function Tabs({
           onBackPress={onBackPress || navigation.goBack}
           title={title}
           onFilterPress={onFilterPress}
+          filterIcon={headerFilterIcon}
         />
       )}
 

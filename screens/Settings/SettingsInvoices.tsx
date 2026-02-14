@@ -2,10 +2,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
-import { Divider } from '@rneui/base';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ButtonGroup } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
@@ -27,6 +26,11 @@ export type InvoiceSettingsData = {
   month_format: string | null;
   day_format: string | null;
   iban: string | null;
+  default_status: string | null;
+  default_payment_method: string | null;
+  default_invoice_type: string | null;
+  default_vat_rate: string | null;
+  default_currency: string | null;
 };
 
 function SettingsInvoices({ navigation }: any) {
@@ -66,16 +70,48 @@ function SettingsInvoices({ navigation }: any) {
 
   useEffect(() => {
     if (invoicePresets) {
-      Object.keys(invoicePresets).forEach(key => {
-        const dataKey = key as keyof InvoiceSettingsData;
-        setValue(dataKey, invoicePresets[key]);
-      });
+      // Ustaw wszystkie pola z ustawień
+      if (invoicePresets.footer !== undefined)
+        setValue('footer', invoicePresets.footer);
+      if (invoicePresets.place_of_issue !== undefined)
+        setValue('place_of_issue', invoicePresets.place_of_issue);
+      if (invoicePresets.issuer_name !== undefined)
+        setValue('issuer_name', invoicePresets.issuer_name);
+      if (invoicePresets.standard_payment_term !== undefined)
+        setValue('standard_payment_term', invoicePresets.standard_payment_term);
+      if (invoicePresets.prefix !== undefined)
+        setValue('prefix', invoicePresets.prefix);
+      if (invoicePresets.suffix !== undefined)
+        setValue('suffix', invoicePresets.suffix);
+      if (invoicePresets.numbering_type !== undefined)
+        setValue('numbering_type', invoicePresets.numbering_type);
+      if (invoicePresets.year_format !== undefined)
+        setValue('year_format', invoicePresets.year_format);
+      if (invoicePresets.month_format !== undefined)
+        setValue('month_format', invoicePresets.month_format);
+      if (invoicePresets.day_format !== undefined)
+        setValue('day_format', invoicePresets.day_format);
+      if (invoicePresets.iban !== undefined)
+        setValue('iban', invoicePresets.iban);
+      if (invoicePresets.default_status !== undefined)
+        setValue('default_status', invoicePresets.default_status);
+      if (invoicePresets.default_payment_method !== undefined)
+        setValue(
+          'default_payment_method',
+          invoicePresets.default_payment_method,
+        );
+      if (invoicePresets.default_invoice_type !== undefined)
+        setValue('default_invoice_type', invoicePresets.default_invoice_type);
+      if (invoicePresets.default_vat_rate !== undefined)
+        setValue('default_vat_rate', invoicePresets.default_vat_rate);
+      if (invoicePresets.default_currency !== undefined)
+        setValue('default_currency', invoicePresets.default_currency);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoicePresets]);
 
   const onSubmit = async (data: InvoiceSettingsData) => {
-    await editInvoicePresets(data);
+    await editInvoicePresets({ data });
     Alert.alert('Zapisano zmiany');
     navigation.goBack();
   };
@@ -88,15 +124,16 @@ function SettingsInvoices({ navigation }: any) {
       style={styles.linearGradient}
     >
       <Container style={styles.container}>
-        <ButtonsHeader onBackPress={navigation.goBack} />
+        <ButtonsHeader
+          onBackPress={navigation.goBack}
+          title="Ustawienia faktur"
+        />
         <ScrollView
           style={styles.formContainer}
           contentContainerStyle={styles.formContentContainer}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.content}>
-            <Text style={styles.groupTitle}>Informacje podstawowe</Text>
-            <Divider style={styles.divider} />
             <FormInput
               name="footer"
               control={control}
@@ -129,6 +166,7 @@ function SettingsInvoices({ navigation }: any) {
                 { label: '7 dni', value: 7 },
                 { label: '10 dni', value: 10 },
                 { label: '14 dni', value: 14 },
+                { label: '30 dni', value: 30 },
               ]}
               isBordered
             />
@@ -165,7 +203,7 @@ function SettingsInvoices({ navigation }: any) {
               control={control}
               label="Format miesiąca"
               options={[
-                { value: 'numeric', label: 'Miesiąc w formacie liczbowym' },
+                { value: 'numeric', label: 'Format liczbowy' },
                 { value: 'short_name', label: 'Skrócona nazwa miesiąca' },
                 { value: 'full_name', label: 'Pełna nazwa miesiąca' },
               ]}
@@ -184,9 +222,71 @@ function SettingsInvoices({ navigation }: any) {
               zIndex={16}
               dropDownDirection="BOTTOM"
             />
+            <Dropdown
+              name="default_status"
+              control={control}
+              label="Domyślny status faktury"
+              options={[
+                { value: 'issued', label: 'Wystawiona' },
+                { value: 'paid', label: 'Opłacona' },
+                { value: 'partial', label: 'Częściowo opłacona' },
+              ]}
+              isBordered
+              zIndex={15}
+            />
+            <Dropdown
+              name="default_payment_method"
+              control={control}
+              label="Domyślna forma płatności"
+              options={[
+                { value: 'transfer', label: 'Przelew' },
+                { value: 'card', label: 'Karta' },
+                { value: 'cash', label: 'Gotówka' },
+              ]}
+              isBordered
+              zIndex={14}
+            />
+            <Dropdown
+              name="default_invoice_type"
+              control={control}
+              label="Domyślny typ faktury"
+              options={[
+                { value: 'vat', label: 'Faktura VAT' },
+                { value: 'proforma', label: 'Faktura proforma' },
+                { value: 'zaliczkowa', label: 'Faktura zaliczkowa' },
+                { value: 'koncowa', label: 'Faktura końcowa' },
+                { value: 'korekta', label: 'Faktura korekta' },
+                { value: 'szacunkowa', label: 'Faktura szacunkowa' },
+              ]}
+              isBordered
+              zIndex={13}
+            />
+            <Dropdown
+              name="default_vat_rate"
+              control={control}
+              label="Domyślna stawka VAT"
+              options={[
+                { value: '23', label: '23%' },
+                { value: '12', label: '12%' },
+                { value: '8', label: '8%' },
+                { value: '0', label: '0%' },
+              ]}
+              isBordered
+              zIndex={12}
+            />
+            <Dropdown
+              name="default_currency"
+              control={control}
+              label="Domyślna waluta"
+              options={[
+                { value: 'PLN', label: 'PLN' },
+                { value: 'USD', label: 'USD' },
+              ]}
+              isBordered
+              zIndex={11}
+              dropDownDirection="BOTTOM"
+            />
           </View>
-        </ScrollView>
-        <View style={styles.footer}>
           <ButtonGroup
             submitTitle="Zapisz"
             cancelTitle="Anuluj"
@@ -199,7 +299,7 @@ function SettingsInvoices({ navigation }: any) {
             submitStyle={styles.submitButton}
             submitTitleStyle={styles.submitButtonTitle}
           />
-        </View>
+        </ScrollView>
       </Container>
       <ConfirmationOverlay
         visible={visible}
@@ -221,10 +321,10 @@ const styles = StyleSheet.create({
     flex: 1,
     display: 'flex',
     justifyContent: 'space-between',
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.homeScreenBackground,
     borderTopLeftRadius: 35,
     borderTopRightRadius: 35,
-    paddingBottom: 130, // Add padding for footer
+    paddingTop: 40,
   },
   formContainer: {
     flex: 1,
@@ -247,7 +347,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    gap: -18,
   },
   footer: {
     backgroundColor: Colors.white,
@@ -295,7 +394,6 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   buttonGroup: {
-    position: 'absolute',
     bottom: 0,
     display: 'flex',
     flexDirection: 'row',
@@ -303,17 +401,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 100,
     gap: 20,
-    paddingVertical: 30,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: -7 },
-    shadowOpacity: 0.2,
-    shadowRadius: 90,
-    elevation: 5,
-    overflow: 'visible',
-    zIndex: 1000,
     width: '100%',
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: 35,
-    borderTopRightRadius: 35,
   },
 });

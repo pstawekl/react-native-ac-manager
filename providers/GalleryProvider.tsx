@@ -20,6 +20,7 @@ type Photo = {
   owner: number;
   klient: number;
   tags: number[];
+  is_favorite?: boolean;
 };
 
 export type PhotosResponse = {

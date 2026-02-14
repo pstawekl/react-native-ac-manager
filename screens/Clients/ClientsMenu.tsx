@@ -587,10 +587,17 @@ function DaneView({
             />
           </View>
           <View style={{ paddingHorizontal: 8 }}>
+            <FormInput name="ulica" control={control} label="Ulica" noPadding />
             <FormInput
-              name="ulica"
+              name="numer_domu"
               control={control}
-              label="Ulica / Nr domu"
+              label="Numer budynku"
+              noPadding
+            />
+            <FormInput
+              name="mieszkanie"
+              control={control}
+              label="Numer lokalu"
               noPadding
             />
           </View>

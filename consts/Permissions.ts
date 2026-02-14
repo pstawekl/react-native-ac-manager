@@ -20,6 +20,7 @@ export const enum Scopes {
   // Oferty
   viewOffers,
   addOffers,
+  offers, // Ustawienia ofert
 
   // Zadania
   viewTasks,
@@ -31,6 +32,7 @@ export const enum Scopes {
   // Faktury
   viewInvoices,
   addInvoices,
+  invoices, // Ustawienia faktur
 
   // Czat
   chat,
@@ -50,11 +52,13 @@ export const Permissions: {
     Scopes.addCatalogs,
     Scopes.viewOffers,
     Scopes.addOffers,
+    Scopes.offers,
     Scopes.viewTasks,
     Scopes.viewTrainings,
     Scopes.addTrainings,
     Scopes.viewInvoices,
     Scopes.addInvoices,
+    Scopes.invoices,
     Scopes.chat,
   ],
   [Roles.assembler]: [
@@ -72,5 +76,10 @@ export const Permissions: {
     Scopes.chat,
     Scopes.discounts,
   ],
-  [Roles.client]: [Scopes.viewInvoices, Scopes.viewOffers, Scopes.viewCatalogs, Scopes.chat],
+  [Roles.client]: [
+    Scopes.viewInvoices,
+    Scopes.viewOffers,
+    Scopes.viewCatalogs,
+    Scopes.chat,
+  ],
 };

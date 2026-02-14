@@ -3,7 +3,7 @@ import { Divider, Input, Overlay, Text } from '@rneui/themed';
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Alert, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { LinearGradient } from 'expo-linear-gradient';
@@ -24,10 +24,20 @@ type SzablonDataResponse = {
   [key: string]: any;
 };
 
+type MultisplitKompletFromApi = {
+  id?: number;
+  kolejnosc?: number;
+  producent?: string;
+  internal?: Device[];
+  aggregate?: Device[];
+};
+
 type OfertaDataResponse = {
   devices_split?: Device[];
   devices_multi_split?: Device[];
   narzut?: any[];
+  multisplit_komplety?: MultisplitKompletFromApi[];
+  selected_komplet?: number | null;
   client_id?: number | null;
   client_has_account?: boolean;
   is_current_user_client?: boolean;
@@ -170,6 +180,11 @@ function OfferOverview({
         id: number;
         value: number | null;
       }[];
+      multisplit_komplety?: Array<{
+        producent: string;
+        internal_ids: number[];
+        aggregate_ids: number[];
+      }>;
     };
   };
 }) {
@@ -197,6 +212,7 @@ function OfferOverview({
     deviceSurcharges,
     allDevices,
     surchargesList,
+    multisplit_komplety: multisplitKompletyFromParams,
   } = route.params;
 
   const {
@@ -206,6 +222,9 @@ function OfferOverview({
   } = useForm<{ template_name: string | null }>();
   const [tools, setTools] = useState<Device[]>();
   const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null);
+  const [selectedKompletId, setSelectedKompletId] = useState<number | null>(
+    null,
+  );
   const [isAccepted, setIsAccepted] = useState<boolean>(false);
   const [clientHasAccount, setClientHasAccount] = useState<boolean>(false);
   const [isCurrentUserClient, setIsCurrentUserClient] =
@@ -219,6 +238,10 @@ function OfferOverview({
       id?: number;
     }[]
   >();
+  const [overviewDataLoading, setOverviewDataLoading] = useState(false);
+  const [multisplitKompletyFromApi, setMultisplitKompletyFromApi] = useState<
+    Array<{ producent?: string; internal?: Device[]; aggregate?: Device[] }>
+  >([]);
 
   const { execute: createOffer } = useApi({
     path: 'oferta_create',
@@ -239,18 +262,38 @@ function OfferOverview({
     path: 'oferta_send_email',
   });
   const { getOffers } = useOffers();
+  const navigation = useNavigation();
 
-  // Funkcja do ładowania danych szablonu/oferty
+  const handleGoBack = useCallback(() => {
+    if (fromInstallation && installationId && clientId) {
+      (navigation as any).navigate('Clients', {
+        screen: 'Settings',
+        params: {
+          installationId: installationId.toString(),
+          clientId: clientId.toString(),
+          activeTab: 'oferty',
+        },
+      });
+    } else if (fromClient && clientId) {
+      (navigation as any).navigate('Clients', {
+        screen: 'Menu',
+        params: { clientId, activeTab: 'oferty' },
+      });
+    } else {
+      (navigation as any).navigate('Menu');
+    }
+  }, [fromInstallation, fromClient, installationId, clientId, navigation]);
+
+  // Funkcja do ładowania danych szablonu/oferty (gdy wchodzimy z listy – offerId; dane z API, nie z params)
   const loadData = useCallback(async () => {
     if (offerId) {
+      setOverviewDataLoading(true);
       try {
         if (isTemplate) {
-          // Ładuj dane szablonu
           const response = await getSzablonData({
             data: { szablon_id: offerId },
           });
           if (response) {
-            // Ustaw urządzenia z szablonu
             if (response.devices_split && response.devices_split.length > 0) {
               setTools(response.devices_split);
             } else if (
@@ -259,14 +302,21 @@ function OfferOverview({
             ) {
               setTools(response.devices_multisplit);
             }
+            if (response.narzuty && response.narzuty.length > 0) {
+              setSurchargesState(
+                response.narzuty.map((n: any) => ({
+                  name: n.name ?? '',
+                  value: n.value ?? null,
+                  id: n.id,
+                })),
+              );
+            }
           }
         } else {
-          // Ładuj dane oferty
           const response = await getOfertaData({
             data: { oferta_id: offerId },
           });
           if (response) {
-            // Ustaw urządzenia z oferty
             if (response.devices_split && response.devices_split.length > 0) {
               setTools(response.devices_split);
             } else if (
@@ -275,24 +325,38 @@ function OfferOverview({
             ) {
               setTools(response.devices_multi_split);
             }
-            // Ustaw wybrane urządzenie jeśli oferta jest zaakceptowana
+            if (response.narzut && response.narzut.length > 0) {
+              setSurchargesState(
+                response.narzut.map((n: any) => ({
+                  name: n.name ?? '',
+                  value: n.value ?? null,
+                  id: n.id,
+                })),
+              );
+            }
             if (response.selected_device_id) {
               setSelectedDeviceId(response.selected_device_id);
             }
-            // Ustaw status akceptacji oferty
+            setSelectedKompletId(response.selected_komplet ?? null);
             if (response.is_accepted) {
               setIsAccepted(response.is_accepted);
             }
-            // Ustaw informacje o kliencie
             if (response.client_has_account !== undefined) {
               setClientHasAccount(response.client_has_account);
             }
             if (response.is_current_user_client !== undefined) {
               setIsCurrentUserClient(response.is_current_user_client);
             }
-            // Ustaw status montażu
             if (response.montaz_status) {
               setMontazStatus(response.montaz_status);
+            }
+            if (
+              response.multisplit_komplety &&
+              response.multisplit_komplety.length > 0
+            ) {
+              setMultisplitKompletyFromApi(response.multisplit_komplety);
+            } else {
+              setMultisplitKompletyFromApi([]);
             }
           }
         }
@@ -301,9 +365,10 @@ function OfferOverview({
           'Błąd',
           (error as Error).message || 'Nie udało się załadować danych',
         );
+      } finally {
+        setOverviewDataLoading(false);
       }
     } else if (allDevices && allDevices.length > 0) {
-      // Gdy nie ma offerId, ale mamy allDevices (np. z szablonu)
       setTools(allDevices);
     }
   }, [offerId, isTemplate, getSzablonData, getOfertaData, allDevices]);
@@ -342,6 +407,9 @@ function OfferOverview({
         devices_multi_split: type === 'multi_split' ? devices : [],
         narzut: surcharges ?? [],
         nazwa_oferty: offerName,
+        ...(type === 'multi_split' && multisplitKompletyFromParams
+          ? { multisplit_komplety: multisplitKompletyFromParams }
+          : {}),
       };
 
     const response = route.params.isTemplate
@@ -375,6 +443,7 @@ function OfferOverview({
     devices,
     surcharges,
     installationId,
+    multisplitKompletyFromParams,
     addTemplate,
     createOffer,
     getOffers,
@@ -420,16 +489,26 @@ function OfferOverview({
   );
 
   const onAccept = useCallback(async () => {
-    if (!selectedDeviceId) {
+    const isMultisplit = type === 'multi_split';
+    if (isMultisplit) {
+      if (selectedKompletId == null) {
+        Alert.alert('Błąd', 'Proszę wybrać komplet z oferty');
+        return;
+      }
+    } else if (!selectedDeviceId) {
       Alert.alert('Błąd', 'Proszę wybrać urządzenie z oferty');
       return;
     }
 
-    const requestData = {
+    const requestData: Record<string, unknown> = {
       oferta_id: Number(offerId),
       is_accepted: true,
-      selected_device_id: Number(selectedDeviceId),
     };
+    if (isMultisplit) {
+      requestData.selected_komplet = Number(selectedKompletId);
+    } else {
+      requestData.selected_device_id = Number(selectedDeviceId);
+    }
 
     try {
       const response = await acceptOffer({ data: requestData });
@@ -475,7 +554,9 @@ function OfferOverview({
       Alert.alert('Błąd', 'Wystąpił błąd podczas akceptacji oferty');
     }
   }, [
+    type,
     selectedDeviceId,
+    selectedKompletId,
     offerId,
     acceptOffer,
     getOffers,
@@ -525,7 +606,7 @@ function OfferOverview({
     // Tylko admin/monter pobiera narzuty i rabaty
     if (!isUserClient()) {
       if (getSurcharges) {
-        getSurcharges(surchargesRequestData);
+        getSurcharges({ data: surchargesRequestData });
       }
       // Pobierz rabaty raz dla wszystkich urządzeń
       if (getDiscounts) {
@@ -556,42 +637,6 @@ function OfferOverview({
     }
   }, [surchargesResponse, surcharges, surchargesList]);
 
-  const navigation = useNavigation();
-
-  // Funkcja nawigacji wstecz zależna od kontekstu - MUSI BYĆ PRZED onSubmit
-  const handleGoBack = useCallback(() => {
-    console.log('=== HANDLE GO BACK ===');
-    console.log('fromInstallation:', fromInstallation);
-    console.log('fromClient:', fromClient);
-    console.log('installationId:', installationId);
-    console.log('clientId:', clientId);
-
-    if (fromInstallation && installationId && clientId) {
-      // Jeśli przyszliśmy z modułu instalacji, wracamy do zakładki Oferty tej instalacji
-      console.log('Navigating to Installation Settings');
-      (navigation as any).navigate('Clients', {
-        screen: 'Settings',
-        params: {
-          installationId: installationId.toString(),
-          clientId: clientId.toString(),
-          activeTab: 'oferty',
-        },
-      });
-    } else if (fromClient && clientId) {
-      // Jeśli przyszliśmy z modułu klientów, wracamy do zakładki Oferty tego klienta
-      console.log('Navigating to Client Menu');
-      (navigation as any).navigate('Clients', {
-        screen: 'Menu',
-        params: { clientId, activeTab: 'oferty' },
-      });
-    } else {
-      // Standardowy powrót (do menu ofert w module Ofert)
-      console.log('Navigating back (standard)');
-      // Wracamy do Menu (gdzie są taby Oferty/Szablony)
-      (navigation as any).navigate('Menu');
-    }
-  }, [fromInstallation, fromClient, installationId, clientId, navigation]);
-
   // Wysyłanie oferty emailem
   const handleSendEmail = useCallback(async () => {
     if (!offerId) {
@@ -600,10 +645,9 @@ function OfferOverview({
     }
 
     try {
-      const response = await sendOfferEmail({
+      const response = (await sendOfferEmail({
         data: { oferta_id: Number(offerId) },
-      });
-
+      })) as { success?: boolean; error?: string };
       if (response?.success) {
         Alert.alert('Sukces', 'Oferta została wysłana na email klienta');
       } else {
@@ -624,6 +668,252 @@ function OfferOverview({
       return price.toFixed(2);
     },
     [],
+  );
+
+  // Dla multisplit: wyświetlanie pogrupowane po kompletach (z API lub z params)
+  type KompletDisplay = {
+    id?: number;
+    producent: string;
+    internal: Device[];
+    aggregate: Device[];
+  };
+  // Pula urządzeń do rozwiązywania id (przed zapisem: allDevices + tools, żeby mieć pełną listę)
+  const devicePoolById = useMemo(() => {
+    const map = new Map<number, Device>();
+    for (const d of allDevices ?? []) {
+      if (d?.id != null) map.set(Number(d.id), d);
+    }
+    for (const d of tools ?? []) {
+      if (d?.id != null) map.set(Number(d.id), d);
+    }
+    return map;
+  }, [allDevices, tools]);
+
+  const multisplitKompletyForDisplay = useMemo((): KompletDisplay[] => {
+    if (multisplitKompletyFromApi.length > 0) {
+      const flatTools = tools ?? [];
+      return multisplitKompletyFromApi.map((k: MultisplitKompletFromApi) => {
+        const producent = k.producent ?? '';
+        let internal = k.internal ?? [];
+        let aggregate = k.aggregate ?? [];
+        // Fallback: gdy komplet z API ma puste listy, uzupełnij z płaskiej listy urządzeń oferty (po producencie)
+        if (
+          internal.length === 0 &&
+          aggregate.length === 0 &&
+          flatTools.length > 0 &&
+          producent
+        ) {
+          internal = flatTools.filter(
+            (d: Device) =>
+              (d.rodzaj ?? '').toLowerCase() !== 'agregat' &&
+              (d.producent ?? '') === producent,
+          );
+          aggregate = flatTools.filter(
+            (d: Device) =>
+              (d.rodzaj ?? '').toLowerCase() === 'agregat' &&
+              (d.producent ?? '') === producent,
+          );
+        }
+        return { id: k.id, producent, internal, aggregate };
+      });
+    }
+    // Przed zapisem: komplety z parametrów nawigacji – rozwiąż internal_ids/aggregate_ids z puli (allDevices + tools)
+    if (
+      multisplitKompletyFromParams?.length &&
+      (allDevices?.length || tools?.length)
+    ) {
+      return multisplitKompletyFromParams.map(
+        (k: {
+          producent?: string;
+          internal_ids?: number[];
+          aggregate_ids?: number[];
+        }) => ({
+          producent: k.producent ?? '',
+          internal: (k.internal_ids || [])
+            .map((id: number) => devicePoolById.get(Number(id)))
+            .filter((d): d is Device => d != null),
+          aggregate: (k.aggregate_ids || [])
+            .map((id: number) => devicePoolById.get(Number(id)))
+            .filter((d): d is Device => d != null),
+        }),
+      );
+    }
+    return [];
+  }, [
+    multisplitKompletyFromApi,
+    multisplitKompletyFromParams,
+    allDevices,
+    tools,
+    devicePoolById,
+  ]);
+
+  // Grupowanie urządzeń po id (ten sam model = jedna linia "model x N - cena")
+  const groupDevicesById = useCallback((devices: Device[]) => {
+    const byId = new Map<number, { device: Device; count: number }>();
+    for (const d of devices) {
+      const { id } = d;
+      const existing = byId.get(id);
+      if (existing) existing.count += 1;
+      else byId.set(id, { device: d, count: 1 });
+    }
+    return Array.from(byId.values());
+  }, []);
+
+  const renderMultisplitKompletRow = useCallback(
+    (
+      item: { device: Device; count: number },
+      label: 'Jednostka wewnętrzna' | 'Agregat',
+    ) => {
+      const { device: tool, count } = item;
+      const deviceSurchargesList =
+        deviceSurcharges?.[tool.id]?.surcharges || [];
+      const discountValue = deviceSurcharges?.[tool.id]?.discount;
+      const totalSurchargeValue = (deviceSurchargesList || []).reduce(
+        (total: number, surcharge: any) => {
+          if (surcharge.customValue !== undefined)
+            return total + surcharge.customValue;
+          if (surcharge.surchargeId) {
+            const s = surchargesList?.find(
+              (x: any) => x.id === surcharge.surchargeId,
+            );
+            return total + (s?.value ?? 0);
+          }
+          return total;
+        },
+        0,
+      );
+      const catalogPrice = Number(tool.cena_katalogowa_netto);
+      const unitPrice = getDevicePrice(
+        catalogPrice,
+        discountValue ?? undefined,
+        totalSurchargeValue || 0,
+      );
+      const totalPrice = (Number(unitPrice) * count).toFixed(2);
+      const modelName = tool.nazwa_modelu_producenta || tool.nazwa_modelu || '';
+      const canSelectDevice = !clientHasAccount || isCurrentUserClient;
+      const showRadio = false; // W multisplit wybór jest na poziomie kompletu, nie urządzenia
+      return (
+        <View key={`${tool.id}-${label}-${count}`} style={styles.tableRow}>
+          {offerId && showRadio && canSelectDevice && (
+            <View style={styles.radioColumn}>
+              <Text
+                style={{
+                  fontSize: 24,
+                  color: selectedDeviceId === tool.id ? '#007AFF' : '#C7C7CC',
+                }}
+                onPress={() => !isAccepted && setSelectedDeviceId(tool.id)}
+              >
+                {selectedDeviceId === tool.id ? '●' : '○'}
+              </Text>
+            </View>
+          )}
+          {offerId && showRadio && clientHasAccount && !isCurrentUserClient && (
+            <View style={styles.radioColumn} />
+          )}
+          {offerId && !showRadio && canSelectDevice && (
+            <View style={styles.radioColumnNarrow} />
+          )}
+          {offerId &&
+            !showRadio &&
+            clientHasAccount &&
+            !isCurrentUserClient && <View style={styles.radioColumnNarrow} />}
+          <View style={styles.deviceColumn}>
+            <Text style={styles.cell}>
+              {label} {modelName}
+              {modelName &&
+                (tool.moc_chlodnicza != null || tool.moc_grzewcza != null)
+                ? ` (${tool.moc_chlodnicza ?? '-'}/${tool.moc_grzewcza ?? '-'
+                } kW)`
+                : ''}
+              {' x '}
+              {count}
+            </Text>
+          </View>
+          <View style={[styles.priceColumn, styles.priceColumnRight]}>
+            <Text style={styles.cell}>{totalPrice} zł</Text>
+          </View>
+        </View>
+      );
+    },
+    [
+      deviceSurcharges,
+      surchargesList,
+      getDevicePrice,
+      clientHasAccount,
+      isCurrentUserClient,
+      offerId,
+      selectedDeviceId,
+      isAccepted,
+    ],
+  );
+
+  const renderDeviceRow = useCallback(
+    (tool: Device) => {
+      const deviceSurchargesList =
+        deviceSurcharges?.[tool.id]?.surcharges || [];
+      const discountValue = deviceSurcharges?.[tool.id]?.discount;
+      const totalSurchargeValue = deviceSurchargesList.reduce(
+        (total, surcharge) => {
+          if (surcharge.customValue !== undefined) {
+            return total + surcharge.customValue;
+          }
+          if (surcharge.surchargeId) {
+            const surchargeObj = surchargesList?.find(
+              s => s.id === surcharge.surchargeId,
+            );
+            return total + (surchargeObj?.value ?? 0);
+          }
+          return total;
+        },
+        0,
+      );
+      const catalogPrice = Number(tool.cena_katalogowa_netto);
+      const finalPrice = getDevicePrice(
+        catalogPrice,
+        discountValue ?? undefined,
+        totalSurchargeValue || 0,
+      );
+      const canSelectDevice = !clientHasAccount || isCurrentUserClient;
+      return (
+        <View key={tool.id} style={styles.tableRow}>
+          {offerId && canSelectDevice && (
+            <View style={styles.radioColumn}>
+              <Text
+                style={{
+                  fontSize: 24,
+                  color: selectedDeviceId === tool.id ? '#007AFF' : '#C7C7CC',
+                }}
+                onPress={() => !isAccepted && setSelectedDeviceId(tool.id)}
+              >
+                {selectedDeviceId === tool.id ? '●' : '○'}
+              </Text>
+            </View>
+          )}
+          {offerId && clientHasAccount && !isCurrentUserClient && (
+            <View style={styles.radioColumn} />
+          )}
+          <View style={styles.deviceColumn}>
+            <Text style={styles.cell}>
+              {tool.nazwa_modelu_producenta || tool.nazwa_modelu} (
+              {tool.moc_chlodnicza}/{tool.moc_grzewcza} kW)
+            </Text>
+          </View>
+          <View style={[styles.priceColumn, styles.priceColumnRight]}>
+            <Text style={styles.cell}>{finalPrice} zł</Text>
+          </View>
+        </View>
+      );
+    },
+    [
+      deviceSurcharges,
+      surchargesList,
+      getDevicePrice,
+      clientHasAccount,
+      isCurrentUserClient,
+      offerId,
+      selectedDeviceId,
+      isAccepted,
+    ],
   );
 
   return (
@@ -648,199 +938,347 @@ function OfferOverview({
         </View>
 
         <ScrollView style={styles.scrollContainer}>
-          {/* <View style={{ marginVertical: 16 }}>
-            <SubmitButton
-              style={styles.submitButton}
-              title="Dodaj szablon"
-              onPress={openTemplateOverlay}
-            />
-          </View> */}
-          <Overlay
-            isVisible={templateOverlayVisible}
-            onBackdropPress={closeTemplateOverlay}
-            overlayStyle={{
-              width: '90%',
-              maxWidth: 340,
-              borderRadius: 16,
-              padding: 16,
-            }}
-          >
-            <View>
-              <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>
-                Nowy szablon
-              </Text>
-              <Input
-                value={templateName}
-                onChangeText={setTemplateName}
-                placeholder="Wpisz nazwę szablonu"
-              />
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'flex-end',
-                  marginTop: 16,
+          {offerId && overviewDataLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.teal} />
+              <Text style={styles.loadingText}>Trwa pobieranie danych...</Text>
+            </View>
+          ) : null}
+          {!overviewDataLoading && (
+            <>
+              <Overlay
+                isVisible={templateOverlayVisible}
+                onBackdropPress={closeTemplateOverlay}
+                overlayStyle={{
+                  width: '90%',
+                  maxWidth: 340,
+                  borderRadius: 16,
+                  padding: 16,
                 }}
               >
-                <SubmitButton
-                  title="Zapisz"
-                  style={{ marginRight: 8 }}
-                  onPress={() => {
-                    if (!templateName || templateName.trim() === '') {
-                      Alert.alert('Podaj nazwę szablonu');
-                      return;
-                    }
-                    onAddTemplate({ template_name: templateName });
-                    setTemplateName('');
-                    closeTemplateOverlay();
-                  }}
-                />
-                <SubmitButton
-                  title="Anuluj"
-                  onPress={() => {
-                    setTemplateName('');
-                    closeTemplateOverlay();
-                  }}
-                />
-              </View>
-            </View>
-          </Overlay>
-          {tools && tools.length > 0 ? (
-            <View style={styles.devicesTable}>
-              {/* Table Header */}
-              <View style={styles.tableHeader}>
-                {offerId && (!clientHasAccount || isCurrentUserClient) && (
-                  <Text style={[styles.headerCell, styles.radioColumn]}>
-                    Wybór
+                <View>
+                  <Text style={{ fontWeight: 'bold', marginBottom: 8 }}>
+                    Nowy szablon
                   </Text>
-                )}
-                {offerId && clientHasAccount && !isCurrentUserClient && (
-                  <View style={styles.radioColumn} />
-                )}
-                <Text style={[styles.headerCell, styles.deviceColumn]}>
-                  Urządzenia - moc chłodnicza
-                </Text>
-                <Text style={[styles.headerCell, styles.priceColumn]}>
-                  Cena z montażem
-                </Text>
-              </View>
-
-              {(() => {
-                // Group devices by manufacturer
-                const filteredDevices = tools || [];
-                const groupedByManufacturer: { [key: string]: Device[] } = {};
-
-                filteredDevices.forEach(device => {
-                  if (!groupedByManufacturer[device.producent]) {
-                    groupedByManufacturer[device.producent] = [];
-                  }
-                  groupedByManufacturer[device.producent].push(device);
-                });
-
-                return Object.entries(groupedByManufacturer).map(
-                  ([manufacturer, manufacturerDevices]) => (
-                    <View key={manufacturer} style={styles.manufacturerGroup}>
-                      {/* Manufacturer Header */}
-                      <View style={styles.manufacturerHeader}>
-                        <Text style={styles.manufacturerName}>
-                          {manufacturer}
-                        </Text>
-                      </View>
-
-                      {/* Device Rows */}
-                      {manufacturerDevices.map((tool: Device) => {
-                        const deviceSurchargesList =
-                          deviceSurcharges?.[tool.id]?.surcharges || [];
-                        const discountValue =
-                          deviceSurcharges?.[tool.id]?.discount;
-
-                        // Calculate total surcharge value
-                        const totalSurchargeValue = deviceSurchargesList.reduce(
-                          (total, surcharge) => {
-                            if (surcharge.customValue !== undefined) {
-                              return total + surcharge.customValue;
-                            }
-                            if (surcharge.surchargeId) {
-                              const surchargeObj = surchargesList?.find(
-                                s => s.id === surcharge.surchargeId,
-                              );
-                              return total + (surchargeObj?.value ?? 0);
-                            }
-                            return total;
-                          },
-                          0,
-                        );
-
-                        const catalogPrice = Number(tool.cena_katalogowa_netto);
-                        const finalPrice = getDevicePrice(
-                          catalogPrice,
-                          discountValue ?? undefined,
-                          totalSurchargeValue || 0,
-                        );
-
-                        // Sprawdź czy można wybierać urządzenie
-                        // Można wybierać tylko jeśli: klient nie ma konta LUB użytkownik jest klientem
-                        const canSelectDevice =
-                          !clientHasAccount || isCurrentUserClient;
-
-                        return (
-                          <View key={tool.id} style={styles.tableRow}>
-                            {offerId && canSelectDevice && (
-                              <View style={styles.radioColumn}>
-                                <Text
-                                  style={{
-                                    fontSize: 24,
-                                    color:
-                                      selectedDeviceId === tool.id
-                                        ? '#007AFF'
-                                        : '#C7C7CC',
-                                  }}
-                                  onPress={() =>
-                                    !isAccepted && setSelectedDeviceId(tool.id)
-                                  }
-                                >
-                                  {selectedDeviceId === tool.id ? '●' : '○'}
-                                </Text>
+                  <Input
+                    value={templateName}
+                    onChangeText={setTemplateName}
+                    placeholder="Wpisz nazwę szablonu"
+                  />
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'flex-end',
+                      marginTop: 16,
+                    }}
+                  >
+                    <SubmitButton
+                      title="Zapisz"
+                      style={{ marginRight: 8 }}
+                      onPress={() => {
+                        if (!templateName || templateName.trim() === '') {
+                          Alert.alert('Podaj nazwę szablonu');
+                          return;
+                        }
+                        onAddTemplate({ template_name: templateName });
+                        setTemplateName('');
+                        closeTemplateOverlay();
+                      }}
+                    />
+                    <SubmitButton
+                      title="Anuluj"
+                      onPress={() => {
+                        setTemplateName('');
+                        closeTemplateOverlay();
+                      }}
+                    />
+                  </View>
+                </View>
+              </Overlay>
+              {type === 'multi_split' &&
+                multisplitKompletyForDisplay.length > 0 ? (
+                <View style={styles.devicesTable}>
+                  <View style={styles.tableHeader}>
+                    {offerId && (!clientHasAccount || isCurrentUserClient) && (
+                      <Text
+                        style={[
+                          styles.headerCell,
+                          styles.headerRadioColumnNarrow,
+                        ]}
+                      >
+                        Wybór
+                      </Text>
+                    )}
+                    {offerId && clientHasAccount && !isCurrentUserClient && (
+                      <View style={styles.headerRadioColumnNarrow} />
+                    )}
+                    <Text style={[styles.headerCell, styles.deviceColumn]}>
+                      Urządzenia - moc chłodnicza
+                    </Text>
+                    <Text style={[styles.headerCell, styles.priceColumn]}>
+                      Cena z montażem
+                    </Text>
+                  </View>
+                  {multisplitKompletyForDisplay.map(
+                    (komplet: KompletDisplay, idx: number) => {
+                      const internalGrouped = groupDevicesById(
+                        komplet.internal ?? [],
+                      );
+                      const aggregateGrouped = groupDevicesById(
+                        komplet.aggregate ?? [],
+                      );
+                      return (
+                        <View key={idx} style={styles.manufacturerGroup}>
+                          <View
+                            style={[styles.manufacturerHeaderComplet, styles.tableRowComplet]}
+                          >
+                            {offerId && (
+                              <View style={styles.radioColumnKomplet}>
+                                {(!clientHasAccount || isCurrentUserClient) &&
+                                  komplet.id != null ? (
+                                  <Text
+                                    style={{
+                                      fontSize: 24,
+                                      color:
+                                        selectedKompletId === komplet.id
+                                          ? '#007AFF'
+                                          : '#C7C7CC',
+                                    }}
+                                    onPress={() =>
+                                      !isAccepted &&
+                                      setSelectedKompletId(komplet.id!)
+                                    }
+                                  >
+                                    {selectedKompletId === komplet.id
+                                      ? '●'
+                                      : '○'}
+                                  </Text>
+                                ) : null}
                               </View>
                             )}
-                            {offerId && !canSelectDevice && (
-                              <View style={styles.radioColumn} />
-                            )}
-                            <Text style={[styles.cell, styles.deviceColumn]}>
-                              {tool.nazwa_modelu} {tool.nazwa_modelu_producenta}{' '}
-                              – {tool.moc_chlodnicza} kW
-                            </Text>
-                            <Text
-                              style={[
-                                styles.cell,
-                                styles.priceColumn,
-                                styles.rightAlign,
-                              ]}
-                            >
-                              {finalPrice
-                                .replace('.', ',')
-                                .replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1 ')}
+                            <View style={styles.kompletNameColumn}>
+                              <Text style={styles.manufacturerName}>
+                                Komplet {idx + 1}
+                                {komplet.producent
+                                  ? ` – ${komplet.producent}`
+                                  : ''}
+                              </Text>
+                            </View>
+                          </View>
+                          <Text style={styles.kompletSectionLabel}>
+                            Jednostki wewnętrzne
+                          </Text>
+                          {internalGrouped.length > 0 ? (
+                            internalGrouped.map(item =>
+                              renderMultisplitKompletRow(
+                                item,
+                                'Jednostka wewnętrzna',
+                              ),
+                            )
+                          ) : (
+                            <View style={styles.tableRow}>
+                              {offerId && (
+                                <View style={styles.radioColumnNarrow} />
+                              )}
+                              <View style={styles.deviceColumn}>
+                                <Text
+                                  style={[
+                                    styles.cell,
+                                    {
+                                      fontStyle: 'italic',
+                                      color: Colors.grayerText,
+                                    },
+                                  ]}
+                                >
+                                  — Brak
+                                </Text>
+                              </View>
+                              <View style={styles.priceColumn} />
+                            </View>
+                          )}
+                          <Text style={styles.kompletSectionLabel}>
+                            Agregaty
+                          </Text>
+                          {aggregateGrouped.length > 0 ? (
+                            aggregateGrouped.map(item =>
+                              renderMultisplitKompletRow(item, 'Agregat'),
+                            )
+                          ) : (
+                            <View style={styles.tableRow}>
+                              {offerId && (
+                                <View style={styles.radioColumnNarrow} />
+                              )}
+                              <View style={styles.deviceColumn}>
+                                <Text
+                                  style={[
+                                    styles.cell,
+                                    {
+                                      fontStyle: 'italic',
+                                      color: Colors.grayerText,
+                                    },
+                                  ]}
+                                >
+                                  — Brak
+                                </Text>
+                              </View>
+                              <View style={styles.priceColumn} />
+                            </View>
+                          )}
+                        </View>
+                      );
+                    },
+                  )}
+                </View>
+              ) : tools && tools.length > 0 ? (
+                <View style={styles.devicesTable}>
+                  {/* Table Header */}
+                  <View style={styles.tableHeader}>
+                    {offerId && (!clientHasAccount || isCurrentUserClient) && (
+                      <Text style={[styles.headerCell, styles.radioColumn]}>
+                        Wybór
+                      </Text>
+                    )}
+                    {offerId && clientHasAccount && !isCurrentUserClient && (
+                      <View style={styles.radioColumn} />
+                    )}
+                    <Text style={[styles.headerCell, styles.deviceColumn]}>
+                      Urządzenia - moc chłodnicza
+                    </Text>
+                    <Text style={[styles.headerCell, styles.priceColumn]}>
+                      Cena z montażem
+                    </Text>
+                  </View>
+
+                  {(() => {
+                    // Group devices by manufacturer
+                    const filteredDevices = tools || [];
+                    const groupedByManufacturer: { [key: string]: Device[] } =
+                      {};
+
+                    filteredDevices.forEach(device => {
+                      if (!groupedByManufacturer[device.producent]) {
+                        groupedByManufacturer[device.producent] = [];
+                      }
+                      groupedByManufacturer[device.producent].push(device);
+                    });
+
+                    return Object.entries(groupedByManufacturer).map(
+                      ([manufacturer, manufacturerDevices]) => (
+                        <View
+                          key={manufacturer}
+                          style={styles.manufacturerGroup}
+                        >
+                          {/* Manufacturer Header */}
+                          <View style={styles.manufacturerHeader}>
+                            <Text style={styles.manufacturerName}>
+                              {manufacturer}
                             </Text>
                           </View>
-                        );
-                      })}
-                    </View>
-                  ),
-                );
-              })()}
-            </View>
-          ) : (
-            <Text>Brak urządzeń</Text>
-          )}
-          {/* Komunikat informacyjny gdy klient ma konto i użytkownik nie jest klientem */}
-          {offerId && clientHasAccount && !isCurrentUserClient && (
-            <Text style={styles.infoMessage}>
-              Użytkownik ma konto w aplikacji i tylko on może zaakceptować tę
-              ofertę
-            </Text>
-          )}
-          {/* {surchargesState && surchargesState?.length !== 0 && (
+
+                          {/* Device Rows */}
+                          {manufacturerDevices.map((tool: Device) => {
+                            const deviceSurchargesList =
+                              deviceSurcharges?.[tool.id]?.surcharges || [];
+                            const discountValue =
+                              deviceSurcharges?.[tool.id]?.discount;
+
+                            // Calculate total surcharge value
+                            const totalSurchargeValue =
+                              deviceSurchargesList.reduce(
+                                (total, surcharge) => {
+                                  if (surcharge.customValue !== undefined) {
+                                    return total + surcharge.customValue;
+                                  }
+                                  if (surcharge.surchargeId) {
+                                    const surchargeObj = surchargesList?.find(
+                                      s => s.id === surcharge.surchargeId,
+                                    );
+                                    return total + (surchargeObj?.value ?? 0);
+                                  }
+                                  return total;
+                                },
+                                0,
+                              );
+
+                            const catalogPrice = Number(
+                              tool.cena_katalogowa_netto,
+                            );
+                            const finalPrice = getDevicePrice(
+                              catalogPrice,
+                              discountValue ?? undefined,
+                              totalSurchargeValue || 0,
+                            );
+
+                            // Sprawdź czy można wybierać urządzenie
+                            // Można wybierać tylko jeśli: klient nie ma konta LUB użytkownik jest klientem
+                            const canSelectDevice =
+                              !clientHasAccount || isCurrentUserClient;
+
+                            return (
+                              <View key={tool.id} style={styles.tableRow}>
+                                {offerId && canSelectDevice && (
+                                  <View style={styles.radioColumn}>
+                                    <Text
+                                      style={{
+                                        fontSize: 24,
+                                        color:
+                                          selectedDeviceId === tool.id
+                                            ? '#007AFF'
+                                            : '#C7C7CC',
+                                      }}
+                                      onPress={() =>
+                                        !isAccepted &&
+                                        setSelectedDeviceId(tool.id)
+                                      }
+                                    >
+                                      {selectedDeviceId === tool.id ? '●' : '○'}
+                                    </Text>
+                                  </View>
+                                )}
+                                {offerId && !canSelectDevice && (
+                                  <View style={styles.radioColumn} />
+                                )}
+                                <Text
+                                  style={[styles.cell, styles.deviceColumn]}
+                                >
+                                  {tool.nazwa_modelu}{' '}
+                                  {tool.nazwa_modelu_producenta} –{' '}
+                                  {tool.moc_chlodnicza} kW
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.cell,
+                                    styles.priceColumn,
+                                    styles.rightAlign,
+                                  ]}
+                                >
+                                  {finalPrice
+                                    .replace('.', ',')
+                                    .replace(/(\d)(?=(\d{3})+(?!\d))/g, '$1 ')}
+                                </Text>
+                              </View>
+                            );
+                          })}
+                        </View>
+                      ),
+                    );
+                  })()}
+                </View>
+              ) : (
+                <Text>Brak urządzeń</Text>
+              )}
+              {/* Komunikat informacyjny gdy klient ma konto i użytkownik nie jest klientem */}
+              {offerId && clientHasAccount && !isCurrentUserClient && (
+                <Text style={styles.infoMessage}>
+                  Użytkownik ma konto w aplikacji i tylko on może zaakceptować
+                  tę ofertę
+                </Text>
+              )}
+              {/* {surchargesState && surchargesState?.length !== 0 && (
             <Surcharges surcharges={surchargesState} />
           )} */}
+            </>
+          )}
         </ScrollView>
         <View style={styles.footer}>
           {mode === 'add' && (
@@ -895,7 +1333,11 @@ function OfferOverview({
                       style={styles.submitButton}
                       title="Akceptuj ofertę"
                       onPress={onAccept}
-                      disabled={!selectedDeviceId}
+                      disabled={
+                        type === 'multi_split'
+                          ? selectedKompletId == null
+                          : !selectedDeviceId
+                      }
                     />
                   )}
                 </>
@@ -929,6 +1371,16 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     paddingHorizontal: 16,
+  },
+  loadingContainer: {
+    paddingVertical: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.grayerText,
   },
   submitButton: {
     width: '100%',
@@ -1026,6 +1478,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minWidth: 60,
   },
+  headerRadioColumnNarrow: {
+    width: 40,
+    minWidth: 40,
+    maxWidth: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioColumnNarrow: {
+    width: 40,
+    minWidth: 40,
+    maxWidth: 40,
+  },
+  radioColumnKomplet: {
+    width: 40,
+    minWidth: 40,
+    maxWidth: 40,
+    paddingLeft: 4,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    alignSelf: 'stretch',
+  },
+  kompletNameColumn: {
+    flex: 1,
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingRight: 8,
+    paddingLeft: 4,
+  },
   deviceColumn: {
     flex: 3,
   },
@@ -1044,9 +1524,28 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderColor: '#ddd',
   },
+  manufacturerHeaderComplet: {
+    backgroundColor: '#f5f5f5',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+  },
   manufacturerName: {
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  kompletSectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.grayerText,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 8,
+  },
+  tableRowComplet: {
+    flexDirection: 'row',
+    backgroundColor: 'white',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
   },
   tableRow: {
     flexDirection: 'row',
@@ -1064,6 +1563,9 @@ const styles = StyleSheet.create({
   },
   rightAlign: {
     textAlign: 'right',
+  },
+  priceColumnRight: {
+    alignSelf: 'flex-end',
   },
   infoMessage: {
     marginTop: 16,

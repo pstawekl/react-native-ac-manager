@@ -20,6 +20,103 @@ import { InvoiceFormScreenProps } from '../../navigation/types';
 import useClients, { Client } from '../../providers/ClientsProvider';
 import { InvoiceSettingsData } from '../Settings/SettingsInvoices';
 
+/**
+ * Generuje numer faktury na podstawie ustawień użytkownika
+ */
+function generateInvoiceNumber(
+  settings: InvoiceSettingsData,
+  issueDate: Date,
+  existingNumber?: string | null,
+): string {
+  if (existingNumber && existingNumber.trim() !== '') {
+    return existingNumber;
+  }
+
+  const prefix = settings.prefix || '';
+  const suffix = settings.suffix || '';
+  const numberingType = settings.numbering_type || 'yearly';
+
+  // Formatuj rok
+  const year = issueDate.getFullYear();
+  const yearStr =
+    settings.year_format === 'YY' ? String(year).slice(-2) : String(year);
+
+  // Formatuj miesiąc
+  const month = issueDate.getMonth() + 1;
+  let monthStr = '';
+  if (settings.month_format === 'short_name') {
+    const monthNames = [
+      'sty',
+      'lut',
+      'mar',
+      'kwi',
+      'maj',
+      'cze',
+      'lip',
+      'sie',
+      'wrz',
+      'paź',
+      'lis',
+      'gru',
+    ];
+    monthStr = monthNames[month - 1];
+  } else if (settings.month_format === 'full_name') {
+    const monthNames = [
+      'styczeń',
+      'luty',
+      'marzec',
+      'kwiecień',
+      'maj',
+      'czerwiec',
+      'lipiec',
+      'sierpień',
+      'wrzesień',
+      'październik',
+      'listopad',
+      'grudzień',
+    ];
+    monthStr = monthNames[month - 1];
+  } else {
+    monthStr =
+      settings.day_format === 'two_digit'
+        ? String(month).padStart(2, '0')
+        : String(month);
+  }
+
+  // Formatuj dzień
+  const day = issueDate.getDate();
+  const dayStr =
+    settings.day_format === 'two_digit'
+      ? String(day).padStart(2, '0')
+      : String(day);
+
+  // Buduj numer faktury (bez numeru sekwencyjnego - to będzie zrobione po stronie backendu)
+  const parts: string[] = [];
+  if (prefix) {
+    parts.push(prefix);
+  }
+
+  if (numberingType === 'yearly') {
+    parts.push(yearStr);
+  } else if (numberingType === 'monthly') {
+    parts.push(yearStr);
+    parts.push(monthStr);
+  } else {
+    // daily
+    parts.push(yearStr);
+    parts.push(monthStr);
+    parts.push(dayStr);
+  }
+
+  if (suffix) {
+    parts.push(suffix);
+  }
+
+  // Zwróć częściowy numer (bez numeru sekwencyjnego)
+  // Pełny numer będzie wygenerowany po stronie backendu
+  return parts.join('/').replace(/\/+/g, '/') || '';
+}
+
 type FormData = {
   type: number | null;
   number: string | null;
@@ -28,7 +125,9 @@ type FormData = {
   sellDate: Date | null;
   sellerName: string | null;
   sellerNip: string | null;
-  sellerAddress: string | null;
+  sellerStreet: string | null;
+  sellerBuilding: string | null;
+  sellerLocal: string | null;
   sellerCode: string | null;
   sellerCity: string | null;
   sellerAccount: string | null;
@@ -37,6 +136,8 @@ type FormData = {
   buyerName: string | null;
   buyerNip: string | null;
   buyerStreet: string | null;
+  buyerBuilding: string | null;
+  buyerLocal: string | null;
   buyerCode: string | null;
   buyerCity: string | null;
   paymentMethod: string | null;
@@ -53,7 +154,15 @@ type FormData = {
   }>;
 };
 
-function InvoiceDetailsForm({ control }: { control: Control<FormData> }) {
+function InvoiceDetailsForm({
+  control,
+  invoicePresets,
+  onIssueDateChange,
+}: {
+  control: Control<FormData>;
+  invoicePresets?: InvoiceSettingsData | null;
+  onIssueDateChange?: (date: Date) => void;
+}) {
   return (
     <View style={{ gap: 0 }}>
       <Dropdown
@@ -77,9 +186,7 @@ function InvoiceDetailsForm({ control }: { control: Control<FormData> }) {
           <DatePicker
             control={control}
             name="issueDate"
-            onChangeDate={date => {
-              // TODO nazwa faktury
-            }}
+            onChangeDate={onIssueDateChange}
           />
         </View>
       </View>
@@ -110,10 +217,22 @@ function SellerDetailsForm({ control }: { control: Control<FormData> }) {
       />
       <FormInput label="NIP" noPadding control={control} name="sellerNip" />
       <FormInput
-        label="Ulica i nr"
+        label="Ulica"
         noPadding
         control={control}
-        name="sellerAddress"
+        name="sellerStreet"
+      />
+      <FormInput
+        label="Numer budynku"
+        noPadding
+        control={control}
+        name="sellerBuilding"
+      />
+      <FormInput
+        label="Numer lokalu"
+        noPadding
+        control={control}
+        name="sellerLocal"
       />
       <FormInput
         label="Kod pocztowy"
@@ -201,10 +320,24 @@ function BuyerDetailsForm({
         disabled={Boolean(clientId)}
       />
       <FormInput
-        label="Adres"
+        label="Ulica"
         noPadding
         control={control}
         name="buyerStreet"
+        disabled={Boolean(clientId)}
+      />
+      <FormInput
+        label="Numer budynku"
+        noPadding
+        control={control}
+        name="buyerBuilding"
+        disabled={Boolean(clientId)}
+      />
+      <FormInput
+        label="Numer lokalu"
+        noPadding
+        control={control}
+        name="buyerLocal"
         disabled={Boolean(clientId)}
       />
       <FormInput
@@ -307,12 +440,14 @@ function ProductDetailsForm({
   setValue,
   onAddNewPosition,
   isLastPosition,
+  defaultVatRate,
 }: {
   control: Control<FormData>;
   position: number;
   setValue: (name: any, value: any) => void;
   onAddNewPosition?: () => void;
   isLastPosition?: boolean;
+  defaultVatRate?: string | null;
 }) {
   const quantity = useWatch({
     control,
@@ -332,28 +467,48 @@ function ProductDetailsForm({
     name: `positions.${position}.productBrutto` as any,
   });
 
+  // Ustaw domyślną stawkę VAT dla nowej pozycji jeśli nie jest ustawiona
+  useEffect(() => {
+    if (defaultVatRate && !vat) {
+      setValue(`positions.${position}.vat`, defaultVatRate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [position, defaultVatRate]);
+
   // Obliczanie wartości brutto – odroczone setValue, żeby nie kolidować z wpisywaniem
   // (setValue w tym samym cyklu co onChange nadpisywał wpisywane znaki w innych polach)
   useEffect(() => {
+    // Jeśli wszystkie wartości są puste, nie obliczaj
     if (
-      quantity === undefined &&
-      nettoPrice === undefined &&
-      vat === undefined
+      (quantity === undefined || quantity === null || quantity === '') &&
+      (nettoPrice === undefined || nettoPrice === null || nettoPrice === '') &&
+      (vat === undefined || vat === null || vat === '')
     ) {
       return;
     }
 
-    const qty = parseFloat(quantity?.toString() || '0') || 0;
-    const price = parseFloat(nettoPrice?.toString() || '0') || 0;
-    const vatRate = parseFloat(vat?.toString() || '0') || 0;
+    const qty = parseFloat(quantity?.toString().replace(',', '.') || '0') || 0;
+    const price =
+      parseFloat(nettoPrice?.toString().replace(',', '.') || '0') || 0;
+    const vatRate = parseFloat(vat?.toString().replace(',', '.') || '0') || 0;
 
-    const grossValue = qty * price * (1 + vatRate / 100);
-    const newBruttoValue = grossValue.toFixed(2);
+    // Obliczanie brutto: netto * (1 + VAT/100) lub netto + VAT
+    const netto = qty * price;
+    const vatAmount = netto * (vatRate / 100);
+    const grossValue = netto + vatAmount;
 
-    const currentBruttoStr = bruttoValue?.toString() || '0.00';
-    if (currentBruttoStr !== newBruttoValue) {
+    // Zaokrąglij do 2 miejsc po przecinku
+    const newBruttoValue = Math.round(grossValue * 100) / 100;
+    const newBruttoValueStr = newBruttoValue.toFixed(2);
+
+    const currentBruttoStr =
+      bruttoValue?.toString().replace(',', '.') || '0.00';
+    const currentBruttoNum = parseFloat(currentBruttoStr) || 0;
+
+    // Aktualizuj tylko jeśli wartość się zmieniła (z tolerancją dla zaokrągleń)
+    if (Math.abs(currentBruttoNum - newBruttoValue) > 0.01) {
       const timer = setTimeout(() => {
-        setValue(`positions.${position}.productBrutto`, newBruttoValue);
+        setValue(`positions.${position}.productBrutto`, newBruttoValueStr);
       }, 0);
       return () => clearTimeout(timer);
     }
@@ -408,6 +563,8 @@ function ProductDetailsForm({
             label="Stawka VAT"
             options={[
               { label: '23%', value: '23' },
+              { label: '12%', value: '12' },
+              { label: '8%', value: '8' },
               { label: '0%', value: '0' },
             ]}
             isBordered={false}
@@ -562,7 +719,7 @@ function DeliveryDetailsForm({
       <Dropdown
         name="paymentMethod"
         control={control}
-        label="Płatność"
+        label="Forma płatności"
         options={[
           { label: 'Przelew', value: 'transfer' },
           { label: 'Karta', value: 'card' },
@@ -646,6 +803,7 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
       defaultValues: {
         sellDate: new Date(),
         issueDate: new Date(),
+        prepaid: '0',
         positions: [
           {
             productName: null,
@@ -736,22 +894,84 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
 
   useEffect(() => {
     if (invoicePresets) {
-      setValue('sellerAccount', invoicePresets.iban);
-      setValue('sellerName', invoicePresets.issuer_name);
-      setValue('issuePlace', invoicePresets.place_of_issue);
-      setValue('issuedBy', invoicePresets.issuer_name);
-      setValue('issuedBy', invoicePresets.issuer_name);
-      setValue('paymentDate', invoicePresets.standard_payment_term);
+      // Ustawienia sprzedawcy - zawsze ustaw, nawet jeśli null (żeby nadpisać poprzednie wartości)
+      setValue('sellerAccount', invoicePresets.iban || null);
+      setValue('sellerName', invoicePresets.issuer_name || null);
+      setValue('issuedBy', invoicePresets.issuer_name || null);
+      setValue('issuePlace', invoicePresets.place_of_issue || null);
+
+      // Ustawienia płatności i statusu - tylko jeśli są zdefiniowane
+      if (
+        invoicePresets.standard_payment_term !== null &&
+        invoicePresets.standard_payment_term !== undefined
+      ) {
+        setValue('paymentDate', invoicePresets.standard_payment_term);
+      }
+      if (invoicePresets.default_status) {
+        setValue('status', invoicePresets.default_status);
+      }
+      if (invoicePresets.default_payment_method) {
+        setValue('paymentMethod', invoicePresets.default_payment_method);
+      }
+
+      // Domyślny typ faktury
+      if (invoicePresets.default_invoice_type) {
+        setValue('type', invoicePresets.default_invoice_type as any);
+      }
+
+      // Domyślna waluta
+      if (invoicePresets.default_currency) {
+        setValue('currency', invoicePresets.default_currency);
+      } else {
+        // Jeśli nie ma ustawionej domyślnej waluty, ustaw PLN jako domyślną
+        const currentCurrency = getValues('currency');
+        if (!currentCurrency) {
+          setValue('currency', 'PLN');
+        }
+      }
+
+      // Domyślna stawka VAT dla pierwszej pozycji (jeśli istnieje i nie jest ustawiona)
+      if (invoicePresets.default_vat_rate && positions.length > 0) {
+        const firstPosition = positions[0];
+        const currentVat = getValues(`positions.${firstPosition}.vat`);
+        if (!currentVat || currentVat === null || currentVat === '') {
+          setValue(
+            `positions.${firstPosition}.vat`,
+            invoicePresets.default_vat_rate,
+          );
+        }
+      }
+
+      // Generuj numer faktury na podstawie ustawień (tylko jeśli numer nie jest ustawiony)
+      const issueDate = getValues('issueDate') || new Date();
+      const currentNumber = getValues('number');
+      if (
+        (!currentNumber || currentNumber.trim() === '') &&
+        (invoicePresets.prefix ||
+          invoicePresets.suffix ||
+          invoicePresets.numbering_type)
+      ) {
+        const generatedNumber = generateInvoiceNumber(
+          invoicePresets,
+          issueDate instanceof Date ? issueDate : new Date(issueDate),
+          currentNumber,
+        );
+        if (generatedNumber) {
+          setValue('number', generatedNumber);
+        }
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoicePresets]);
 
   useEffect(() => {
     if (me) {
-      setValue('sellerNip', me.nip);
-      setValue('sellerAddress', me.ulica);
-      setValue('sellerCode', me.kod_pocztowy);
-      setValue('sellerCity', me.miasto);
+      setValue('sellerNip', me.nip || null);
+      setValue('sellerStreet', me.ulica || null);
+      setValue('sellerBuilding', me.numer_domu || null);
+      setValue('sellerLocal', me.mieszkanie || null);
+      setValue('sellerCode', me.kod_pocztowy || null);
+      setValue('sellerCity', me.miasto || null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
@@ -771,6 +991,8 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
         setValue('buyerName', getClientDisplayPrimary(client));
         setValue('buyerNip', client.nip ?? null);
         setValue('buyerStreet', client.ulica ?? null);
+        setValue('buyerBuilding', client.numer_domu ?? null);
+        setValue('buyerLocal', client.mieszkanie ?? null);
         setValue('buyerCode', client.kod_pocztowy ?? null);
         setValue('buyerCity', client.miasto ?? null);
         setValue('client', clientId);
@@ -785,8 +1007,17 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
   }, [clients, clientId]);
 
   const addNewPosition = () => {
-    const newPositions = [...positions, positions.length];
+    const newPositionIndex = positions.length;
+    const newPositions = [...positions, newPositionIndex];
     setPositions(newPositions);
+
+    // Ustaw domyślną stawkę VAT dla nowej pozycji jeśli jest zdefiniowana
+    if (invoicePresets?.default_vat_rate) {
+      setValue(
+        `positions.${newPositionIndex}.vat`,
+        invoicePresets.default_vat_rate,
+      );
+    }
   };
 
   const onSubmit = async (data: FormData) => {
@@ -798,14 +1029,18 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
       sellDate: 'Data sprzedaży',
       sellerName: 'Imię i nazwisko (Sprzedawca)',
       sellerNip: 'NIP (Sprzedawca)',
-      sellerAddress: 'Ulica i nr (Sprzedawca)',
+      sellerStreet: 'Ulica (Sprzedawca)',
+      sellerBuilding: 'Numer budynku (Sprzedawca)',
+      sellerLocal: 'Numer lokalu (Sprzedawca)',
       sellerCode: 'Kod pocztowy (Sprzedawca)',
       sellerCity: 'Miejscowość (Sprzedawca)',
       sellerAccount: 'Numer konta IBAN (Sprzedawca)',
       buyer: 'Typ nabywcy',
       buyerName: 'Firma / Imię i nazwisko (Nabywca)',
       buyerNip: 'NIP (Nabywca)',
-      buyerStreet: 'Adres (Nabywca)',
+      buyerStreet: 'Ulica (Nabywca)',
+      buyerBuilding: 'Numer budynku (Nabywca)',
+      buyerLocal: 'Numer lokalu (Nabywca)',
       buyerCode: 'Kod pocztowy (Nabywca)',
       buyerCity: 'Miasto (Nabywca)',
       paymentMethod: 'Płatność',
@@ -835,7 +1070,11 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
         key === 'comment' ||
         key === 'payment' ||
         key === 'client' ||
-        key === 'sellerAccount'
+        key === 'sellerAccount' ||
+        key === 'sellerBuilding' ||
+        key === 'sellerLocal' ||
+        key === 'buyerBuilding' ||
+        key === 'buyerLocal'
       ) {
         return;
       }
@@ -971,6 +1210,29 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
     control,
     name: 'currency',
   });
+  const watchedIssueDate = useWatch({
+    control,
+    name: 'issueDate',
+  });
+
+  const handleIssueDateChange = useCallback(
+    (date: Date) => {
+      // Regeneruj numer faktury gdy zmienia się data wystawienia
+      if (invoicePresets && date) {
+        const currentNumber = getValues('number');
+        if (!currentNumber || currentNumber.trim() === '') {
+          const generatedNumber = generateInvoiceNumber(
+            invoicePresets,
+            date instanceof Date ? date : new Date(date),
+          );
+          if (generatedNumber) {
+            setValue('number', generatedNumber);
+          }
+        }
+      }
+    },
+    [invoicePresets, getValues, setValue],
+  );
 
   return (
     <View style={styles.linearGradient}>
@@ -981,7 +1243,11 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
         />
 
         <ScrollView style={styles.scrollContainer}>
-          <InvoiceDetailsForm control={control} />
+          <InvoiceDetailsForm
+            control={control}
+            invoicePresets={invoicePresets}
+            onIssueDateChange={handleIssueDateChange}
+          />
           <Text style={styles.header}>Nabywca</Text>
           {clientsList && (
             <BuyerDetailsForm
@@ -1009,6 +1275,7 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
                   setValue={setValue}
                   onAddNewPosition={addNewPosition}
                   isLastPosition={index === positions.length - 1}
+                  defaultVatRate={invoicePresets?.default_vat_rate || null}
                 />
                 {positions.length > 1 && (
                   <Button

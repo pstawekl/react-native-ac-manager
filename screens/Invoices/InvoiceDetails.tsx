@@ -154,15 +154,29 @@ function SumBlock({
 function Form({ invoice }: { invoice: any }) {
   if (!invoice) return null;
 
+  const sellerStreetLine = [
+    invoice.seller_street,
+    invoice.seller_building,
+    invoice.seller_local ? `m. ${invoice.seller_local}` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
   const sellerAddress =
-    invoice.seller_street || invoice.seller_post_code || invoice.seller_city
-      ? `Ul. ${invoice.seller_street || ''}, ${invoice.seller_post_code || ''
-        } ${invoice.seller_city || ''}`.trim()
+    sellerStreetLine || invoice.seller_post_code || invoice.seller_city
+      ? `Ul. ${sellerStreetLine || ''}, ${invoice.seller_post_code || ''} ${invoice.seller_city || ''
+        }`.trim()
       : 'Brak danych';
 
+  const buyerStreetLine = [
+    invoice.buyer_street,
+    invoice.buyer_building,
+    invoice.buyer_local ? `m. ${invoice.buyer_local}` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
   const buyerAddress =
-    invoice.buyer_street || invoice.buyer_post_code || invoice.buyer_city
-      ? `Ul. ${invoice.buyer_street || ''}, ${invoice.buyer_post_code || ''} ${invoice.buyer_city || ''
+    buyerStreetLine || invoice.buyer_post_code || invoice.buyer_city
+      ? `Ul. ${buyerStreetLine || ''}, ${invoice.buyer_post_code || ''} ${invoice.buyer_city || ''
         }`.trim()
       : 'Brak danych';
 

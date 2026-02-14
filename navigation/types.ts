@@ -77,6 +77,12 @@ export type SettingsParamList = {
   Texts: undefined;
 };
 
+export type MultisplitKompletPayload = {
+  producent: string;
+  internal_ids: number[];
+  aggregate_ids: number[];
+};
+
 export type OffersParamList = {
   Menu: {
     tab?: string;
@@ -99,6 +105,20 @@ export type OffersParamList = {
     offerName?: string;
     mode?: string;
     isTemplate?: boolean;
+    multisplit_komplety?: MultisplitKompletPayload[];
+  };
+  MultisplitKompletyList: {
+    installationId: number | null;
+    offerName?: string;
+    isTemplate?: boolean;
+    komplety?: MultisplitKompletPayload[];
+    addedKomplet?: MultisplitKompletPayload;
+  };
+  MultisplitAddKomplet: {
+    installationId: number | null;
+    offerName?: string;
+    isTemplate?: boolean;
+    existingKomplety: MultisplitKompletPayload[];
   };
   Overview: {
     type: string;
@@ -110,6 +130,7 @@ export type OffersParamList = {
     offerId?: number;
     isTemplate?: string | boolean;
     offerName?: string;
+    multisplit_komplety?: MultisplitKompletPayload[];
     deviceSurcharges?: {
       [deviceId: number]: {
         surcharges: Array<{

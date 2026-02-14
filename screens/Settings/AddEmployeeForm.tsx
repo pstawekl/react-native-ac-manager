@@ -11,8 +11,8 @@ import { ButtonGroup, SubmitButton } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import ConfirmationOverlay from '../../components/ConfirmationOverlay';
 import Container from '../../components/Container';
-import UserIcon from '../../components/icons/UserIcon';
 import { Dropdown, FormInput } from '../../components/Input';
+import UserIcon from '../../components/icons/UserIcon';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import useStaff, { Team } from '../../providers/StaffProvider';
@@ -22,9 +22,11 @@ type EmployeeData = {
   password: string;
   first_name: string;
   last_name: string;
-  street: string;
-  city: string;
-  code: string;
+  ulica: string;
+  numer_domu: string;
+  mieszkanie: string;
+  miasto: string;
+  kod_pocztowy: string;
   phone: string;
   group_id: number;
   type: string;
@@ -140,9 +142,11 @@ function AddEmployeeForm({ navigation, route }: any): JSX.Element {
     defaultValues: {
       first_name: employee?.first_name ?? '',
       last_name: employee?.last_name ?? '',
-      street: employee?.ulica ?? '',
-      code: employee?.kod_pocztowy ?? '',
-      city: employee?.miasto ?? '',
+      ulica: employee?.ulica ?? '',
+      numer_domu: employee?.numer_domu ?? '',
+      mieszkanie: employee?.mieszkanie ?? '',
+      miasto: employee?.miasto ?? '',
+      kod_pocztowy: employee?.kod_pocztowy ?? '',
       email: employee?.email ?? '',
       phone: employee?.numer_telefonu ?? '',
       group_id: employee?.group_id ?? undefined,
@@ -157,7 +161,15 @@ function AddEmployeeForm({ navigation, route }: any): JSX.Element {
 
   const onSubmit = async (data: EmployeeData) => {
     if (!employee) {
-      const response = await execute(data);
+      const payload = {
+        ...data,
+        street: data.ulica,
+        numer_domu: data.numer_domu,
+        mieszkanie: data.mieszkanie,
+        city: data.miasto,
+        code: data.kod_pocztowy,
+      };
+      const response = await execute(payload);
       if (response?.Status === 'User Created') {
         toggleOverlay();
         Alert.alert('Pracownik dodany.');
@@ -171,6 +183,11 @@ function AddEmployeeForm({ navigation, route }: any): JSX.Element {
     } else {
       await editEmployee({
         ...data,
+        ulica: data.ulica,
+        numer_domu: data.numer_domu,
+        mieszkanie: data.mieszkanie,
+        kod_pocztowy: data.kod_pocztowy,
+        miasto: data.miasto,
         group: data.group_id,
         user_id: employee.ac_user,
       });
@@ -242,6 +259,40 @@ function AddEmployeeForm({ navigation, route }: any): JSX.Element {
                   isBordered
                   isThin
                 />
+                <Text style={styles.groupTitle}>Adres</Text>
+                <Divider style={styles.divider} />
+                <FormInput
+                  name="ulica"
+                  control={control}
+                  label="Ulica"
+                  noPadding
+                />
+                <FormInput
+                  name="numer_domu"
+                  control={control}
+                  label="Numer budynku"
+                  noPadding
+                />
+                <FormInput
+                  name="mieszkanie"
+                  control={control}
+                  label="Numer lokalu"
+                  noPadding
+                />
+                <View style={styles.formContainer}>
+                  <FormInput
+                    name="kod_pocztowy"
+                    control={control}
+                    label="Kod pocztowy"
+                    noPadding
+                  />
+                  <FormInput
+                    name="miasto"
+                    control={control}
+                    label="Miasto"
+                    noPadding
+                  />
+                </View>
                 {teams && (
                   <TeamsList
                     teams={teams}

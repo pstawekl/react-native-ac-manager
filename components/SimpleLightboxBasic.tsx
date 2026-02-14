@@ -1,4 +1,4 @@
-import { CheckBox, Text } from '@rneui/themed';
+import { Text } from '@rneui/themed';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -6,6 +6,7 @@ import {
   Dimensions,
   Image,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -34,12 +35,14 @@ import ArrowLeftIcon from './icons/ArrowLeftIcon';
 import CloseIcon from './icons/CloseIcon';
 import EditIcon from './icons/EditIcon';
 import ImageIcon from './icons/ImageIcon';
+import StarIcon from './icons/StarIcon';
 import TrashIcon from './icons/TrashIcon';
 
 type Photo = {
   id: number;
   image: string;
   tags: number[];
+  is_favorite?: boolean;
 };
 
 type Tag = {
@@ -102,7 +105,7 @@ export default function SimpleLightboxBasic({
   );
   const [newTagName, setNewTagName] = useState('');
   const [isEditEnabled, setIsTagInputVisible] = useState(false);
-  const [isPublic, setIsPublic] = useState(photo?.is_public ?? false);
+  const [isFavorite, setIsFavorite] = useState(photo?.is_favorite ?? false);
 
   const [currentImageUri, setCurrentImageUri] = useState(imageUri);
   const [cropperVisible, setCropperVisible] = useState(false);
@@ -113,27 +116,24 @@ export default function SimpleLightboxBasic({
       return null;
     }
 
-    const maxHeight = screenHeight * 0.5; // Half of screen height
-    const aspectRatio = imageDimensions.width / imageDimensions.height;
-
-    if (aspectRatio <= 0 || !Number.isFinite(aspectRatio)) {
+    const imgW = imageDimensions.width;
+    const imgH = imageDimensions.height;
+    if (
+      imgW <= 0 ||
+      imgH <= 0 ||
+      !Number.isFinite(imgW) ||
+      !Number.isFinite(imgH)
+    ) {
       return null;
     }
 
-    const calculatedWidth = maxHeight * aspectRatio;
-
-    // If calculated width exceeds screen width, scale down proportionally
-    if (calculatedWidth > screenWidth * 0.9) {
-      const maxWidth = screenWidth * 3;
-      return {
-        width: maxWidth,
-        height: maxWidth / aspectRatio,
-      };
-    }
-
+    // Zdjęcie dopasowane do 90% szerokości/wysokości ekranu (zachowane proporcje)
+    const maxW = screenWidth * 0.9;
+    const maxH = screenHeight * 0.9;
+    const scale = Math.min(maxW / imgW, maxH / imgH, 1);
     return {
-      width: calculatedWidth,
-      height: maxHeight,
+      width: imgW * scale,
+      height: imgH * scale,
     };
   }, [imageDimensions]);
 
@@ -362,6 +362,57 @@ export default function SimpleLightboxBasic({
     baseTranslateY.value = 0;
   }, [currentImageUri, baseTranslateX, baseTranslateY, translateX, translateY]);
 
+  // Ctrl + scroll zoom on web (emulator / desktop)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !visible) {
+      return;
+    }
+    const g = globalThis as unknown as {
+      document?: {
+        addEventListener: (
+          a: string,
+          b: (e: unknown) => void,
+          opts: { passive: boolean },
+        ) => void;
+        removeEventListener: (a: string, b: (e: unknown) => void) => void;
+      };
+    };
+    const doc = g.document;
+    if (!doc) return;
+    const handler = (e: unknown) => {
+      const ev = e as {
+        ctrlKey?: boolean;
+        deltaY?: number;
+        preventDefault?: () => void;
+      };
+      if (!ev.ctrlKey) return;
+      ev.preventDefault?.();
+      const delta = (ev.deltaY ?? 0) > 0 ? -0.2 : 0.2;
+      const next = Math.max(
+        MIN_SCALE,
+        Math.min(MAX_SCALE, scale.value + delta),
+      );
+      scale.value = next;
+      baseScale.value = next;
+      if (next <= MIN_SCALE) {
+        translateX.value = 0;
+        translateY.value = 0;
+        baseTranslateX.value = 0;
+        baseTranslateY.value = 0;
+      }
+    };
+    doc.addEventListener('wheel', handler, { passive: false });
+    return () => doc.removeEventListener('wheel', handler);
+  }, [
+    visible,
+    scale,
+    baseScale,
+    translateX,
+    translateY,
+    baseTranslateX,
+    baseTranslateY,
+  ]);
+
   const { execute: createTag, loading: creatingTag } = useApi<
     DefaultSaveResponse,
     { name: string }
@@ -380,6 +431,13 @@ export default function SimpleLightboxBasic({
     path: 'edit_photo',
   });
 
+  const { execute: toggleFavoriteApi } = useApi<
+    { status: string; is_favorite: boolean },
+    { photo_id: number }
+  >({
+    path: 'photo_toggle_favorite',
+  });
+
   useEffect(() => {
     setAvailableTags(tags ?? contextTags ?? []);
   }, [tags, contextTags]);
@@ -389,8 +447,8 @@ export default function SimpleLightboxBasic({
   }, [photo?.id, photo?.tags]);
 
   useEffect(() => {
-    setIsPublic(photo?.is_public ?? false);
-  }, [photo?.id, photo?.is_public]);
+    setIsFavorite(photo?.is_favorite ?? false);
+  }, [photo?.id, photo?.is_favorite]);
 
   useEffect(() => {
     if (!visible) {
@@ -428,7 +486,7 @@ export default function SimpleLightboxBasic({
         }
 
         const response = await getTags?.();
-        if (Array.isArray(response?.tag_list)) {
+        if (response && Array.isArray(response.tag_list)) {
           updatedTagPool = response.tag_list;
           setAvailableTags(response.tag_list);
         } else if (contextTags) {
@@ -540,35 +598,25 @@ export default function SimpleLightboxBasic({
     }
   };
 
-  const handlePublicChange = async (newIsPublic: boolean) => {
-    if (!photo?.id || isSavingTags) {
+  const handleToggleFavorite = async () => {
+    if (!photo?.id) {
       return;
     }
 
     try {
-      const result = await updatePhoto({
-        data: {
-          photo_id: photo.id,
-          is_public: newIsPublic,
-        },
+      const result = await toggleFavoriteApi({
+        method: 'POST',
+        data: { photo_id: photo.id },
       });
 
-      if (!result) {
-        // Wróć do poprzedniej wartości w przypadku błędu
-        setIsPublic(!newIsPublic);
-        return;
-      }
-
-      // Aktualizuj stan tylko jeśli API się powiodło
-      setIsPublic(newIsPublic);
-
-      if (getPhotos) {
-        await getPhotos();
+      if (result && typeof result.is_favorite === 'boolean') {
+        setIsFavorite(result.is_favorite);
+        if (getPhotos) {
+          await getPhotos();
+        }
       }
     } catch (error) {
-      // Wróć do poprzedniej wartości w przypadku błędu
-      setIsPublic(!newIsPublic);
-      Alert.alert('Błąd', 'Nie udało się zmienić ustawień publiczności.');
+      Alert.alert('Błąd', 'Nie udało się zmienić ulubionych.');
     }
   };
 
@@ -592,7 +640,7 @@ export default function SimpleLightboxBasic({
   };
 
   const fallbackSize = useMemo(
-    () => ({ width: screenWidth, height: screenHeight * 0.5 }),
+    () => ({ width: screenWidth, height: screenHeight }),
     [],
   );
   const imageSize = displaySize ?? fallbackSize;
@@ -614,6 +662,19 @@ export default function SimpleLightboxBasic({
               onPress={onClose}
               icon={<ArrowLeftIcon color={Colors.white} size={24} />}
             />
+            {photo?.id ? (
+              <IconButton
+                withoutBackground
+                onPress={handleToggleFavorite}
+                icon={
+                  <StarIcon
+                    color={Colors.white}
+                    size={24}
+                    filled={isFavorite}
+                  />
+                }
+              />
+            ) : null}
           </View>
 
           <View style={styles.body}>
@@ -640,7 +701,7 @@ export default function SimpleLightboxBasic({
                           height: imageSize.height,
                         },
                       ]}
-                      resizeMode="contain"
+                      resizeMode="cover"
                       onLoad={handleImageLoad}
                       onError={() =>
                         Alert.alert(
@@ -696,13 +757,6 @@ export default function SimpleLightboxBasic({
                     </View>
                   </View>
 
-                  <View style={styles.ownerInfo}>
-                    <Text style={styles.ownerText}>
-                      Zdjęcie użytkownika {photoOwner?.first_name}{' '}
-                      {photoOwner?.last_name}
-                    </Text>
-                  </View>
-
                   {currentPhotoTags.length > 0 ? (
                     <ScrollView
                       horizontal
@@ -730,20 +784,6 @@ export default function SimpleLightboxBasic({
                     </ScrollView>
                   ) : (
                     <Text style={styles.noTagsText}>Brak tagów</Text>
-                  )}
-
-                  {isEditEnabled && (
-                    <View style={styles.publicCheckboxContainer}>
-                      <CheckBox
-                        title="Publiczne"
-                        checked={isPublic}
-                        onPress={() => handlePublicChange(!isPublic)}
-                        containerStyle={styles.checkboxContainer}
-                        textStyle={styles.checkboxText}
-                        checkedColor={Colors.primary}
-                        uncheckedColor={Colors.gray}
-                      />
-                    </View>
                   )}
 
                   {isEditEnabled && (
@@ -883,6 +923,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
     width: '100%',
+    overflow: 'hidden',
   },
   pinchContainer: {
     justifyContent: 'center',
@@ -1047,20 +1088,5 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.blackHalfOpacity,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  publicCheckboxContainer: {
-    marginBottom: 15,
-    paddingHorizontal: 5,
-  },
-  checkboxContainer: {
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    padding: 0,
-    margin: 0,
-  },
-  checkboxText: {
-    color: Colors.black,
-    fontSize: 14,
-    fontWeight: '500',
   },
 });

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Input, Text } from '@rneui/themed';
-import React, { Dispatch, SetStateAction, useState } from 'react';
+import React, { Dispatch, ReactNode, SetStateAction, useState } from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
 
 import Colors from '../consts/Colors';
@@ -17,6 +17,7 @@ function ButtonsHeader({
   onChangeSearchValue,
   onBackPress,
   onFilterPress,
+  filterIcon,
   style,
   title,
 }: {
@@ -25,6 +26,7 @@ function ButtonsHeader({
   onChangeSearchValue?: Dispatch<SetStateAction<string>>;
   onBackPress?: () => void;
   onFilterPress?: () => void;
+  filterIcon?: ReactNode;
   style?: ViewStyle;
   title?: string;
 }) {
@@ -99,7 +101,7 @@ function ButtonsHeader({
           <IconButton
             withoutBackground
             onPress={onFilterPress}
-            icon={<FilterIcon color={Colors.black} />}
+            icon={filterIcon ?? <FilterIcon color={Colors.black} />}
             style={styles.filterButton}
           />
         )}

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
 import { Text } from '@rneui/themed';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -13,9 +13,12 @@ import Spinner from 'react-native-loading-spinner-overlay';
 
 import Colors from '../consts/Colors';
 import { getImageUrl } from '../helpers/image';
-import { GalleryScreenProps } from '../navigation/types';
 import useApi from '../hooks/useApi';
-import useGallery, { PhotosResponse, Tag, TagsResponse } from '../providers/GalleryProvider';
+import { GalleryScreenProps } from '../navigation/types';
+import useGallery, {
+  PhotosResponse,
+  Tag
+} from '../providers/GalleryProvider';
 import useStaff from '../providers/StaffProvider';
 import ContextMenu from './ContextMenu';
 import SimpleLightboxBasic from './SimpleLightboxBasic';
@@ -26,7 +29,7 @@ type GalleryContentProps = {
   navigation: GalleryScreenProps['navigation'];
   tagQuery: string;
   onTagQueryChange: (query: string) => void;
-  galleryType: 'public' | 'my_photos' | 'device_gallery';
+  galleryType: 'public' | 'favorites' | 'my_photos' | 'device_gallery';
 };
 
 function GalleryContent({
@@ -117,10 +120,13 @@ function GalleryContent({
   const { employees } = useStaff();
 
   // Własne API dla zdjęć - każdy GalleryContent ma własny stan
-  const { execute: getPhotosApi, loading: photosLoading, result: photosResponse } =
-    useApi<PhotosResponse, { gallery_type?: string }>({
-      path: 'photo_list',
-    });
+  const {
+    execute: getPhotosApi,
+    loading: photosLoading,
+    result: photosResponse,
+  } = useApi<PhotosResponse, { gallery_type?: string }>({
+    path: 'photo_list',
+  });
 
   // Stan lokalny dla zdjęć
   const [photos, setPhotos] = useState<PhotosResponse['zdjecia'] | null>(null);

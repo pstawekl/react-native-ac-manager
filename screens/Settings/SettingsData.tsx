@@ -9,9 +9,7 @@ import ButtonsHeader from '../../components/ButtonsHeader';
 import { FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
-import {
-  SettingsDataScreenProps,
-} from '../../navigation/types';
+import { SettingsDataScreenProps } from '../../navigation/types';
 
 type FormData = {
   nazwa_firmy: string | null;
@@ -19,6 +17,8 @@ type FormData = {
   first_name: string | null;
   last_name: string | null;
   ulica: string | null;
+  numer_domu: string | null;
+  mieszkanie: string | null;
   kod_pocztowy: string | null;
   miasto: string | null;
   email: string | null;
@@ -32,6 +32,8 @@ type MyDataKey =
   | 'first_name'
   | 'last_name'
   | 'ulica'
+  | 'numer_domu'
+  | 'mieszkanie'
   | 'kod_pocztowy'
   | 'miasto'
   | 'email'
@@ -76,6 +78,8 @@ function SettingsData({ navigation }: SettingsDataScreenProps) {
         first_name: data.first_name,
         last_name: data.last_name,
         ulica: data.ulica,
+        numer_domu: data.numer_domu,
+        mieszkanie: data.mieszkanie,
         kod_pocztowy: data.kod_pocztowy,
         miasto: data.miasto,
         numer_telefonu: data.numer_telefonu,
@@ -143,7 +147,19 @@ function SettingsData({ navigation }: SettingsDataScreenProps) {
               <FormInput
                 name="ulica"
                 control={control}
-                label="Ulica / Nr domu"
+                label="Ulica"
+                noPadding
+              />
+              <FormInput
+                name="numer_domu"
+                control={control}
+                label="Numer budynku"
+                noPadding
+              />
+              <FormInput
+                name="mieszkanie"
+                control={control}
+                label="Numer lokalu"
                 noPadding
               />
             </View>
