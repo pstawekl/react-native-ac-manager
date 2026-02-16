@@ -21,6 +21,7 @@ type Photo = {
   klient: number;
   tags: number[];
   is_favorite?: boolean;
+  is_device_gallery?: boolean;
 };
 
 export type PhotosResponse = {

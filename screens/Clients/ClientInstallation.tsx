@@ -1430,6 +1430,12 @@ export function MontageProtocolForm({
               setSplitManufacturer(String(dev.producent));
             }
           }
+          if (dev.typ != null) {
+            setValue('deviceType', String(dev.typ));
+            if (typeof setDeviceType === 'function') {
+              setDeviceType(String(dev.typ));
+            }
+          }
           if (typeof setUnitName === 'function') {
             setUnitName(dev.nazwa_modelu ?? '');
           }
@@ -2661,6 +2667,28 @@ export default function ClientInstallation({
             ? (first as any).id
             : first;
         setValue('device_split', deviceId);
+        // Jeśli first jest obiektem urządzenia, wyciągnij producent i typ
+        if (
+          typeof first === 'object' &&
+          first !== null &&
+          ('moc_chlodnicza' in first ||
+            'moc_grzewcza' in first ||
+            'producent' in first)
+        ) {
+          const dev = first as any;
+          if (dev.producent != null) {
+            setValue('deviceManufacturer', String(dev.producent));
+            if (typeof setSplitManufacturer === 'function') {
+              setSplitManufacturer(String(dev.producent));
+            }
+          }
+          if (dev.typ != null) {
+            setValue('deviceType', String(dev.typ));
+            if (typeof setDeviceType === 'function') {
+              setDeviceType(String(dev.typ));
+            }
+          }
+        }
       }
       if (
         montageData.devices_multi_split &&

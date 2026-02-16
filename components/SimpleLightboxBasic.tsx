@@ -19,6 +19,7 @@ import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler';
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -59,6 +60,7 @@ type SimpleLightboxBasicProps = {
   photoOwner?: Employee;
   tags?: Tag[];
   onDeletePhoto?: (photoId: number) => Promise<void> | void;
+  onFavoriteChange?: () => void;
   hideTagsSection?: boolean;
   hideEditButton?: boolean;
 };
@@ -84,6 +86,7 @@ export default function SimpleLightboxBasic({
   photoOwner,
   tags,
   onDeletePhoto,
+  onFavoriteChange,
   hideTagsSection = false,
   hideEditButton = false,
 }: SimpleLightboxBasicProps) {
@@ -290,15 +293,25 @@ export default function SimpleLightboxBasic({
     () =>
       Gesture.Tap()
         .maxDuration(250)
+        .numberOfTaps(1)
+        .maxDistance(10) // Maksymalna odległość dla tap - jeśli użytkownik przesunie więcej niż 10px, to nie jest tap
         .onStart(() => {
-          onClose();
+          runOnJS(onClose)();
         }),
     [onClose],
   );
 
+  // Tap i pan są exclusive - jeśli użytkownik przesuwa, tap nie działa
+  // Pinch może działać jednocześnie z pan
+  const tapOrPanGesture = useMemo(
+    () => Gesture.Exclusive(tapGesture, panGesture),
+    [tapGesture, panGesture],
+  );
+
+  // Pinch może działać jednocześnie z tap/pan
   const combinedGesture = useMemo(
-    () => Gesture.Race(pinchGesture, panGesture, tapGesture),
-    [pinchGesture, panGesture, tapGesture],
+    () => Gesture.Simultaneous(pinchGesture, tapOrPanGesture),
+    [pinchGesture, tapOrPanGesture],
   );
 
   // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -611,6 +624,7 @@ export default function SimpleLightboxBasic({
 
       if (result && typeof result.is_favorite === 'boolean') {
         setIsFavorite(result.is_favorite);
+        onFavoriteChange?.();
         if (getPhotos) {
           await getPhotos();
         }

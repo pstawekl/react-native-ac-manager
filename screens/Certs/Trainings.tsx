@@ -10,10 +10,12 @@ import Spinner from 'react-native-loading-spinner-overlay/lib';
 import ConfirmationOverlay from '../../components/ConfirmationOverlay';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import Colors from '../../consts/Colors';
+import { Scopes } from '../../consts/Permissions';
 import useApi, { ASSETS_BASE_URL } from '../../hooks/useApi';
 import { CertificatesScreenProps } from '../../navigation/types';
 import useAuth from '../../providers/AuthProvider';
 import useCerts from '../../providers/CertsProvider';
+import usePermission from '../../providers/PermissionProvider';
 
 function RowRightContent({ onDelete }: { onDelete: () => void }) {
   return (
@@ -40,6 +42,7 @@ export default function Trainings() {
     useNavigation<CertificatesScreenProps['navigation']>();
   const { trainings, getTrainings, trainingsLoading } = useCerts();
   const { user, isUserAssembler } = useAuth();
+  const { hasAccess } = usePermission();
   const { execute: deleteTraining } = useApi({
     path: 'szkolenie_delete',
   });
@@ -90,10 +93,12 @@ export default function Trainings() {
                 key={item.id}
                 containerStyle={styles.itemContainer}
                 rightContent={
-                  <RowRightContent onDelete={() => onDelete(item.id)} />
+                  hasAccess(Scopes.manageDocumentation) ? (
+                    <RowRightContent onDelete={() => onDelete(item.id)} />
+                  ) : undefined
                 }
                 leftWidth={80}
-                rightWidth={80}
+                rightWidth={hasAccess(Scopes.manageDocumentation) ? 80 : 0}
                 onPress={openTrainingLink}
               >
                 <Avatar
@@ -129,10 +134,12 @@ export default function Trainings() {
         title="Czy na pewno chcesz usunąć szkolenie ?"
       />
 
-      <FloatingActionButton
-        onPress={() => navigate('AddTraining')}
-        backgroundColor={Colors.primary}
-      />
+      {hasAccess(Scopes.manageDocumentation) && (
+        <FloatingActionButton
+          onPress={() => navigate('AddTraining')}
+          backgroundColor={Colors.primary}
+        />
+      )}
     </View>
   );
 }

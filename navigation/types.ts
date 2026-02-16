@@ -1,7 +1,7 @@
 import { DrawerScreenProps } from '@react-navigation/drawer';
 import {
-  CompositeScreenProps,
-  NavigatorScreenParams,
+    CompositeScreenProps,
+    NavigatorScreenParams,
 } from '@react-navigation/native';
 import { StackScreenProps } from '@react-navigation/stack';
 import { Client } from '../providers/ClientsProvider';
@@ -50,7 +50,7 @@ export type MainParamList = {
 export type GalleryParamList = {
   Gallery: undefined;
   Edit: { uri: string };
-  AddPhoto: undefined;
+  AddPhoto: { gallery_type?: 'device_gallery' };
 };
 
 export type InvoicesParamList = {
@@ -209,6 +209,13 @@ export type CatalogsParamList = {
   AddCatalog: undefined;
   AddPriceList: undefined;
   AddFlyer: undefined;
+  EditCatalog: { catalog: import('../providers/CatalogsProvider').Catalog };
+  EditPriceList: {
+   ;
+ 
+    priceList: import('../providers/CatalogsProvider').PriceListItem;
+  };
+  EditFlyer: { flyer: import('../providers/CatalogsProvider').Flyer };
 };
 
 export type ChatParamList = {
@@ -361,5 +368,20 @@ export type CatalogsAddPriceListScreenProps = CompositeScreenProps<
 
 export type CatalogsAddFlyerScreenProps = CompositeScreenProps<
   StackScreenProps<CatalogsParamList, 'AddFlyer'>,
+  DrawerScreenProps<MainParamList, 'Catalogs'>
+>;
+
+export type CatalogsEditCatalogScreenProps = CompositeScreenProps<
+  StackScreenProps<CatalogsParamList, 'EditCatalog'>,
+  DrawerScreenProps<MainParamList, 'Catalogs'>
+>;
+
+export type CatalogsEditPriceListScreenProps = CompositeScreenProps<
+  StackScreenProps<CatalogsParamList, 'EditPriceList'>,
+  DrawerScreenProps<MainParamList, 'Catalogs'>
+>;
+
+export type CatalogsEditFlyerScreenProps = CompositeScreenProps<
+  StackScreenProps<CatalogsParamList, 'EditFlyer'>,
   DrawerScreenProps<MainParamList, 'Catalogs'>
 >;

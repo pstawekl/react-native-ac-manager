@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   SafeAreaView,
   StyleSheet,
@@ -12,58 +12,96 @@ import Tabs from '../../components/Tabs';
 import CloseIcon from '../../components/icons/CloseIcon';
 import SearchIcon from '../../components/icons/SearchIcon';
 import Colors from '../../consts/Colors';
+import { Scopes } from '../../consts/Permissions';
 import { GalleryScreenProps } from '../../navigation/types';
+import usePermission from '../../providers/PermissionProvider';
 
 function GalleryScreen({ navigation }: GalleryScreenProps) {
+  const { hasAccess } = usePermission();
   const [isFilterVisible, setIsFilterVisible] = useState(false);
   const [tagQuery, setTagQuery] = useState('');
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
 
   const handleFilterPress = () => {
     setIsFilterVisible(!isFilterVisible);
   };
 
-  const handleTagQueryChange = (query: string) => {
+  const handleTagQueryChange = useCallback((query: string) => {
     setTagQuery(query);
-  };
+  }, []);
 
-  const tabItems = [
-    {
-      title: 'Ulubione',
-      component: (
-        <GalleryContent
-          navigation={navigation}
-          tagQuery={tagQuery}
-          onTagQueryChange={handleTagQueryChange}
-          galleryType="favorites"
-        />
-      ),
-      onAddPress: () => navigation.navigate('AddPhoto'),
-    },
-    {
-      title: 'Moje zdjęcia',
-      component: (
-        <GalleryContent
-          navigation={navigation}
-          tagQuery={tagQuery}
-          onTagQueryChange={handleTagQueryChange}
-          galleryType="my_photos"
-        />
-      ),
-      onAddPress: () => navigation.navigate('AddPhoto'),
-    },
-    {
-      title: 'Galeria urządzeń',
-      component: (
-        <GalleryContent
-          navigation={navigation}
-          tagQuery={tagQuery}
-          onTagQueryChange={handleTagQueryChange}
-          galleryType="device_gallery"
-        />
-      ),
-      onAddPress: () => navigation.navigate('AddPhoto'),
-    },
-  ];
+  const renderFavorites = useCallback(
+    ({ isActive }: { isActive: boolean }) => (
+      <GalleryContent
+        navigation={navigation}
+        tagQuery={tagQuery}
+        onTagQueryChange={handleTagQueryChange}
+        galleryType="favorites"
+        isActive={isActive}
+      />
+    ),
+    [navigation, tagQuery, handleTagQueryChange],
+  );
+
+  const renderMyPhotos = useCallback(
+    ({ isActive }: { isActive: boolean }) => (
+      <GalleryContent
+        navigation={navigation}
+        tagQuery={tagQuery}
+        onTagQueryChange={handleTagQueryChange}
+        galleryType="my_photos"
+        isActive={isActive}
+      />
+    ),
+    [navigation, tagQuery, handleTagQueryChange],
+  );
+
+  const renderDeviceGallery = useCallback(
+    ({ isActive }: { isActive: boolean }) => (
+      <GalleryContent
+        navigation={navigation}
+        tagQuery={tagQuery}
+        onTagQueryChange={handleTagQueryChange}
+        galleryType="device_gallery"
+        isActive={isActive}
+      />
+    ),
+    [navigation, tagQuery, handleTagQueryChange],
+  );
+
+  const tabItems = useMemo(
+    () => [
+      {
+        title: 'Ulubione',
+        component: renderFavorites,
+        onAddPress: () =>
+          navigation.navigate('AddPhoto', { gallery_type: undefined }),
+      },
+      {
+        title: 'Moje zdjęcia',
+        component: renderMyPhotos,
+        onAddPress: () =>
+          navigation.navigate('AddPhoto', { gallery_type: undefined }),
+      },
+      {
+        title: 'Galeria urządzeń',
+        component: renderDeviceGallery,
+        onAddPress: hasAccess(Scopes.manageDeviceGallery)
+          ? () =>
+            navigation.navigate('AddPhoto', {
+              gallery_type: 'device_gallery',
+            })
+          : undefined,
+      },
+    ],
+    [
+      renderFavorites,
+      renderMyPhotos,
+      renderDeviceGallery,
+      navigation,
+      hasAccess,
+    ],
+  );
 
   const filterContent = isFilterVisible ? (
     <View style={styles.filterContainer}>
@@ -105,6 +143,7 @@ function GalleryScreen({ navigation }: GalleryScreenProps) {
         onFilterPress={handleFilterPress}
         headerFilterIcon={<SearchIcon color={Colors.black} />}
         headerContent={filterContent}
+        onTabChange={setActiveTabIndex}
       />
     </SafeAreaView>
   );

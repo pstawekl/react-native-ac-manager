@@ -1,3 +1,5 @@
+import { useRoute } from '@react-navigation/native';
+import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
@@ -5,46 +7,57 @@ import { ButtonGroup } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import Container from '../../components/Container';
 import DatePicker from '../../components/DatePicker';
-import FilePicker, { File } from '../../components/FilePicker';
 import { Dropdown, FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
-import { CatalogsAddPriceListScreenProps } from '../../navigation/types';
-import useCatalogs from '../../providers/CatalogsProvider';
+import { CatalogsEditPriceListScreenProps } from '../../navigation/types';
+import useCatalogs, { PriceListItem } from '../../providers/CatalogsProvider';
 
 type PriceListData = {
-  file: File | null;
-  name: string;
   is_active: boolean;
+  name: string;
   od?: Date;
 };
 
-function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
-  const { control, handleSubmit } = useForm<PriceListData>({
+function EditPriceListForm({ navigation }: CatalogsEditPriceListScreenProps) {
+  const route = useRoute();
+  const { priceList } = (route.params as { priceList: PriceListItem }) || {};
+
+  const { control, handleSubmit, setValue } = useForm<PriceListData>({
     defaultValues: {
-      file: null,
-      is_active: true,
-      name: 'Cennik',
-      od: undefined,
+      is_active: priceList?.is_active ?? true,
+      name: priceList?.name ?? '',
+      od: priceList?.od ? new Date(priceList.od) : undefined,
     },
   });
 
+  // Set initial values when priceList is loaded
+  useEffect(() => {
+    if (priceList) {
+      setValue('name', priceList.name);
+      setValue('is_active', priceList.is_active);
+      if (priceList.od) {
+        setValue('od', new Date(priceList.od));
+      }
+    }
+  }, [priceList, setValue]);
+
   const { execute, loading } = useApi<object, FormData>({
-    path: 'cennik_add',
+    path: 'cennik_update',
   });
 
   const { getPriceList } = useCatalogs();
 
   const onSubmit = async (data: PriceListData) => {
-    if (!data.file) {
-      Alert.alert('Błąd', 'Wybierz plik PDF cennika.');
+    if (!priceList) {
+      Alert.alert('Błąd', 'Brak danych cennika.');
       return;
     }
 
     const requestData = new FormData();
-    requestData.append('file', data.file);
+    requestData.append('cennik_id', priceList.id.toString());
     requestData.append('name', data.name);
-    requestData.append('is_active', data.is_active);
+    requestData.append('is_active', data.is_active.toString());
     if (data.od) {
       const dateStr = data.od.toISOString().split('T')[0]; // Format: YYYY-MM-DD
       requestData.append('od', dateStr);
@@ -56,8 +69,12 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
       if (getPriceList) {
         getPriceList();
       }
-      Alert.alert('Sukces', 'Dodano cennik');
-      navigation.navigate('Catalogs');
+      Alert.alert('Sukces', 'Zaktualizowano cennik', [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack(),
+        },
+      ]);
     } else if (response && 'error' in response) {
       Alert.alert('Błąd', (response as { error: string }).error);
     }
@@ -98,13 +115,6 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
             isBordered
             isThin
           />
-
-          <FilePicker
-            name="file"
-            control={control}
-            label="Dodaj cennik"
-            color={Colors.purple}
-          />
         </View>
       </View>
 
@@ -115,14 +125,14 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
           submitStyle={styles.submitButton}
           cancelTitle="Anuluj"
           onSubmitPress={handleSubmit(onSubmit)}
-          onCancel={() => navigation.navigate('Menu')}
+          onCancel={() => navigation.goBack()}
         />
       </View>
     </Container>
   );
 }
 
-export default AddPriceListForm;
+export default EditPriceListForm;
 
 const styles = StyleSheet.create({
   container: {

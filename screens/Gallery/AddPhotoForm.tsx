@@ -1,3 +1,4 @@
+import { useRoute } from '@react-navigation/native';
 import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Alert, StyleSheet, View } from 'react-native';
@@ -20,6 +21,8 @@ type PhotoData = {
 function AddPhotoForm({ navigation }: GalleryAddScreenProps) {
   const { getPhotos } = useGallery();
   const { user, token } = useAuth();
+  const route = useRoute();
+  const routeParams = route.params as { gallery_type?: 'device_gallery' };
   const { control, handleSubmit } = useForm<PhotoData>({
     defaultValues: {
       image: null,
@@ -32,14 +35,20 @@ function AddPhotoForm({ navigation }: GalleryAddScreenProps) {
 
   useEffect(() => {
     if (result && getPhotos) {
-      getPhotos();
+      // Odśwież odpowiednią galerię w zależności od gallery_type
+      if (routeParams?.gallery_type === 'device_gallery') {
+        getPhotos({ gallery_type: 'device_gallery' });
+      } else {
+        // Dla innych galerii odśwież wszystkie (lub można przekazać konkretny typ)
+        getPhotos();
+      }
       navigation.navigate('Gallery'); // auto-navigate after upload
     }
 
     if (error) {
       Alert.alert('Błąd', `Nie udało się dodać zdjęcia: ${error}`);
     }
-  }, [result, error, getPhotos, navigation]);
+  }, [result, error, getPhotos, navigation, routeParams]);
 
   const onSubmit = (data: PhotoData) => {
     if (!data.image) {
@@ -69,6 +78,11 @@ function AddPhotoForm({ navigation }: GalleryAddScreenProps) {
       name: data.image.name,
       type: imageType,
     } as any);
+
+    // Dodaj gallery_type jeśli został przekazany
+    if (routeParams?.gallery_type) {
+      requestData.append('gallery_type', routeParams.gallery_type);
+    }
 
     execute({ data: requestData });
   };

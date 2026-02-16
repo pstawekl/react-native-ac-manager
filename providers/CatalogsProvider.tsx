@@ -1,10 +1,10 @@
 import {
   ReactElement,
   createContext,
-  useMemo,
-  useState,
   useContext,
   useEffect,
+  useMemo,
+  useState,
 } from 'react';
 
 import useApi from '../hooks/useApi';
@@ -26,6 +26,7 @@ export type PriceListItem = {
   is_active: boolean;
   name: string;
   id: number;
+  od?: string; // Data ważności od (format: YYYY-MM-DD lub podobny)
 };
 
 export type Flyer = {
@@ -34,6 +35,7 @@ export type Flyer = {
   id: number;
   file: string;
   cteated_date: string;
+  created_date?: string; // Fallback field name
   is_active: boolean;
 };
 

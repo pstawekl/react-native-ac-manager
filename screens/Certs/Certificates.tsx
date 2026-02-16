@@ -10,12 +10,14 @@ import ConfirmationOverlay from '../../components/ConfirmationOverlay';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import SimpleLightboxBasic from '../../components/SimpleLightboxBasic';
 import Colors from '../../consts/Colors';
+import { Scopes } from '../../consts/Permissions';
 import getFileName from '../../helpers/files';
 import { downloadImageToLocal, getImageUrl } from '../../helpers/image';
 import { openPdfFile } from '../../helpers/pdfOpener';
 import useApi from '../../hooks/useApi';
 import { CertificatesScreenProps } from '../../navigation/types';
 import useCerts, { Certificate } from '../../providers/CertsProvider';
+import usePermission from '../../providers/PermissionProvider';
 
 // Helper functions
 const getFileExtension = (filePath: string): string => {
@@ -54,12 +56,14 @@ function CertificateRow({
   onOpenImage,
   onLoadingStart,
   onLoadingEnd,
+  canManage,
 }: {
   certificate: Certificate;
   onDelete: (id: number) => void;
   onOpenImage: (certificate: Certificate) => void;
   onLoadingStart: () => void;
   onLoadingEnd: () => void;
+  canManage: boolean;
 }) {
   const openCertificateLink = async () => {
     if (!certificate.file) {
@@ -92,10 +96,12 @@ function CertificateRow({
       key={certificate.id}
       containerStyle={styles.itemContainer}
       rightContent={
-        <RowRightContent onDelete={() => onDelete(certificate.id)} />
+        canManage ? (
+          <RowRightContent onDelete={() => onDelete(certificate.id)} />
+        ) : undefined
       }
       leftWidth={80}
-      rightWidth={80}
+      rightWidth={canManage ? 80 : 0}
       onPress={openCertificateLink}
     >
       <Avatar
@@ -124,6 +130,7 @@ export default function Certificates() {
   const { navigate, goBack } =
     useNavigation<CertificatesScreenProps['navigation']>();
   const { certificates, getCertificates, certificatesLoading } = useCerts();
+  const { hasAccess } = usePermission();
   const { execute: deleteCertificate, loading: isDeleteLoading } = useApi({
     path: 'certyfikat_delete',
   });
@@ -205,6 +212,7 @@ export default function Certificates() {
               onOpenImage={handleOpenImage}
               onLoadingStart={() => setLoadingPdf(true)}
               onLoadingEnd={() => setLoadingPdf(false)}
+              canManage={hasAccess(Scopes.manageDocumentation)}
             />
           ))
         ) : (
@@ -251,10 +259,12 @@ export default function Certificates() {
         hideEditButton
       />
 
-      <FloatingActionButton
-        onPress={() => navigate('AddCertificate')}
-        backgroundColor={Colors.primary}
-      />
+      {hasAccess(Scopes.manageDocumentation) && (
+        <FloatingActionButton
+          onPress={() => navigate('AddCertificate')}
+          backgroundColor={Colors.primary}
+        />
+      )}
     </View>
   );
 }

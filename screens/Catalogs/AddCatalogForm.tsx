@@ -1,9 +1,10 @@
 import { useForm } from 'react-hook-form';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { ButtonGroup } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import Container from '../../components/Container';
+import DatePicker from '../../components/DatePicker';
 import FilePicker, { File } from '../../components/FilePicker';
 import { Dropdown, FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
@@ -15,6 +16,7 @@ type CatalogData = {
   file: File | null;
   is_active: boolean;
   name: string;
+  od?: Date;
 };
 
 function AddCatalogForm({ navigation }: CatalogsAddCatalogScreenProps) {
@@ -23,6 +25,7 @@ function AddCatalogForm({ navigation }: CatalogsAddCatalogScreenProps) {
       file: null,
       is_active: false,
       name: '',
+      od: undefined,
     },
   });
 
@@ -42,6 +45,10 @@ function AddCatalogForm({ navigation }: CatalogsAddCatalogScreenProps) {
     requestData.append('file', data.file);
     requestData.append('name', data.name);
     requestData.append('is_active', data.is_active);
+    if (data.od) {
+      const dateStr = data.od.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      requestData.append('od', dateStr);
+    }
 
     const response = await execute({ data: requestData });
 
@@ -72,6 +79,12 @@ function AddCatalogForm({ navigation }: CatalogsAddCatalogScreenProps) {
             noPadding
             style={styles.firstInput}
           />
+          <View style={styles.datePickerWrapper}>
+            <Text style={styles.datePickerLabel}>Data obowiązywania</Text>
+            <View style={styles.datePickerContainer}>
+              <DatePicker control={control} name="od" color={Colors.purple} />
+            </View>
+          </View>
           <Dropdown
             name="is_active"
             control={control}
@@ -127,6 +140,18 @@ const styles = StyleSheet.create({
     gap: -14,
   },
   firstInput: {
+    marginBottom: -4,
+  },
+  datePickerWrapper: {
+    marginBottom: 10,
+  },
+  datePickerLabel: {
+    fontSize: 14,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.black,
+    marginBottom: 8,
+  },
+  datePickerContainer: {
     marginBottom: -4,
   },
   footer: {

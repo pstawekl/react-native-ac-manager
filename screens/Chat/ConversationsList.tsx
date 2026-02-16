@@ -55,7 +55,9 @@ function ConversationsListScreen() {
     // Tylko admin i monter mogą pobrać listę klientów
     if (
       getClients &&
-      (user?.userType === 'admin' || user?.userType === 'monter') &&
+      (user?.userType === 'admin' ||
+        user?.userType === 'global_admin' ||
+        user?.userType === 'monter') &&
       (!clients || clients.length === 0)
     ) {
       getClients().catch(() => {

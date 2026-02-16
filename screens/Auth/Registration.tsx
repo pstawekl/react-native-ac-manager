@@ -38,7 +38,8 @@ function RegistrationScreen({
   const { loading, register } = useAuth();
   const route = useRoute();
   const [loadingUserData, setLoadingUserData] = useState(false);
-  const [clientType, setClientType] = useState<string>('osoba_prywatna');
+  const [clientType, setClientType] = useState<string>('firma');
+  const [hasInvitationToken, setHasInvitationToken] = useState(false);
 
   const {
     control,
@@ -48,7 +49,7 @@ function RegistrationScreen({
     watch,
   } = useForm<RegistrationData>({
     defaultValues: {
-      rodzaj_klienta: 'osoba_prywatna',
+      rodzaj_klienta: 'firma',
       nazwa_firmy: '',
       nip: '',
       first_name: '',
@@ -103,7 +104,7 @@ function RegistrationScreen({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invitation_token: invitationToken,
-          email: email,
+          email,
         }),
       });
 
@@ -167,7 +168,10 @@ function RegistrationScreen({
             tokenToUse = params.token;
             await AsyncStorage.setItem(INVITATION_TOKEN_KEY, params.token);
             // eslint-disable-next-line no-console
-            console.log('Token zaproszenia zapisany w AsyncStorage:', params.token);
+            console.log(
+              'Token zaproszenia zapisany w AsyncStorage:',
+              params.token,
+            );
           }
         }
         // Sprawdź parametry z route jeśli nie ma z initial URL
@@ -179,7 +183,10 @@ function RegistrationScreen({
             tokenToUse = routeParams.token;
             await AsyncStorage.setItem(INVITATION_TOKEN_KEY, routeParams.token);
             // eslint-disable-next-line no-console
-            console.log('Token zaproszenia zapisany w AsyncStorage:', routeParams.token);
+            console.log(
+              'Token zaproszenia zapisany w AsyncStorage:',
+              routeParams.token,
+            );
           }
         } else {
           // Sprawdź czy token jest już zapisany (gdy użytkownik wrócił do ekranu)
@@ -187,13 +194,22 @@ function RegistrationScreen({
           if (savedToken) {
             tokenToUse = savedToken;
             // eslint-disable-next-line no-console
-            console.log('Token zaproszenia pobrany z AsyncStorage:', savedToken);
+            console.log(
+              'Token zaproszenia pobrany z AsyncStorage:',
+              savedToken,
+            );
           }
         }
 
         // Jeśli mamy token, pobierz dane użytkownika z backendu
         if (tokenToUse) {
-          await fetchUserDataFromInvitation(tokenToUse, emailToUse || undefined);
+          setHasInvitationToken(true);
+          await fetchUserDataFromInvitation(
+            tokenToUse,
+            emailToUse || undefined,
+          );
+        } else {
+          setHasInvitationToken(false);
         }
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -218,15 +234,25 @@ function RegistrationScreen({
           AsyncStorage.setItem(INVITATION_TOKEN_KEY, params.token)
             .then(() => {
               // eslint-disable-next-line no-console
-              console.log('Token zaproszenia zapisany w AsyncStorage:', params.token);
+              console.log(
+                'Token zaproszenia zapisany w AsyncStorage:',
+                params.token,
+              );
               // Pobierz dane użytkownika po zapisaniu tokenu
               if (tokenToUse) {
-                fetchUserDataFromInvitation(tokenToUse, emailToUse || undefined);
+                setHasInvitationToken(true);
+                fetchUserDataFromInvitation(
+                  tokenToUse,
+                  emailToUse || undefined,
+                );
               }
             })
             .catch(err => {
               // eslint-disable-next-line no-console
-              console.error('Błąd podczas zapisywania tokenu zaproszenia:', err);
+              console.error(
+                'Błąd podczas zapisywania tokenu zaproszenia:',
+                err,
+              );
             });
         }
       }
@@ -251,23 +277,25 @@ function RegistrationScreen({
               keyboardShouldPersistTaps="handled"
             >
               <View style={styles.block}>
-                <Dropdown
-                  label="Rodzaj klienta *"
-                  name="rodzaj_klienta"
-                  control={control}
-                  options={[
-                    { label: 'Osoba prywatna', value: 'osoba_prywatna' },
-                    { label: 'Firma', value: 'firma' },
-                  ]}
-                  isBordered
-                  isThin
-                  zIndex={9}
-                  onChange={value => {
-                    setClientType(value);
-                  }}
-                />
+                {hasInvitationToken && (
+                  <Dropdown
+                    label="Rodzaj klienta *"
+                    name="rodzaj_klienta"
+                    control={control}
+                    options={[
+                      { label: 'Osoba prywatna', value: 'osoba_prywatna' },
+                      { label: 'Firma', value: 'firma' },
+                    ]}
+                    isBordered
+                    isThin
+                    zIndex={9}
+                    onChange={value => {
+                      setClientType(value);
+                    }}
+                  />
+                )}
 
-                {watchedClientType === 'firma' && (
+                {(watchedClientType === 'firma' || !hasInvitationToken) && (
                   <View style={styles.clientContainer}>
                     <View style={[styles.formContainer, { gap: -18 }]}>
                       <FormInput
@@ -380,17 +408,25 @@ function RegistrationScreen({
                 <FormInput
                   name="email"
                   control={control}
-                  label={watchedClientType === 'firma' ? 'E-mail *' : 'E-mail'}
+                  label={
+                    watchedClientType === 'firma' || !hasInvitationToken
+                      ? 'E-mail *'
+                      : 'E-mail'
+                  }
                   noPadding
                   error={errors.email}
                   rules={{
                     required:
-                      watchedClientType === 'firma'
+                      watchedClientType === 'firma' || !hasInvitationToken
                         ? 'E-mail jest wymagany dla firm'
                         : false,
                     validate: (value: string | null) => {
-                      // Jeśli pole jest puste i to nie firma, to jest OK
-                      if (!value && watchedClientType !== 'firma') {
+                      // Jeśli pole jest puste i to nie firma (i jest zaproszenie), to jest OK
+                      if (
+                        !value &&
+                        watchedClientType !== 'firma' &&
+                        hasInvitationToken
+                      ) {
                         return true;
                       }
                       // Jeśli pole ma wartość, sprawdź pattern

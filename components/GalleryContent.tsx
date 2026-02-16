@@ -1,5 +1,6 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { Text } from '@rneui/themed';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -12,13 +13,13 @@ import {
 import Spinner from 'react-native-loading-spinner-overlay';
 
 import Colors from '../consts/Colors';
+import { Scopes } from '../consts/Permissions';
 import { getImageUrl } from '../helpers/image';
 import useApi from '../hooks/useApi';
 import { GalleryScreenProps } from '../navigation/types';
-import useGallery, {
-  PhotosResponse,
-  Tag
-} from '../providers/GalleryProvider';
+import useAuth from '../providers/AuthProvider';
+import useGallery, { PhotosResponse, Tag } from '../providers/GalleryProvider';
+import usePermission from '../providers/PermissionProvider';
 import useStaff from '../providers/StaffProvider';
 import ContextMenu from './ContextMenu';
 import SimpleLightboxBasic from './SimpleLightboxBasic';
@@ -30,6 +31,7 @@ type GalleryContentProps = {
   tagQuery: string;
   onTagQueryChange: (query: string) => void;
   galleryType: 'public' | 'favorites' | 'my_photos' | 'device_gallery';
+  isActive?: boolean;
 };
 
 function GalleryContent({
@@ -37,6 +39,7 @@ function GalleryContent({
   tagQuery,
   onTagQueryChange,
   galleryType,
+  isActive = true,
 }: GalleryContentProps) {
   const screenWidth = Dimensions.get('window').width;
   const imageWidth = (screenWidth - 30) / 2; // 30 = 3 marginów * 10px (lewa, prawa, środek)
@@ -96,6 +99,11 @@ function GalleryContent({
             if (selectedPhotoId && deletePhoto) {
               try {
                 await deletePhoto(selectedPhotoId);
+                // Odśwież listę zdjęć po usunięciu
+                await getPhotosApi({
+                  method: 'POST',
+                  data: { gallery_type: galleryType },
+                });
                 Alert.alert('Sukces', 'Zdjęcie zostało usunięte');
               } catch (error) {
                 Alert.alert('Błąd', 'Nie udało się usunąć zdjęcia');
@@ -112,12 +120,23 @@ function GalleryContent({
       return;
     }
 
-    await deletePhoto(photoId);
-    Alert.alert('Sukces', 'Zdjęcie zostało usunięte');
+    try {
+      await deletePhoto(photoId);
+      // Odśwież listę zdjęć po usunięciu
+      await getPhotosApi({
+        method: 'POST',
+        data: { gallery_type: galleryType },
+      });
+      Alert.alert('Sukces', 'Zdjęcie zostało usunięte');
+    } catch (error) {
+      Alert.alert('Błąd', 'Nie udało się usunąć zdjęcia.');
+    }
   };
 
   const { getTags, tags, deletePhoto } = useGallery();
   const { employees } = useStaff();
+  const { hasAccess } = usePermission();
+  const { isUserGlobalAdmin } = useAuth();
 
   // Własne API dla zdjęć - każdy GalleryContent ma własny stan
   const {
@@ -202,13 +221,27 @@ function GalleryContent({
     }
   }, [photosResponse]);
 
-  // Pobieraj zdjęcia gdy zmieni się galleryType
+  // Pobieraj zdjęcia przy montowaniu, przy zmianie zakładki (isActive) oraz przy zmianie galleryType
   useEffect(() => {
-    getPhotosApi({ method: 'POST', data: { gallery_type: galleryType } });
-    if (getTags) {
-      getTags();
+    if (isActive) {
+      getPhotosApi({ method: 'POST', data: { gallery_type: galleryType } });
+      if (getTags) {
+        getTags();
+      }
     }
-  }, [galleryType, getPhotosApi, getTags]);
+  }, [galleryType, getPhotosApi, getTags, isActive]);
+
+  // Odśwież zdjęcia gdy ekran wraca do focus (np. po dodaniu zdjęcia)
+  useFocusEffect(
+    useCallback(() => {
+      if (isActive) {
+        getPhotosApi({ method: 'POST', data: { gallery_type: galleryType } });
+        if (getTags) {
+          getTags();
+        }
+      }
+    }, [isActive, galleryType, getPhotosApi, getTags]),
+  );
 
   const urlArray = filteredPhotos
     .map(photo => {
@@ -257,19 +290,24 @@ function GalleryContent({
         title="Zarządzaj zdjęciem"
         visible={contextMenuVisible}
         onBackdropPress={() => setContextMenuVisible(false)}
-        options={[
-          {
-            title: 'Edytuj',
-            icon: <EditIcon color={Colors.black} size={20} />,
-            onPress: handleEditImage,
-          },
-          {
-            title: 'Usuń',
-            icon: <TrashIcon color={Colors.red} size={20} />,
-            onPress: handleDeleteImage,
-            color: Colors.red,
-          },
-        ]}
+        options={
+          galleryType === 'device_gallery' &&
+            !hasAccess(Scopes.manageDeviceGallery)
+            ? [] // Pusta lista opcji dla device gallery bez uprawnień
+            : [
+              {
+                title: 'Edytuj',
+                icon: <EditIcon color={Colors.black} size={20} />,
+                onPress: handleEditImage,
+              },
+              {
+                title: 'Usuń',
+                icon: <TrashIcon color={Colors.red} size={20} />,
+                onPress: handleDeleteImage,
+                color: Colors.red,
+              },
+            ]
+        }
       />
 
       <SimpleLightboxBasic
@@ -288,7 +326,20 @@ function GalleryContent({
           return undefined;
         })()}
         tags={tags || undefined}
-        onDeletePhoto={handleLightboxDelete}
+        onDeletePhoto={
+          galleryType === 'device_gallery' &&
+            !hasAccess(Scopes.manageDeviceGallery)
+            ? undefined
+            : handleLightboxDelete
+        }
+        hideEditButton={
+          (galleryType === 'device_gallery' ||
+            photos?.find(p => p.id === selectedPhotoId)?.is_device_gallery) &&
+          !isUserGlobalAdmin()
+        }
+        onFavoriteChange={() => {
+          getPhotosApi({ method: 'POST', data: { gallery_type: galleryType } });
+        }}
         onClose={() => {
           setLightboxVisible(false);
           setSelectedPhotoId(null);

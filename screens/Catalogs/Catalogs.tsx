@@ -9,6 +9,7 @@ import ConfirmationOverlay from '../../components/ConfirmationOverlay';
 import FloatingActionButton from '../../components/FloatingActionButton';
 import ArrowLeftIcon from '../../components/icons/ArrowLeftIcon';
 import ArrowRightIcon from '../../components/icons/ArrowRightIcon';
+import EditIcon from '../../components/icons/EditIcon';
 import TextFileIcon from '../../components/icons/TextFileIcon';
 import Colors from '../../consts/Colors';
 import { Scopes } from '../../consts/Permissions';
@@ -92,9 +93,13 @@ function YearCard({
 function CatalogItemCard({
   catalog,
   onPress,
+  onEdit,
+  showEdit,
 }: {
   catalog: Catalog;
   onPress: () => void;
+  onEdit?: () => void;
+  showEdit?: boolean;
 }) {
   // Formatuj datę "Od"
   const formatOdDate = (odDate?: string): string => {
@@ -150,12 +155,25 @@ function CatalogItemCard({
               <Text style={styles.catalogDate}>{formatOdDate(catalog.od)}</Text>
             )}
           </View>
-          <View
-            style={[styles.statusBadge, { backgroundColor: statusBgColor }]}
-          >
-            <Text style={[styles.statusText, { color: statusTextColor }]}>
-              {statusText}
-            </Text>
+          <View style={styles.rightContent}>
+            <View
+              style={[styles.statusBadge, { backgroundColor: statusBgColor }]}
+            >
+              <Text style={[styles.statusText, { color: statusTextColor }]}>
+                {statusText}
+              </Text>
+            </View>
+            {showEdit && onEdit && (
+              <Pressable
+                onPress={e => {
+                  e.stopPropagation();
+                  onEdit();
+                }}
+                style={styles.editButton}
+              >
+                <EditIcon color={Colors.black} size={20} />
+              </Pressable>
+            )}
           </View>
         </View>
       </View>
@@ -163,11 +181,7 @@ function CatalogItemCard({
   );
 }
 
-type CatalogsProps = {
-  searchQuery?: string;
-};
-
-export default function Catalogs({ searchQuery = '' }: CatalogsProps) {
+export default function Catalogs() {
   const navigation = useNavigation<CatalogsMenuScreenProps['navigation']>();
   const { hasAccess } = usePermission();
 
@@ -208,19 +222,8 @@ export default function Catalogs({ searchQuery = '' }: CatalogsProps) {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      return categoryArray.filter(
-        category =>
-          category.name.toLowerCase().includes(query) ||
-          category.catalogs.some(catalog =>
-            catalog.name.toLowerCase().includes(query),
-          ),
-      );
-    }
-
     return categoryArray;
-  }, [catalogs, searchQuery]);
+  }, [catalogs]);
 
   // Grupowanie katalogów według roku dla wybranego producenta
   const yearGroups = useMemo(() => {
@@ -399,11 +402,7 @@ export default function Catalogs({ searchQuery = '' }: CatalogsProps) {
             </View>
           ) : (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                {searchQuery.trim()
-                  ? 'Brak wyników wyszukiwania.'
-                  : 'Brak katalogów.'}
-              </Text>
+              <Text style={styles.emptyText}>Brak katalogów.</Text>
             </View>
           )}
         </>
@@ -442,6 +441,8 @@ export default function Catalogs({ searchQuery = '' }: CatalogsProps) {
                   key={catalog.id}
                   catalog={catalog}
                   onPress={() => openCatalogLink(catalog)}
+                  onEdit={() => navigation.navigate('EditCatalog', { catalog })}
+                  showEdit={hasAccess(Scopes.manageDocumentation)}
                 />
               ))}
             </View>
@@ -492,7 +493,7 @@ export default function Catalogs({ searchQuery = '' }: CatalogsProps) {
         title="Czy na pewno chcesz usunąć katalog ?"
       />
 
-      {hasAccess(Scopes.addCatalogs) && (
+      {hasAccess(Scopes.manageDocumentation) && (
         <FloatingActionButton
           onPress={() => navigation.navigate('AddCatalog')}
           backgroundColor={Colors.newPurple}
@@ -604,6 +605,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Archivo_400Regular',
     color: Colors.lightGray,
+  },
+  rightContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editButton: {
+    padding: 4,
   },
   statusBadge: {
     paddingHorizontal: 12,

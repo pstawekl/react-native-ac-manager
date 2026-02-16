@@ -29,7 +29,7 @@ interface User {
   avatar?: string;
   email: string;
   name: string;
-  userType: 'admin' | 'monter' | 'klient';
+  userType: 'global_admin' | 'admin' | 'monter' | 'klient';
 
   ac_user: number;
   id: number;
@@ -58,6 +58,8 @@ interface AuthContextType {
   isUserAssembler: () => boolean;
   isUserAdmin: () => boolean;
   isUserClient: () => boolean;
+  isUserGlobalAdmin: () => boolean;
+  isUserCompanyAdmin: () => boolean;
 }
 
 export interface RegistrationData {
@@ -154,8 +156,12 @@ export function AuthProvider({
           clearTimeout(timeoutId);
           // Sprawdź czy to timeout
           if (fetchError.name === 'AbortError' || controller.signal.aborted) {
-            console.log('getUserDetails: Request timeout - keeping cached data');
-            setError('Żądanie przekroczyło limit czasu. Używam danych z pamięci.');
+            console.log(
+              'getUserDetails: Request timeout - keeping cached data',
+            );
+            setError(
+              'Żądanie przekroczyło limit czasu. Używam danych z pamięci.',
+            );
             setLoading(false);
             return undefined; // Nie wylogowuj przy timeout
           }
@@ -173,10 +179,10 @@ export function AuthProvider({
 
         // Sprawdź błędy związane z tokenem w odpowiedzi
         const errorMessage = responseData?.error?.toLowerCase() || '';
-        
+
         // TYLKO wyloguj jeśli to JEDNOZNACZNIE błąd tokenu (nie 401/403 z innych powodów)
         // Sprawdź czy error message JEDNOZNACZNIE mówi o nieprawidłowym tokenie
-        const isExplicitTokenError = 
+        const isExplicitTokenError =
           errorMessage.includes('invalid token') ||
           errorMessage.includes('wrong token') ||
           errorMessage.includes('user not found') ||
@@ -186,24 +192,29 @@ export function AuthProvider({
         // UWAGA: Jeśli status 401/403 ale NIE ma komunikatu o tokenie, NIE wylogowuj
         // Może być problem z siecią/proxy na Bluestacks
         if (isExplicitTokenError) {
-          console.log('getUserDetails: Explicit token error detected, logging out');
-          
+          console.log(
+            'getUserDetails: Explicit token error detected, logging out',
+          );
+
           // Wyczyść dane użytkownika
           setUser(undefined);
           setToken(undefined);
           await AsyncStorage.removeItem(USER_TOKEN);
           await AsyncStorage.removeItem('user');
-          
+
           // Przekieruj do logowania (z opóźnieniem, aby nawigacja była gotowa)
           setTimeout(() => {
             logoutWithRedirect();
           }, 100);
-          
+
           setLoading(false);
           return undefined;
-        } else if (response.status === 401 || response.status === 403) {
+        }
+        if (response.status === 401 || response.status === 403) {
           // Status 401/403 ale BEZ komunikatu o tokenie - może być problem z siecią
-          console.log('getUserDetails: 401/403 but no explicit token error - keeping user logged in');
+          console.log(
+            'getUserDetails: 401/403 but no explicit token error - keeping user logged in',
+          );
           setLoading(false);
           return undefined; // Nie wylogowuj
         }
@@ -212,59 +223,83 @@ export function AuthProvider({
         // Uwaga: id może być 0, więc sprawdzamy !== undefined i !== null
         if (!response.ok) {
           // Inne błędy (np. 500) - nie wylogowuj, może być problem serwera
-          console.log('getUserDetails: Response not OK but not token error, keeping cached data');
+          console.log(
+            'getUserDetails: Response not OK but not token error, keeping cached data',
+          );
           setLoading(false);
           return undefined;
         }
 
-        if (!responseData || responseData.id === undefined || responseData.id === null) {
-          console.log('getUserDetails: No valid user data (missing id), keeping cached data');
+        if (
+          !responseData ||
+          responseData.id === undefined ||
+          responseData.id === null
+        ) {
+          console.log(
+            'getUserDetails: No valid user data (missing id), keeping cached data',
+          );
           // Brak ważnych danych - nie wylogowuj, użyj cache
           setLoading(false);
           return undefined;
         }
 
-        console.log('getUserDetails: Valid user data received, id:', responseData.id);
-        
+        console.log(
+          'getUserDetails: Valid user data received, id:',
+          responseData.id,
+        );
+
         // Zbuduj obiekt User z odpowiedzi API
         // API zwraca first_name i last_name, ale User interface wymaga name
         const userData: User = {
           ...responseData,
-          name: responseData.first_name && responseData.last_name
-            ? `${responseData.first_name} ${responseData.last_name}`
-            : responseData.first_name || responseData.last_name || responseData.email || '',
+          name:
+            responseData.first_name && responseData.last_name
+              ? `${responseData.first_name} ${responseData.last_name}`
+              : responseData.first_name ||
+              responseData.last_name ||
+              responseData.email ||
+              '',
           userType: responseData.user_type || 'klient',
         };
-        
-        console.log('getUserDetails: Converted user data:', JSON.stringify(userData, null, 2));
+
+        console.log(
+          'getUserDetails: Converted user data:',
+          JSON.stringify(userData, null, 2),
+        );
         setLoading(false);
         return userData;
       } catch (e: any) {
         console.error('Error in getUserDetails:', e);
-        
+
         // Sprawdź czy to błąd sieciowy lub timeout
-        const isNetworkError = 
-          e instanceof TypeError || 
+        const isNetworkError =
+          e instanceof TypeError ||
           e.name === 'AbortError' ||
-          e.message?.includes('Network') || 
-          e.message?.includes('fetch') || 
+          e.message?.includes('Network') ||
+          e.message?.includes('fetch') ||
           e.message?.includes('Failed to fetch') ||
           e.message?.includes('Network request failed') ||
           e.message?.includes('aborted') ||
           e.message?.includes('timeout');
-        
+
         if (isNetworkError) {
           // Błąd sieciowy/timeout - nie wylogowuj, użyj danych z cache
-          console.log('getUserDetails: Network/timeout error - keeping cached user data for offline mode');
-          setError('Brak połączenia z internetem lub żądanie przekroczyło limit czasu. Używam danych z pamięci.');
+          console.log(
+            'getUserDetails: Network/timeout error - keeping cached user data for offline mode',
+          );
+          setError(
+            'Brak połączenia z internetem lub żądanie przekroczyło limit czasu. Używam danych z pamięci.',
+          );
           setLoading(false);
           return undefined; // Zwróć undefined, ale nie wylogowuj
         }
-        
+
         // Inne błędy - również nie wylogowuj automatycznie
         // Może być problem z serwerem, ale token może być ważny
         console.log('getUserDetails: Other error - keeping cached user data');
-        setError('Wystąpił błąd podczas weryfikacji sesji. Używam danych z pamięci.');
+        setError(
+          'Wystąpił błąd podczas weryfikacji sesji. Używam danych z pamięci.',
+        );
         setLoading(false);
         return undefined;
       }
@@ -284,34 +319,48 @@ export function AuthProvider({
       const verifyToken = async () => {
         try {
           // Sprawdź status sieci przed weryfikacją
-          const { getNetworkService } = await import('../services/NetworkService');
+          const { getNetworkService } = await import(
+            '../services/NetworkService'
+          );
           const networkService = getNetworkService();
           const isOnline = await networkService.checkConnection();
-          
+
           if (isOnline) {
             // Online - zweryfikuj token przez API
             const userData = await getUserDetails(token);
-            
-            if (userData && (userData.id !== undefined && userData.id !== null)) {
-              console.log('useEffect: Valid user data from API, id:', userData.id);
+
+            if (userData && userData.id !== undefined && userData.id !== null) {
+              console.log(
+                'useEffect: Valid user data from API, id:',
+                userData.id,
+              );
               setUser(userData);
               // Zaktualizuj cache z nowymi danymi
               await AsyncStorage.setItem('user', JSON.stringify(userData));
             } else {
               // Brak danych z API - sprawdź czy mamy cache
               console.log('useEffect: No valid data from API, checking cache');
-              
+
               const cachedUser = await AsyncStorage.getItem('user');
               if (cachedUser) {
                 try {
                   const parsedUser = JSON.parse(cachedUser);
-                  if (parsedUser && (parsedUser.id !== undefined && parsedUser.id !== null)) {
-                    console.log('useEffect: Using cached user data, id:', parsedUser.id);
+                  if (
+                    parsedUser &&
+                    parsedUser.id !== undefined &&
+                    parsedUser.id !== null
+                  ) {
+                    console.log(
+                      'useEffect: Using cached user data, id:',
+                      parsedUser.id,
+                    );
                     setUser(parsedUser);
                     // Nie wylogowuj - używamy cache, może być problem z siecią
                   } else {
-                    console.log('useEffect: Cached user data invalid, but keeping user logged in with token');
-                    
+                    console.log(
+                      'useEffect: Cached user data invalid, but keeping user logged in with token',
+                    );
+
                     // Nie wylogowuj - może być problem z parsowaniem, ale token jest ważny
                     // Spróbuj użyć podstawowych danych z tokenu
                     const basicUser = await AsyncStorage.getItem('user');
@@ -329,10 +378,14 @@ export function AuthProvider({
                 } catch (parseError) {
                   console.error('Error parsing cached user:', parseError);
                   // Nie wylogowuj - może być problem z parsowaniem, ale token jest ważny
-                  console.log('useEffect: Parse error, but keeping user logged in with token');
+                  console.log(
+                    'useEffect: Parse error, but keeping user logged in with token',
+                  );
                 }
               } else {
-                console.log('useEffect: No cached user data, but keeping user logged in with token');
+                console.log(
+                  'useEffect: No cached user data, but keeping user logged in with token',
+                );
                 // Nie wylogowuj - może być problem z siecią, ale token jest ważny
                 // Użytkownik może działać offline
               }
@@ -340,16 +393,25 @@ export function AuthProvider({
           } else {
             // Offline - użyj danych z AsyncStorage
             const cachedUser = await AsyncStorage.getItem('user');
-            
+
             if (cachedUser) {
               try {
                 const parsedUser = JSON.parse(cachedUser);
                 // Sprawdź czy user ma wymagane pola
-                if (parsedUser && (parsedUser.id !== undefined && parsedUser.id !== null)) {
-                  console.log('useEffect: Using cached user data for offline mode, id:', parsedUser.id);
+                if (
+                  parsedUser &&
+                  parsedUser.id !== undefined &&
+                  parsedUser.id !== null
+                ) {
+                  console.log(
+                    'useEffect: Using cached user data for offline mode, id:',
+                    parsedUser.id,
+                  );
                   setUser(parsedUser);
                 } else {
-                  console.log('useEffect: Cached user data invalid (missing id)');
+                  console.log(
+                    'useEffect: Cached user data invalid (missing id)',
+                  );
                   setUser(undefined);
                 }
               } catch (parseError) {
@@ -357,25 +419,35 @@ export function AuthProvider({
                 setUser(undefined);
               }
             } else {
-              console.log('useEffect: No cached user data available for offline mode');
+              console.log(
+                'useEffect: No cached user data available for offline mode',
+              );
               setUser(undefined);
             }
           }
         } catch (error) {
           console.error('Error in token verification:', error);
-          
+
           // W przypadku błędu, spróbuj użyć danych z cache
           // NIE wylogowuj użytkownika - może być problem z siecią, ale token jest ważny
           try {
             const cachedUser = await AsyncStorage.getItem('user');
             if (cachedUser) {
               const parsedUser = JSON.parse(cachedUser);
-              if (parsedUser && (parsedUser.id !== undefined && parsedUser.id !== null)) {
-                console.log('useEffect: Error occurred, using cached user data as fallback');
+              if (
+                parsedUser &&
+                parsedUser.id !== undefined &&
+                parsedUser.id !== null
+              ) {
+                console.log(
+                  'useEffect: Error occurred, using cached user data as fallback',
+                );
                 setUser(parsedUser);
               } else {
                 // Nie wylogowuj - może być problem z parsowaniem, ale token jest ważny
-                console.log('useEffect: Cache parse error, but keeping user logged in with token');
+                console.log(
+                  'useEffect: Cache parse error, but keeping user logged in with token',
+                );
                 // Spróbuj użyć podstawowych danych
                 if (parsedUser && parsedUser.email) {
                   setUser(parsedUser as User);
@@ -383,17 +455,21 @@ export function AuthProvider({
               }
             } else {
               // Nie wylogowuj - może być problem z siecią, ale token jest ważny
-              console.log('useEffect: No cache, but keeping user logged in with token');
+              console.log(
+                'useEffect: No cache, but keeping user logged in with token',
+              );
               // Użytkownik może działać offline
             }
           } catch (cacheError) {
             console.error('Error loading cached user:', cacheError);
             // Nie wylogowuj - może być problem z cache, ale token jest ważny
-            console.log('useEffect: Cache error, but keeping user logged in with token');
+            console.log(
+              'useEffect: Cache error, but keeping user logged in with token',
+            );
           }
         }
       };
-      
+
       verifyToken();
     } else {
       console.log('useEffect: No token, clearing user');
@@ -402,85 +478,92 @@ export function AuthProvider({
     }
   }, [getUserDetails, token]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    isLoggingIn.current = true;
-    try {
-      const response = await fetch(`${API_PATH}/login/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
-      });
+  const login = useCallback(
+    async (email: string, password: string) => {
+      isLoggingIn.current = true;
+      try {
+        const response = await fetch(`${API_PATH}/login/`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
+        });
 
-      const json = await response.json();
+        const json = await response.json();
 
-      if (response.status === 400) {
-        let errorText = json.error;
+        if (response.status === 400) {
+          let errorText = json.error;
 
-        if (errorText === 'Invalid email or password.') {
-          errorText = 'Nieprawidłowy e-mail lub hasło.';
-        }
-
-        setError(errorText);
-        isLoggingIn.current = false;
-      } else {
-        // @ToDo - Remove or refactor after API change
-        const userData: User = {
-          email,
-          avatar: json.avatar,
-          name: `${json.first_name} ${json.last_name}`,
-          userType: json.user_type,
-
-          ac_user: 0,
-          id: 0,
-          kod_pocztowy: '',
-          miasto: '',
-          nazwa_firmy: '',
-          nip: '',
-          numer_telefonu: '',
-          rodzaj_klienta: 'firma',
-          typ_klienta: 'aktualny',
-          ulica: '',
-        };
-
-        // TODO: ask for an api change
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
-
-        setError(undefined);
-        setToken(json.token);
-        setUser(userData);
-
-        await AsyncStorage.setItem(USER_TOKEN, json.token);
-
-        // Po udanym logowaniu, pobierz pełne dane użytkownika z API
-        // To zastąpi podstawowe dane ustawione powyżej
-        try {
-          const fullUserData = await getUserDetails(json.token);
-          if (fullUserData && (fullUserData.id !== undefined && fullUserData.id !== null)) {
-            setUser(fullUserData);
-            await AsyncStorage.setItem('user', JSON.stringify(fullUserData));
+          if (errorText === 'Invalid email or password.') {
+            errorText = 'Nieprawidłowy e-mail lub hasło.';
           }
-        } catch (error) {
-          console.error('Error fetching user details after login:', error);
-          // Nie blokuj logowania jeśli nie udało się pobrać pełnych danych
-          // Użytkownik jest już zalogowany z podstawowymi danymi
-        } finally {
+
+          setError(errorText);
           isLoggingIn.current = false;
+        } else {
+          // @ToDo - Remove or refactor after API change
+          const userData: User = {
+            email,
+            avatar: json.avatar,
+            name: `${json.first_name} ${json.last_name}`,
+            userType: json.user_type,
+
+            ac_user: 0,
+            id: 0,
+            kod_pocztowy: '',
+            miasto: '',
+            nazwa_firmy: '',
+            nip: '',
+            numer_telefonu: '',
+            rodzaj_klienta: 'firma',
+            typ_klienta: 'aktualny',
+            ulica: '',
+          };
+
+          // TODO: ask for an api change
+          await AsyncStorage.setItem('user', JSON.stringify(userData));
+
+          setError(undefined);
+          setToken(json.token);
+          setUser(userData);
+
+          await AsyncStorage.setItem(USER_TOKEN, json.token);
+
+          // Po udanym logowaniu, pobierz pełne dane użytkownika z API
+          // To zastąpi podstawowe dane ustawione powyżej
+          try {
+            const fullUserData = await getUserDetails(json.token);
+            if (
+              fullUserData &&
+              fullUserData.id !== undefined &&
+              fullUserData.id !== null
+            ) {
+              setUser(fullUserData);
+              await AsyncStorage.setItem('user', JSON.stringify(fullUserData));
+            }
+          } catch (error) {
+            console.error('Error fetching user details after login:', error);
+            // Nie blokuj logowania jeśli nie udało się pobrać pełnych danych
+            // Użytkownik jest już zalogowany z podstawowymi danymi
+          } finally {
+            isLoggingIn.current = false;
+          }
         }
+      } catch (e) {
+        isLoggingIn.current = false;
+        if (e instanceof Error) {
+          Alert.alert(
+            'Błąd podczas logowania: ',
+            e.message || 'Wystąpił błąd podczas logowania.',
+          );
+        }
+        setError('Wystąpił błąd podczas logowania.');
       }
-    } catch (e) {
-      isLoggingIn.current = false;
-      if (e instanceof Error) {
-        Alert.alert(
-          'Błąd podczas logowania: ',
-          e.message || 'Wystąpił błąd podczas logowania.',
-        );
-      }
-      setError('Wystąpił błąd podczas logowania.');
-    }
-  }, [getUserDetails]);
+    },
+    [getUserDetails],
+  );
 
   const register = useCallback(
     async (data: RegistrationData) => {
@@ -491,7 +574,6 @@ export function AuthProvider({
 
         // Pobierz token zaproszenia z AsyncStorage jeśli istnieje
         const invitationToken = await AsyncStorage.getItem('invitation_token');
-        
 
         // Mapowanie nazw pól z formularza na format backendu
         const requestBody: any = {
@@ -600,6 +682,14 @@ export function AuthProvider({
   );
   const isUserAdmin = useCallback(() => user?.userType === 'admin', [user]);
   const isUserClient = useCallback(() => user?.userType === 'klient', [user]);
+  const isUserGlobalAdmin = useCallback(
+    () => user?.userType === 'global_admin',
+    [user],
+  );
+  const isUserCompanyAdmin = useCallback(
+    () => user?.userType === 'admin',
+    [user],
+  );
 
   const memoedValue = useMemo(
     () => ({
@@ -614,6 +704,8 @@ export function AuthProvider({
       isUserAssembler,
       isUserAdmin,
       isUserClient,
+      isUserGlobalAdmin,
+      isUserCompanyAdmin,
     }),
     [
       token,

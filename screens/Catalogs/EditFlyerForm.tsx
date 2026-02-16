@@ -1,63 +1,70 @@
+import { useRoute } from '@react-navigation/native';
+import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import { ButtonGroup } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import Container from '../../components/Container';
-import DatePicker from '../../components/DatePicker';
-import FilePicker, { File } from '../../components/FilePicker';
 import { Dropdown, FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
-import { CatalogsAddPriceListScreenProps } from '../../navigation/types';
-import useCatalogs from '../../providers/CatalogsProvider';
+import { CatalogsEditFlyerScreenProps } from '../../navigation/types';
+import useCatalogs, { Flyer } from '../../providers/CatalogsProvider';
 
-type PriceListData = {
-  file: File | null;
-  name: string;
+type FlyerData = {
   is_active: boolean;
-  od?: Date;
+  name: string;
 };
 
-function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
-  const { control, handleSubmit } = useForm<PriceListData>({
+function EditFlyerForm({ navigation }: CatalogsEditFlyerScreenProps) {
+  const route = useRoute();
+  const { flyer } = (route.params as { flyer: Flyer }) || {};
+
+  const { control, handleSubmit, setValue } = useForm<FlyerData>({
     defaultValues: {
-      file: null,
-      is_active: true,
-      name: 'Cennik',
-      od: undefined,
+      is_active: flyer?.is_active ?? true,
+      name: flyer?.name ?? '',
     },
   });
 
+  // Set initial values when flyer is loaded
+  useEffect(() => {
+    if (flyer) {
+      setValue('name', flyer.name);
+      setValue('is_active', flyer.is_active);
+    }
+  }, [flyer, setValue]);
+
   const { execute, loading } = useApi<object, FormData>({
-    path: 'cennik_add',
+    path: 'ulotka_update',
   });
 
-  const { getPriceList } = useCatalogs();
+  const { getFlyers } = useCatalogs();
 
-  const onSubmit = async (data: PriceListData) => {
-    if (!data.file) {
-      Alert.alert('Błąd', 'Wybierz plik PDF cennika.');
+  const onSubmit = async (data: FlyerData) => {
+    if (!flyer) {
+      Alert.alert('Błąd', 'Brak danych ulotki.');
       return;
     }
 
     const requestData = new FormData();
-    requestData.append('file', data.file);
+    requestData.append('ulotka_id', flyer.id.toString());
     requestData.append('name', data.name);
-    requestData.append('is_active', data.is_active);
-    if (data.od) {
-      const dateStr = data.od.toISOString().split('T')[0]; // Format: YYYY-MM-DD
-      requestData.append('od', dateStr);
-    }
+    requestData.append('is_active', data.is_active.toString());
 
     const response = await execute({ data: requestData });
 
     if (response && !('error' in response)) {
-      if (getPriceList) {
-        getPriceList();
+      if (getFlyers) {
+        getFlyers();
       }
-      Alert.alert('Sukces', 'Dodano cennik');
-      navigation.navigate('Catalogs');
+      Alert.alert('Sukces', 'Zaktualizowano ulotkę', [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack(),
+        },
+      ]);
     } else if (response && 'error' in response) {
       Alert.alert('Błąd', (response as { error: string }).error);
     }
@@ -71,16 +78,10 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
           <FormInput
             name="name"
             control={control}
-            label="Nazwa cennika"
+            label="Nazwa ulotki"
             noPadding
             style={styles.firstInput}
           />
-          <View style={styles.datePickerWrapper}>
-            <Text style={styles.datePickerLabel}>Data obowiązywania</Text>
-            <View style={styles.datePickerContainer}>
-              <DatePicker control={control} name="od" color={Colors.purple} />
-            </View>
-          </View>
           <Dropdown
             name="is_active"
             control={control}
@@ -98,13 +99,6 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
             isBordered
             isThin
           />
-
-          <FilePicker
-            name="file"
-            control={control}
-            label="Dodaj cennik"
-            color={Colors.purple}
-          />
         </View>
       </View>
 
@@ -115,14 +109,14 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
           submitStyle={styles.submitButton}
           cancelTitle="Anuluj"
           onSubmitPress={handleSubmit(onSubmit)}
-          onCancel={() => navigation.navigate('Menu')}
+          onCancel={() => navigation.goBack()}
         />
       </View>
     </Container>
   );
 }
 
-export default AddPriceListForm;
+export default EditFlyerForm;
 
 const styles = StyleSheet.create({
   container: {
@@ -137,18 +131,6 @@ const styles = StyleSheet.create({
     gap: -14,
   },
   firstInput: {
-    marginBottom: -4,
-  },
-  datePickerWrapper: {
-    marginBottom: 10,
-  },
-  datePickerLabel: {
-    fontSize: 14,
-    fontFamily: 'Poppins_400Regular',
-    color: Colors.black,
-    marginBottom: 8,
-  },
-  datePickerContainer: {
     marginBottom: -4,
   },
   footer: {

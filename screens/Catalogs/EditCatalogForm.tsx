@@ -1,3 +1,5 @@
+import { useRoute } from '@react-navigation/native';
+import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
@@ -5,46 +7,57 @@ import { ButtonGroup } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import Container from '../../components/Container';
 import DatePicker from '../../components/DatePicker';
-import FilePicker, { File } from '../../components/FilePicker';
 import { Dropdown, FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
-import { CatalogsAddPriceListScreenProps } from '../../navigation/types';
-import useCatalogs from '../../providers/CatalogsProvider';
+import { CatalogsEditCatalogScreenProps } from '../../navigation/types';
+import useCatalogs, { Catalog } from '../../providers/CatalogsProvider';
 
-type PriceListData = {
-  file: File | null;
-  name: string;
+type CatalogData = {
   is_active: boolean;
+  name: string;
   od?: Date;
 };
 
-function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
-  const { control, handleSubmit } = useForm<PriceListData>({
+function EditCatalogForm({ navigation }: CatalogsEditCatalogScreenProps) {
+  const route = useRoute();
+  const { catalog } = (route.params as { catalog: Catalog }) || {};
+
+  const { control, handleSubmit, setValue } = useForm<CatalogData>({
     defaultValues: {
-      file: null,
-      is_active: true,
-      name: 'Cennik',
-      od: undefined,
+      is_active: catalog?.is_active ?? false,
+      name: catalog?.name ?? '',
+      od: catalog?.od ? new Date(catalog.od) : undefined,
     },
   });
 
+  // Set initial values when catalog is loaded
+  useEffect(() => {
+    if (catalog) {
+      setValue('name', catalog.name);
+      setValue('is_active', catalog.is_active);
+      if (catalog.od) {
+        setValue('od', new Date(catalog.od));
+      }
+    }
+  }, [catalog, setValue]);
+
   const { execute, loading } = useApi<object, FormData>({
-    path: 'cennik_add',
+    path: 'katalog_update',
   });
 
-  const { getPriceList } = useCatalogs();
+  const { getCatalogs } = useCatalogs();
 
-  const onSubmit = async (data: PriceListData) => {
-    if (!data.file) {
-      Alert.alert('Błąd', 'Wybierz plik PDF cennika.');
+  const onSubmit = async (data: CatalogData) => {
+    if (!catalog) {
+      Alert.alert('Błąd', 'Brak danych katalogu.');
       return;
     }
 
     const requestData = new FormData();
-    requestData.append('file', data.file);
+    requestData.append('katalog_id', catalog.id.toString());
     requestData.append('name', data.name);
-    requestData.append('is_active', data.is_active);
+    requestData.append('is_active', data.is_active.toString());
     if (data.od) {
       const dateStr = data.od.toISOString().split('T')[0]; // Format: YYYY-MM-DD
       requestData.append('od', dateStr);
@@ -53,11 +66,15 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
     const response = await execute({ data: requestData });
 
     if (response && !('error' in response)) {
-      if (getPriceList) {
-        getPriceList();
+      if (getCatalogs) {
+        getCatalogs();
       }
-      Alert.alert('Sukces', 'Dodano cennik');
-      navigation.navigate('Catalogs');
+      Alert.alert('Sukces', 'Zaktualizowano katalog', [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack(),
+        },
+      ]);
     } else if (response && 'error' in response) {
       Alert.alert('Błąd', (response as { error: string }).error);
     }
@@ -71,7 +88,7 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
           <FormInput
             name="name"
             control={control}
-            label="Nazwa cennika"
+            label="Nazwa katalogu"
             noPadding
             style={styles.firstInput}
           />
@@ -98,13 +115,6 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
             isBordered
             isThin
           />
-
-          <FilePicker
-            name="file"
-            control={control}
-            label="Dodaj cennik"
-            color={Colors.purple}
-          />
         </View>
       </View>
 
@@ -115,21 +125,20 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
           submitStyle={styles.submitButton}
           cancelTitle="Anuluj"
           onSubmitPress={handleSubmit(onSubmit)}
-          onCancel={() => navigation.navigate('Menu')}
+          onCancel={() => navigation.goBack()}
         />
       </View>
     </Container>
   );
 }
 
-export default AddPriceListForm;
+export default EditCatalogForm;
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     display: 'flex',
     justifyContent: 'space-between',
-    flex: 1,
-    backgroundColor: Colors.white,
   },
   formContainer: {
     paddingTop: 10,

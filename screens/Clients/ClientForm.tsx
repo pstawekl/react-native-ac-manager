@@ -116,6 +116,10 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
     error: string;
     Status?: string;
     client_id?: number;
+    user_exists?: boolean;
+    existing_user_id?: number;
+    existing_user_name?: string;
+    existing_user_email?: string;
   }>({
     path: isEditMode ? 'change_child_data' : 'create_klient',
   });
@@ -133,8 +137,29 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
     exists: boolean;
     email: string;
     error?: string;
+    existing_user_id?: number;
+    existing_user_name?: string;
+    existing_user_email?: string;
   }>({
     path: 'check_email',
+  });
+
+  const { execute: addExistingUserToListApi } = useApi<{
+    status: string;
+    user_id: number;
+    user_name: string;
+    added_to_list: boolean;
+    lista_id?: number;
+    error?: string;
+  }>({
+    path: 'add_existing_user_to_list',
+  });
+
+  const { execute: getClientListsApi } = useApi<{
+    listy_klientow: Array<{ id: number; nazwa: string }>;
+    error?: string;
+  }>({
+    path: 'listy_klientow',
   });
 
   const {
@@ -202,11 +227,75 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
           });
 
           if (emailCheckResponse?.exists) {
-            Alert.alert(
-              'Użytkownik już istnieje',
-              `Klient z adresem email "${data.email}" już istnieje w systemie.\n\nMożliwe przyczyny:\n• Ten email został wcześniej zarejestrowany\n• Klient może być już przypisany do innego użytkownika\n\nSpróbuj użyć innego adresu email lub znajdź istniejącego klienta na liście.`,
-              [{ text: 'OK', style: 'default' }],
-            );
+            // Jeśli mamy informacje o istniejącym użytkowniku, pokaż dialog z opcją dodania
+            if (
+              emailCheckResponse.existing_user_id &&
+              emailCheckResponse.existing_user_name
+            ) {
+              Alert.alert(
+                'Użytkownik już istnieje',
+                `Klient z adresem email "${data.email
+                }" już istnieje w systemie.\n\nUżytkownik: ${emailCheckResponse.existing_user_name
+                }\nEmail: ${emailCheckResponse.existing_user_email || data.email
+                }\n\nCzy chcesz dodać tego użytkownika do swojej listy klientów?`,
+                [
+                  {
+                    text: 'Anuluj',
+                    style: 'cancel',
+                  },
+                  {
+                    text: 'Dodaj do listy',
+                    style: 'default',
+                    onPress: async () => {
+                      try {
+                        // Backend automatycznie doda do pierwszej listy jeśli lista_id nie jest podane
+                        const addResponse = await addExistingUserToListApi({
+                          data: {
+                            existing_user_id:
+                              emailCheckResponse.existing_user_id,
+                            // lista_id nie jest wymagane - backend automatycznie użyje pierwszej listy
+                          },
+                        });
+
+                        if (addResponse?.error) {
+                          Alert.alert('Błąd', addResponse.error);
+                          return;
+                        }
+
+                        if (addResponse?.status) {
+                          Alert.alert(
+                            'Sukces',
+                            `Użytkownik ${addResponse.user_name} został dodany do listy klientów.`,
+                            [
+                              {
+                                text: 'OK',
+                                onPress: () => {
+                                  // Odśwież listę klientów i zamknij formularz
+                                  getClients?.();
+                                  navigation.goBack();
+                                },
+                              },
+                            ],
+                          );
+                        }
+                      } catch (error) {
+                        Alert.alert(
+                          'Błąd',
+                          'Nie udało się dodać użytkownika do listy klientów.',
+                        );
+                      }
+                    },
+                  },
+                ],
+              );
+            } else {
+              // Fallback - jeśli nie mamy informacji o użytkowniku
+              Alert.alert(
+                'Użytkownik już istnieje',
+                `Klient z adresem email "${data.email}" już istnieje w systemie.\n\nMożliwe przyczyny:\n• Ten email został wcześniej zarejestrowany\n• Klient może być już przypisany do innego użytkownika\n\nSpróbuj użyć innego adresu email lub znajdź istniejącego klienta na liście.`,
+                [{ text: 'OK', style: 'default' }],
+              );
+            }
             return; // Przerwij submit
           }
         } catch {
@@ -261,6 +350,66 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
 
       // Jeśli nie ma odpowiedzi (błąd sieciowy lub timeout)
       if (!response) {
+        return;
+      }
+
+      // Sprawdź czy backend zwrócił informację o istniejącym użytkowniku
+      if (response?.user_exists && response.existing_user_id) {
+        Alert.alert(
+          'Użytkownik już istnieje',
+          `Klient z adresem email "${data.email
+          }" już istnieje w systemie.\n\nUżytkownik: ${response.existing_user_name
+          }\nEmail: ${response.existing_user_email || data.email
+          }\n\nCzy chcesz dodać tego użytkownika do swojej listy klientów?`,
+          [
+            {
+              text: 'Anuluj',
+              style: 'cancel',
+            },
+            {
+              text: 'Dodaj do listy',
+              style: 'default',
+              onPress: async () => {
+                try {
+                  // Backend automatycznie doda do pierwszej listy jeśli lista_id nie jest podane
+                  const addResponse = await addExistingUserToListApi({
+                    data: {
+                      existing_user_id: response.existing_user_id,
+                      // lista_id nie jest wymagane - backend automatycznie użyje pierwszej listy
+                    },
+                  });
+
+                  if (addResponse?.error) {
+                    Alert.alert('Błąd', addResponse.error);
+                    return;
+                  }
+
+                  if (addResponse?.status) {
+                    Alert.alert(
+                      'Sukces',
+                      `Użytkownik ${addResponse.user_name} został dodany do listy klientów.`,
+                      [
+                        {
+                          text: 'OK',
+                          onPress: () => {
+                            // Odśwież listę klientów i zamknij formularz
+                            getClients?.();
+                            navigation.goBack();
+                          },
+                        },
+                      ],
+                    );
+                  }
+                } catch (error) {
+                  Alert.alert(
+                    'Błąd',
+                    'Nie udało się dodać użytkownika do listy klientów.',
+                  );
+                }
+              },
+            },
+          ],
+        );
         return;
       }
 

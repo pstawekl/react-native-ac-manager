@@ -1,39 +1,28 @@
 import { Route, useNavigation, useRoute } from '@react-navigation/native';
 import { Text } from '@rneui/base';
-import { useState } from 'react';
-import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Tabs from '../../components/Tabs';
 import Colors from '../../consts/Colors';
 
-import FilterIcon from '../../components/icons/FilterIcon';
-import SearchIcon from '../../components/icons/SearchIcon';
 import Catalogs from './Catalogs';
 import Flyers from './Flyers';
 import PriceList from './PriceList';
 
 function CatalogsScreen() {
-  const [searchQuery, setSearchQuery] = useState('');
-
   const items = [
     {
       title: 'Katalogi',
-      component: ({ isActive }: { isActive: boolean }) => (
-        <Catalogs searchQuery={searchQuery} />
-      ),
+      component: ({ isActive }: { isActive: boolean }) => <Catalogs />,
       id: 'catalogs',
     },
     {
       title: 'Cennik',
-      component: ({ isActive }: { isActive: boolean }) => (
-        <PriceList searchQuery={searchQuery} />
-      ),
+      component: ({ isActive }: { isActive: boolean }) => <PriceList />,
       id: 'prices',
     },
     {
       title: 'Ulotki',
-      component: ({ isActive }: { isActive: boolean }) => (
-        <Flyers searchQuery={searchQuery} />
-      ),
+      component: ({ isActive }: { isActive: boolean }) => <Flyers />,
       id: 'flyers',
     },
   ];
@@ -51,31 +40,6 @@ function CatalogsScreen() {
         headerContent={
           <View style={styles.headerContent}>
             <Text style={styles.mainHeader}>Dokumenty</Text>
-
-            {/* Pasek wyszukiwania i przycisk filtra */}
-            <View style={styles.searchContainer}>
-              <View style={styles.searchBar}>
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Szukaj"
-                  placeholderTextColor={Colors.lightGray}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                />
-                <View style={styles.searchIconContainer}>
-                  <SearchIcon color={Colors.black} size={18} />
-                </View>
-              </View>
-              <TouchableOpacity
-                style={styles.filterButton}
-                onPress={() => {
-                  // Placeholder - na razie nic nie robi
-                }}
-                activeOpacity={0.7}
-              >
-                <FilterIcon color={Colors.black} size={20} />
-              </TouchableOpacity>
-            </View>
           </View>
         }
         onBackPress={() => {
@@ -102,41 +66,6 @@ const styles = StyleSheet.create({
     color: Colors.black,
     marginBottom: 20,
     paddingHorizontal: 18,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 0,
-    backgroundColor: Colors.white,
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.menuIconBackground,
-    borderRadius: 25,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginRight: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    fontFamily: 'Poppins_400Regular',
-    color: Colors.black,
-    padding: 0,
-  },
-  searchIconContainer: {
-    marginLeft: 8,
-  },
-  filterButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.white,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });
 
