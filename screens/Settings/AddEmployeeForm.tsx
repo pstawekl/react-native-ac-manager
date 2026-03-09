@@ -19,7 +19,6 @@ import useStaff, { Team } from '../../providers/StaffProvider';
 
 type EmployeeData = {
   email: string;
-  password: string;
   first_name: string;
   last_name: string;
   ulica: string;
@@ -150,6 +149,7 @@ function AddEmployeeForm({ navigation, route }: any): JSX.Element {
       email: employee?.email ?? '',
       phone: employee?.numer_telefonu ?? '',
       group_id: employee?.group_id ?? undefined,
+      type: employee?.type ?? 'monter',
     },
   });
 
@@ -161,15 +161,23 @@ function AddEmployeeForm({ navigation, route }: any): JSX.Element {
 
   const onSubmit = async (data: EmployeeData) => {
     if (!employee) {
+      if (!data.email?.trim()) {
+        Alert.alert('Błąd', 'Email jest wymagany.');
+        return;
+      }
       const payload = {
-        ...data,
-        street: data.ulica,
-        numer_domu: data.numer_domu,
-        mieszkanie: data.mieszkanie,
-        city: data.miasto,
-        code: data.kod_pocztowy,
+        email: data.email.trim(),
+        first_name: data.first_name ?? '',
+        last_name: data.last_name ?? '',
+        street: data.ulica ?? '',
+        numer_domu: data.numer_domu ?? '',
+        mieszkanie: data.mieszkanie ?? '',
+        city: data.miasto ?? '',
+        code: data.kod_pocztowy ?? '',
+        phone: data.phone ?? '',
+        group_id: data.group_id ?? undefined,
       };
-      const response = await execute(payload);
+      const response = await execute({ data: payload });
       if (response?.Status === 'User Created') {
         toggleOverlay();
         Alert.alert('Pracownik dodany.');
@@ -182,14 +190,16 @@ function AddEmployeeForm({ navigation, route }: any): JSX.Element {
       }
     } else {
       await editEmployee({
-        ...data,
-        ulica: data.ulica,
-        numer_domu: data.numer_domu,
-        mieszkanie: data.mieszkanie,
-        kod_pocztowy: data.kod_pocztowy,
-        miasto: data.miasto,
-        group: data.group_id,
-        user_id: employee.ac_user,
+        data: {
+          ...data,
+          ulica: data.ulica,
+          numer_domu: data.numer_domu,
+          mieszkanie: data.mieszkanie,
+          kod_pocztowy: data.kod_pocztowy,
+          miasto: data.miasto,
+          group: data.group_id,
+          user_id: employee.ac_user,
+        },
       });
       toggleOverlay();
       Alert.alert('Pracownik zapisany');

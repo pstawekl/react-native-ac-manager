@@ -2,8 +2,11 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { SubNavigationStyles } from '../consts/Styles';
 import AddSurchargeForm from '../screens/Offers/AddSurchargeForm';
 import AddToolForm from '../screens/Offers/AddToolForm';
+import CreateOfferFromTemplate from '../screens/Offers/CreateOfferFromTemplate';
 import MontazProposals from '../screens/Offers/MontazProposals';
 import MultisplitAddKomplet from '../screens/Offers/MultisplitAddKomplet';
+import MultisplitFilters from '../screens/Offers/MultisplitFilters';
+import MultisplitKompletFlow from '../screens/Offers/MultisplitKompletFlow';
 import MultisplitKompletyList from '../screens/Offers/MultisplitKompletyList';
 import OfferOverview from '../screens/Offers/OfferOverview';
 import OfferTemplateForm from '../screens/Offers/OfferTemplateForm';
@@ -24,6 +27,11 @@ function OffersNavigation() {
       <Offer.Screen name="Menu" component={OffersMenu} />
       <Offer.Screen name="List" component={OffersList} />
       <Offer.Screen name="AddToolForm" component={AddToolForm} />
+      <Offer.Screen name="MultisplitFilters" component={MultisplitFilters} />
+      <Offer.Screen
+        name="MultisplitKompletFlow"
+        component={MultisplitKompletFlow}
+      />
       <Offer.Screen
         name="MultisplitKompletyList"
         component={MultisplitKompletyList}
@@ -36,6 +44,10 @@ function OffersNavigation() {
       <Offer.Screen name="Overview" component={OfferOverview} />
       <Offer.Screen name="OfferTemplatesList" component={OfferTemplatesList} />
       <Offer.Screen name="OfferTemplateForm" component={OfferTemplateForm} />
+      <Offer.Screen
+        name="CreateOfferFromTemplate"
+        component={CreateOfferFromTemplate}
+      />
       <Offer.Screen name="SelectMontazDate" component={SelectMontazDate} />
       <Offer.Screen name="MontazProposals" component={MontazProposals} />
     </Offer.Navigator>

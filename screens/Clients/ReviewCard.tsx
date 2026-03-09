@@ -18,6 +18,10 @@ export type Review = {
   status?: string;
   ekipa?: string;
   ekipa_id?: number;
+  klient_id?: number;
+  instalacja_id?: number;
+  client_display?: string;
+  installation_name?: string;
 };
 
 type ReviewCardProps = {
@@ -52,6 +56,9 @@ export default function ReviewCard({ review, onPress }: ReviewCardProps) {
   const addressLine1 = review.address?.line1 || '';
   const addressLine2 = review.address?.line2 || '';
 
+  const clientLabel = review.client_display || '';
+  const installationLabel = review.installation_name || '';
+
   // Status
   const status = review.status || 'Zaplanowane';
   const statusBgColor =
@@ -77,6 +84,18 @@ export default function ReviewCard({ review, onPress }: ReviewCardProps) {
       {/* Adres i data/czas */}
       <View style={styles.reviewContent}>
         <View style={styles.reviewLeft}>
+          {(clientLabel || installationLabel) && (
+            <>
+              {clientLabel ? (
+                <Text style={styles.reviewMetaLine}>Klient: {clientLabel}</Text>
+              ) : null}
+              {installationLabel ? (
+                <Text style={styles.reviewMetaLine}>
+                  Instalacja: {installationLabel}
+                </Text>
+              ) : null}
+            </>
+          )}
           {addressLine1 ? (
             <Text style={styles.reviewAddressLine1}>{addressLine1}</Text>
           ) : null}
@@ -161,6 +180,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Archivo_400Regular',
     color: Colors.black,
+  },
+  reviewMetaLine: {
+    fontSize: 13,
+    fontFamily: 'Archivo_400Regular',
+    color: Colors.black,
+    marginBottom: 2,
   },
   reviewRight: {
     alignItems: 'flex-end',

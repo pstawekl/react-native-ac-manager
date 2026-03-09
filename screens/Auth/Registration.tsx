@@ -358,12 +358,12 @@ function RegistrationScreen({
                   <FormInput
                     name="numer_domu"
                     control={control}
-                    label="Numer domu"
+                    label="Numer budynku"
                     noPadding
                     customPercentWidth={48}
                   />
                   <FormInput
-                    label="Numer mieszkania"
+                    label="Numer lokalu"
                     name="mieszkanie"
                     control={control}
                     noPadding
@@ -398,37 +398,15 @@ function RegistrationScreen({
 
                 <Text style={styles.sectionText}>Informacje kontaktowe</Text>
                 <Divider style={styles.divider} />
-
-                {watchedClientType === 'osoba_prywatna' && (
-                  <Text style={styles.infoText}>
-                    💡 Dla osób prywatnych email nie jest wymagany
-                  </Text>
-                )}
-
                 <FormInput
                   name="email"
                   control={control}
-                  label={
-                    watchedClientType === 'firma' || !hasInvitationToken
-                      ? 'E-mail *'
-                      : 'E-mail'
-                  }
+                  label="E-mail *"
                   noPadding
                   error={errors.email}
                   rules={{
-                    required:
-                      watchedClientType === 'firma' || !hasInvitationToken
-                        ? 'E-mail jest wymagany dla firm'
-                        : false,
+                    required: 'E-mail jest wymagany',
                     validate: (value: string | null) => {
-                      // Jeśli pole jest puste i to nie firma (i jest zaproszenie), to jest OK
-                      if (
-                        !value &&
-                        watchedClientType !== 'firma' &&
-                        hasInvitationToken
-                      ) {
-                        return true;
-                      }
                       // Jeśli pole ma wartość, sprawdź pattern
                       if (
                         value &&

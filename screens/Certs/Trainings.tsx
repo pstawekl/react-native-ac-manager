@@ -52,7 +52,7 @@ export default function Trainings() {
 
   const onDeleteConfirmed = () => {
     if (idToDelete && getTrainings) {
-      deleteTraining({ szkolenie_id: idToDelete });
+      deleteTraining({ data: { szkolenie_id: idToDelete } });
       toggleOverlay();
       getTrainings();
     }
@@ -85,9 +85,38 @@ export default function Trainings() {
         {trainings?.length ? (
           trainings.map(item => {
             const openTrainingLink = () => {
-              const catalogLink = ASSETS_BASE_URL + item.file;
-              Linking.openURL(catalogLink).catch(err => console.log(err));
+              if (item.file) {
+                const catalogLink = ASSETS_BASE_URL + item.file;
+                Linking.openURL(catalogLink).catch(err => console.log(err));
+              }
             };
+
+            const participantsLabel =
+              item.participants && item.participants.length
+                ? item.participants
+                    .map(p => `${p.first_name} ${p.last_name}`.trim())
+                    .join(', ')
+                : null;
+
+            const companyLabel =
+              item.company_user != null
+                ? `${item.company_user.first_name} ${item.company_user.last_name}`.trim()
+                : null;
+
+            const subtitleParts: string[] = [];
+            subtitleParts.push(
+              `Data wydania: ${format(
+                new Date(item.created_date),
+                'dd/MM/yyyy',
+              )}`,
+            );
+            if (participantsLabel) {
+              subtitleParts.push(`Uczestnicy: ${participantsLabel}`);
+            }
+            if (companyLabel) {
+              subtitleParts.push(`Firma: ${companyLabel}`);
+            }
+
             return (
               <ListItem.Swipeable
                 key={item.id}
@@ -104,14 +133,16 @@ export default function Trainings() {
                 <Avatar
                   rounded
                   size={41}
-                  icon={{ name: 'file-pdf', type: 'font-awesome-5' }}
+                  icon={{
+                    name: item.file ? 'file-pdf' : 'chalkboard-teacher',
+                    type: 'font-awesome-5',
+                  }}
                   containerStyle={styles.avatarContainer}
                 />
                 <ListItem.Content>
                   <ListItem.Title>{item.name ?? item.file}</ListItem.Title>
                   <ListItem.Subtitle>
-                    Data wydania:{' '}
-                    {format(new Date(item.created_date), 'dd/MM/yyyy')}
+                    {subtitleParts.join(' | ')}
                   </ListItem.Subtitle>
                 </ListItem.Content>
               </ListItem.Swipeable>

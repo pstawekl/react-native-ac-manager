@@ -36,8 +36,23 @@ export default function MultisplitKompletyList() {
         setKomplety(fullList);
       } else if (added) {
         setKomplety(prev => [...prev, added]);
+      } else {
+        setKomplety([]);
+        // Nowy flow: przy pustej liście przekieruj do filtrów multisplit
+        navigation.replace('MultisplitFilters', {
+          installationId: installationId ?? null,
+          offerName,
+          isTemplate,
+        });
       }
-    }, [route.params?.addedKomplet, route.params?.komplety]),
+    }, [
+      route.params?.addedKomplet,
+      route.params?.komplety,
+      installationId,
+      offerName,
+      isTemplate,
+      navigation,
+    ]),
   );
 
   const handleAddKomplet = () => {

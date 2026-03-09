@@ -15,26 +15,39 @@ import useCatalogs, { PriceListItem } from '../../providers/CatalogsProvider';
 
 type PriceListData = {
   is_active: boolean;
+  producent: string;
   name: string;
   od?: Date;
 };
+
+function parseName(fullName: string): { producent: string; name: string } {
+  const parts = fullName.split(' ');
+  if (parts.length <= 1) return { producent: '', name: fullName };
+  const producent = parts[0];
+  const name = parts.slice(1).join(' ');
+  return { producent, name };
+}
 
 function EditPriceListForm({ navigation }: CatalogsEditPriceListScreenProps) {
   const route = useRoute();
   const { priceList } = (route.params as { priceList: PriceListItem }) || {};
 
+  const parsed = parseName(priceList?.name ?? '');
+
   const { control, handleSubmit, setValue } = useForm<PriceListData>({
     defaultValues: {
       is_active: priceList?.is_active ?? true,
-      name: priceList?.name ?? '',
+      producent: parsed.producent,
+      name: parsed.name,
       od: priceList?.od ? new Date(priceList.od) : undefined,
     },
   });
 
-  // Set initial values when priceList is loaded
   useEffect(() => {
     if (priceList) {
-      setValue('name', priceList.name);
+      const p = parseName(priceList.name);
+      setValue('producent', p.producent);
+      setValue('name', p.name);
       setValue('is_active', priceList.is_active);
       if (priceList.od) {
         setValue('od', new Date(priceList.od));
@@ -54,12 +67,16 @@ function EditPriceListForm({ navigation }: CatalogsEditPriceListScreenProps) {
       return;
     }
 
+    const fullName = data.producent
+      ? `${data.producent} ${data.name}`.trim()
+      : data.name.trim();
+
     const requestData = new FormData();
     requestData.append('cennik_id', priceList.id.toString());
-    requestData.append('name', data.name);
+    requestData.append('name', fullName);
     requestData.append('is_active', data.is_active.toString());
     if (data.od) {
-      const dateStr = data.od.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      const dateStr = data.od.toISOString().split('T')[0];
       requestData.append('od', dateStr);
     }
 
@@ -69,7 +86,7 @@ function EditPriceListForm({ navigation }: CatalogsEditPriceListScreenProps) {
       if (getPriceList) {
         getPriceList();
       }
-      Alert.alert('Sukces', 'Zaktualizowano cennik', [
+      Alert.alert('Zaktualizowano cennik', [
         {
           text: 'OK',
           onPress: () => navigation.goBack(),
@@ -86,17 +103,21 @@ function EditPriceListForm({ navigation }: CatalogsEditPriceListScreenProps) {
         <ButtonsHeader onBackPress={navigation.goBack} />
         <View style={styles.formContainer}>
           <FormInput
+            name="producent"
+            control={control}
+            label="Producent"
+            noPadding
+            style={styles.firstInput}
+          />
+          <FormInput
             name="name"
             control={control}
             label="Nazwa cennika"
             noPadding
-            style={styles.firstInput}
           />
           <View style={styles.datePickerWrapper}>
             <Text style={styles.datePickerLabel}>Data obowiązywania</Text>
-            <View style={styles.datePickerContainer}>
-              <DatePicker control={control} name="od" color={Colors.purple} />
-            </View>
+            <DatePicker control={control} name="od" color={Colors.purple} />
           </View>
           <Dropdown
             name="is_active"
@@ -157,9 +178,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_400Regular',
     color: Colors.black,
     marginBottom: 8,
-  },
-  datePickerContainer: {
-    marginBottom: -4,
   },
   footer: {
     marginBottom: 30,

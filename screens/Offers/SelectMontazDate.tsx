@@ -15,6 +15,7 @@ import { SubmitButton } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import Colors from '../../consts/Colors';
 import useMontazDates, { AvailableDate } from '../../hooks/useMontazDates';
+import { useOfferSettings } from '../../providers/OfferSettingsProvider';
 
 type RouteParams = {
   ofertaId: number;
@@ -24,6 +25,8 @@ function SelectMontazDate() {
   const route = useRoute();
   const navigation = useNavigation();
   const { ofertaId } = route.params as RouteParams;
+  const { settings: offerSettings, loading: offerSettingsLoading } = useOfferSettings();
+  const reservationSystemEnabled = offerSettings?.reservationSystemEnabled ?? true;
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('09:00');
@@ -36,14 +39,29 @@ function SelectMontazDate() {
     proposeDateLoading,
   } = useMontazDates();
 
-  // Załaduj dostępne terminy
+  // Gdy system rezerwacji wyłączony – zabezpieczenie przed wejściem (np. głęboki link)
+  useEffect(() => {
+    if (offerSettingsLoading) return;
+    if (!reservationSystemEnabled) {
+      Alert.alert(
+        'Niedostępne',
+        'System rezerwacji terminów jest wyłączony. Wybór terminu nie jest możliwy.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }],
+      );
+    }
+  }, [offerSettingsLoading, reservationSystemEnabled, navigation]);
+
+  // Załaduj dostępne terminy (z ofertaId, aby backend zastosował bufor i godziny pracy firmy)
   useEffect(() => {
     const loadDates = async () => {
       const today = format(new Date(), 'yyyy-MM-dd');
-      await getAvailableDates(today);
+      const end = new Date();
+      end.setDate(end.getDate() + 30);
+      const endStr = format(end, 'yyyy-MM-dd');
+      await getAvailableDates(today, endStr, ofertaId);
     };
     loadDates();
-  }, [getAvailableDates]);
+  }, [getAvailableDates, ofertaId]);
 
   const handleDateSelect = useCallback((date: string) => {
     setSelectedDate(date);
@@ -64,7 +82,6 @@ function SelectMontazDate() {
 
       if (success) {
         Alert.alert(
-          'Sukces',
           'Propozycja terminu została wysłana. Oczekuj na potwierdzenie przez montera.',
           [
             {

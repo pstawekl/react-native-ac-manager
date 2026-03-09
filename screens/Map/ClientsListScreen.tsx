@@ -6,7 +6,9 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   View,
 } from 'react-native';
@@ -17,14 +19,21 @@ import { StackScreenProps } from '@react-navigation/stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconButton } from '../../components/Button';
+import AcIcon from '../../components/icons/AcIcon';
 import ArrowLeftIcon from '../../components/icons/ArrowLeftIcon';
+import CloseIcon from '../../components/icons/CloseIcon';
 import MapIcon from '../../components/icons/MapIcon';
 import PhoneIcon from '../../components/icons/PhoneIcon';
 import TrashIcon from '../../components/icons/TrashIcon';
 import Colors from '../../consts/Colors';
 import { MainParamList, MapParamList } from '../../navigation/types';
+import useApi from '../../hooks/useApi';
 import useAuth from '../../providers/AuthProvider';
 import useClients, { Client } from '../../providers/ClientsProvider';
+import {
+  ClientInstallationsListResponse,
+  ClientsInstallationListItem,
+} from '../../types/clients.types';
 import { Place } from './MapScreen';
 
 type ClientsListScreenProps = CompositeScreenProps<
@@ -53,12 +62,14 @@ function PlaceRow({
   onCall,
   onRoute,
   onPress,
+  onShowDevices,
 }: {
   place: Place;
   onDelete: (id: number) => void;
   onCall: () => void;
   onRoute: () => void;
   onPress: () => void;
+  onShowDevices?: (place: Place) => void;
 }) {
   const isCompany = place.rodzaj_klienta === 'firma';
   const companyName =
@@ -101,6 +112,14 @@ function PlaceRow({
           ) : null}
         </ListItem.Content>
         <View style={styles.placeRowButtons}>
+          {onShowDevices ? (
+            <IconButton
+              icon={<AcIcon color={Colors.black} width={20} height={20} />}
+              onPress={() => onShowDevices(place)}
+              withoutBackground
+              style={styles.actionButton}
+            />
+          ) : null}
           <IconButton
             icon={<MapIcon color={Colors.black} size={18} />}
             onPress={() => onRoute()}
@@ -134,6 +153,98 @@ function ClientsListScreen({ route, navigation }: ClientsListScreenProps) {
   const savedListIdRef = useRef<number | null>(null);
   const isLoadingRef = useRef<boolean>(false);
   const lastLoadedListIdRef = useRef<number | null>(null);
+
+  const [devicesOverlayVisible, setDevicesOverlayVisible] = useState(false);
+  const [devicesOverlayClientId, setDevicesOverlayClientId] = useState<
+    number | null
+  >(null);
+  const [devicesOverlayList, setDevicesOverlayList] = useState<
+    ClientsInstallationListItem[]
+  >([]);
+  const [devicesOverlayLoading, setDevicesOverlayLoading] = useState(false);
+  const [devicesOverlayError, setDevicesOverlayError] = useState(false);
+  const devicesOverlayRequestIdRef = useRef<number | null>(null);
+
+  const getDevicesCountLabel = useCallback(
+    (item: ClientsInstallationListItem): { label: string; count: number } => {
+      if (item.montaz_is_multisplit) {
+        const wew = item.montaz_multisplit_jedn_wew_count ?? 0;
+        const agreg = item.montaz_multisplit_agregat_count ?? 0;
+        const total = wew + agreg;
+
+        if (total > 0) {
+          return {
+            count: total,
+            label: `Urządzenia: ${total} (multisplit)`,
+          };
+        }
+
+        return {
+          count: 0,
+          label: 'Brak danych o liczbie urządzeń (multisplit)',
+        };
+      }
+
+      if (
+        item.montaz_device_producent ||
+        item.montaz_device_typ ||
+        item.montaz_device_moc
+      ) {
+        return {
+          count: 1,
+          label: 'Urządzenia: 1',
+        };
+      }
+
+      return {
+        count: 0,
+        label: 'Brak urządzeń',
+      };
+    },
+    [],
+  );
+
+  const { execute: fetchInstallationList } =
+    useApi<ClientInstallationsListResponse>({
+      path: 'installation_list',
+    });
+
+  const handleShowDevices = useCallback(
+    async (place: Place) => {
+      const requestedClientId = place.id;
+      devicesOverlayRequestIdRef.current = requestedClientId;
+      setDevicesOverlayClientId(requestedClientId);
+      setDevicesOverlayVisible(true);
+      setDevicesOverlayLoading(true);
+      setDevicesOverlayList([]);
+      setDevicesOverlayError(false);
+      try {
+        const res = await fetchInstallationList({
+          data: { klient_id: requestedClientId },
+        });
+        if (devicesOverlayRequestIdRef.current !== requestedClientId) {
+          return;
+        }
+        const list = res?.installation_list ?? [];
+        if (Array.isArray(list)) {
+          setDevicesOverlayList(list);
+        } else {
+          setDevicesOverlayList([]);
+        }
+        setDevicesOverlayError(false);
+      } catch {
+        if (devicesOverlayRequestIdRef.current === requestedClientId) {
+          setDevicesOverlayList([]);
+          setDevicesOverlayError(true);
+        }
+      } finally {
+        if (devicesOverlayRequestIdRef.current === requestedClientId) {
+          setDevicesOverlayLoading(false);
+        }
+      }
+    },
+    [fetchInstallationList],
+  );
 
   const API_URL: string =
     Constants?.expoConfig?.extra?.apiUrl ?? 'http://api.acmanager.usermd.net';
@@ -451,6 +562,7 @@ function ClientsListScreen({ route, navigation }: ClientsListScreenProps) {
                 }
                 onRoute={() => openGoogleMapsForPlace(item)}
                 onPress={handlePress}
+                onShowDevices={handleShowDevices}
               />
             );
           }}
@@ -458,6 +570,87 @@ function ClientsListScreen({ route, navigation }: ClientsListScreenProps) {
           contentContainerStyle={styles.listItemsContainer}
         />
       )}
+      <Modal
+        visible={devicesOverlayVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDevicesOverlayVisible(false)}
+      >
+        <Pressable
+          style={styles.devicesOverlayBackdrop}
+          onPress={() => setDevicesOverlayVisible(false)}
+        >
+          <Pressable
+            style={styles.devicesOverlayContent}
+            onPress={e => e.stopPropagation()}
+          >
+            <View style={styles.devicesOverlayHeader}>
+              <Text style={styles.devicesOverlayTitle}>Urządzenia</Text>
+              <IconButton
+                icon={<CloseIcon color={Colors.black} />}
+                onPress={() => setDevicesOverlayVisible(false)}
+                withoutBackground
+              />
+            </View>
+            {devicesOverlayLoading ? (
+              <View style={styles.devicesOverlayLoader}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+              </View>
+            ) : devicesOverlayError ? (
+              <Text style={styles.devicesOverlayError}>
+                Nie udało się załadować listy urządzeń
+              </Text>
+            ) : devicesOverlayList.length === 0 ? (
+              <Text style={styles.devicesOverlayEmpty}>
+                Brak zamontowanych urządzeń
+              </Text>
+            ) : (
+              <ScrollView
+                style={styles.devicesOverlayScroll}
+                contentContainerStyle={styles.devicesOverlayScrollContent}
+              >
+                {devicesOverlayList.map(item => {
+                  const { label: devicesLabel } = getDevicesCountLabel(item);
+                  const wewCount = item.montaz_multisplit_jedn_wew_count ?? 0;
+                  const agregCount = item.montaz_multisplit_agregat_count ?? 0;
+
+                  return (
+                    <View key={item.id} style={styles.devicesOverlayItem}>
+                      <Text style={styles.devicesOverlayItemName}>
+                        {item.name || 'Instalacja'}
+                      </Text>
+                      <Text style={styles.devicesOverlayItemDetails}>
+                        {devicesLabel}
+                      </Text>
+                      {(item.montaz_device_typ ||
+                        item.montaz_device_producent ||
+                        item.montaz_device_moc) && (
+                        <Text style={styles.devicesOverlayItemDetails}>
+                          {[
+                            item.montaz_device_producent,
+                            item.montaz_device_typ,
+                            item.montaz_device_moc
+                              ? `${item.montaz_device_moc} kW`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' • ')}
+                        </Text>
+                      )}
+                      {item.montaz_is_multisplit &&
+                        (wewCount > 0 || agregCount > 0) && (
+                          <Text style={styles.devicesOverlayItemDetails}>
+                            {`Multisplit: ${wewCount} wew. / ${agregCount} agreg.`}
+                          </Text>
+                        )}
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -556,6 +749,72 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.mapDivider,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  devicesOverlayBackdrop: {
+    flex: 1,
+    backgroundColor: Colors.blackHalfOpacity,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  devicesOverlayContent: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '80%',
+  },
+  devicesOverlayHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.grayBorder,
+  },
+  devicesOverlayTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.black,
+  },
+  devicesOverlayLoader: {
+    padding: 32,
+    alignItems: 'center',
+  },
+  devicesOverlayEmpty: {
+    padding: 24,
+    fontSize: 14,
+    color: Colors.grayerText,
+    textAlign: 'center',
+  },
+  devicesOverlayError: {
+    padding: 24,
+    fontSize: 14,
+    color: Colors.red,
+    textAlign: 'center',
+  },
+  devicesOverlayScroll: {
+    maxHeight: 360,
+  },
+  devicesOverlayScrollContent: {
+    padding: 16,
+    paddingBottom: 24,
+  },
+  devicesOverlayItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.grayBorder,
+  },
+  devicesOverlayItemName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.black,
+  },
+  devicesOverlayItemDetails: {
+    fontSize: 13,
+    color: Colors.companyText,
+    marginTop: 4,
   },
 });
 

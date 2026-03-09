@@ -1,8 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import { Avatar, Button, ListItem, Text } from '@rneui/themed';
-import { format } from 'date-fns';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import Spinner from 'react-native-loading-spinner-overlay/lib';
 
@@ -10,8 +9,6 @@ import { IconButton } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import ConfirmationOverlay from '../../components/ConfirmationOverlay';
 import FloatingActionButton from '../../components/FloatingActionButton';
-import ArrowLeftIcon from '../../components/icons/ArrowLeftIcon';
-import ArrowRightIcon from '../../components/icons/ArrowRightIcon';
 import DownloadIcon from '../../components/icons/DownloadIcon';
 import EditIcon from '../../components/icons/EditIcon';
 import Colors from '../../consts/Colors';
@@ -25,52 +22,50 @@ import usePermission from '../../providers/PermissionProvider';
 
 type ProducerGroup = {
   name: string;
-  count: number;
   priceLists: PriceListItem[];
 };
 
-function ProducerCard({
-  producer,
-  onPress,
-}: {
-  producer: ProducerGroup;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-    >
-      <View style={styles.producerCard}>
-        <View style={styles.producerCardContent}>
-          <View style={styles.producerCardText}>
-            <Text style={styles.producerName}>{producer.name}</Text>
-            <Text style={styles.producerCount}>
-              {producer.count} {producer.count === 1 ? 'Cennik' : 'Cenników'}
-            </Text>
-          </View>
-          <ArrowRightIcon color={Colors.black} size={20} />
-        </View>
-      </View>
-    </Pressable>
-  );
+function formatOdDate(odDate?: string, fallbackDate?: string): string {
+  const dateStr = odDate || fallbackDate;
+  if (!dateStr) return '';
+
+  try {
+    const date = new Date(dateStr);
+    if (!Number.isNaN(date.getTime())) {
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `obowiązuje od: ${day}/${month}/${year}`;
+    }
+
+    const isoMatch = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      return `obowiązuje od: ${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+    }
+
+    return `obowiązuje od: ${dateStr}`;
+  } catch {
+    return `obowiązuje od: ${dateStr}`;
+  }
 }
 
 function RowRightContent({ onDelete }: { onDelete: () => void }) {
   return (
-    <Button
-      iconPosition="top"
-      title="Usuń"
-      icon={{
-        name: 'trash',
-        type: 'font-awesome-5',
-        color: Colors.white,
-      }}
-      containerStyle={styles.buttonContainer}
-      buttonStyle={[styles.buttonStyle, styles.buttonDeleteStyle]}
-      titleStyle={styles.buttonTitleStyle}
-      onPress={onDelete}
-    />
+    <View style={styles.deleteWrapper}>
+      <Button
+        iconPosition="top"
+        title="Usuń"
+        icon={{
+          name: 'trash',
+          type: 'font-awesome-5',
+          color: Colors.white,
+        }}
+        containerStyle={styles.buttonContainer}
+        buttonStyle={[styles.buttonStyle, styles.buttonDeleteStyle]}
+        titleStyle={styles.buttonTitleStyle}
+        onPress={onDelete}
+      />
+    </View>
   );
 }
 
@@ -102,11 +97,13 @@ function PriceListElement({
         onLoadingEnd,
       });
     } catch (error) {
-      // Błąd jest już obsłużony w openPdfFile
       onLoadingEnd();
+      // eslint-disable-next-line no-console
       console.error('Błąd w openPriceListLink:', error);
     }
   };
+
+  const odText = formatOdDate(priceList.od, priceList.created_date);
 
   return (
     <ListItem.Swipeable
@@ -126,10 +123,12 @@ function PriceListElement({
         containerStyle={styles.avatarContainer}
       />
       <ListItem.Content>
-        <ListItem.Title>
-          {priceList.name}{' '}
-          {format(new Date(priceList.created_date), 'dd/MM/yyyy')}
-        </ListItem.Title>
+        <ListItem.Title>{priceList.name}</ListItem.Title>
+        {odText ? (
+          <ListItem.Subtitle style={styles.itemDateText}>
+            {odText}
+          </ListItem.Subtitle>
+        ) : null}
         <ListItem.Subtitle
           style={
             priceList.is_active
@@ -137,7 +136,7 @@ function PriceListElement({
               : styles.itemSubtitleExpired
           }
         >
-          {priceList.is_active ? 'Aktualny' : 'Nieaktualny'}{' '}
+          {priceList.is_active ? 'Aktualny' : 'Nieaktualny'}
         </ListItem.Subtitle>
       </ListItem.Content>
       <View style={styles.actionsContainer}>
@@ -172,9 +171,7 @@ export default function PriceList() {
   const [visible, setVisible] = useState(false);
   const [idToDelete, setIdToDelete] = useState<number | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(false);
-  const [selectedProducer, setSelectedProducer] = useState<string | null>(null);
 
-  // Grupowanie cenników według producenta (pierwsze słowo z nazwy)
   const producers = useMemo(() => {
     if (!priceList || priceList.length === 0) return [];
 
@@ -192,20 +189,12 @@ export default function PriceList() {
     const producerArray: ProducerGroup[] = Array.from(producerMap.entries())
       .map(([name, priceLists]) => ({
         name,
-        count: priceLists.length,
         priceLists,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return producerArray;
   }, [priceList]);
-
-  // Lista cenników dla wybranego producenta
-  const filteredPriceLists = useMemo(() => {
-    if (!selectedProducer || !priceList || priceList.length === 0) return [];
-
-    return producers.find(p => p.name === selectedProducer)?.priceLists || [];
-  }, [selectedProducer, producers, priceList]);
 
   const onDeleteConfirmed = async () => {
     if (!idToDelete) return;
@@ -238,35 +227,19 @@ export default function PriceList() {
     }
   }, [getPriceList, isUserAssembler, user]);
 
-  const handleProducerPress = (producer: ProducerGroup) => {
-    setSelectedProducer(producer.name);
-  };
-
-  const handleBack = () => {
-    setSelectedProducer(null);
-  };
-
   return (
     <View style={styles.container}>
-      <ButtonsHeader
-      // onBackPress={navigation.goBack}
-      />
-      {selectedProducer && (
-        <View style={styles.backButtonContainer}>
-          <Pressable onPress={handleBack} style={styles.backButton}>
-            <ArrowLeftIcon color={Colors.black} size={20} />
-            <Text style={styles.backButtonText}>Wszyscy producenci</Text>
-          </Pressable>
-        </View>
-      )}
+      <ButtonsHeader />
 
       <ScrollView>
-        {selectedProducer ? (
-          <>
-            {filteredPriceLists.length > 0 ? (
-              filteredPriceLists.map(item => (
-                <View key={item.id}>
+        {producers.length > 0 ? (
+          <View style={styles.producersList}>
+            {producers.map(producer => (
+              <View key={producer.name} style={styles.producerSection}>
+                <Text style={styles.producerName}>{producer.name}</Text>
+                {producer.priceLists.map(item => (
                   <PriceListElement
+                    key={item.id}
                     priceList={item}
                     onDelete={onDelete}
                     onEdit={() =>
@@ -277,28 +250,12 @@ export default function PriceList() {
                     onLoadingEnd={() => setLoadingPdf(false)}
                     canManage={hasAccess(Scopes.manageDocumentation)}
                   />
-                </View>
-              ))
-            ) : (
-              <Text style={styles.noPriceLists}>Brak cenników.</Text>
-            )}
-          </>
-        ) : (
-          <>
-            {producers.length > 0 ? (
-              <View style={styles.producersList}>
-                {producers.map(producer => (
-                  <ProducerCard
-                    key={producer.name}
-                    producer={producer}
-                    onPress={() => handleProducerPress(producer)}
-                  />
                 ))}
               </View>
-            ) : (
-              <Text style={styles.noPriceLists}>Brak cenników.</Text>
-            )}
-          </>
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.noPriceLists}>Brak cenników.</Text>
         )}
       </ScrollView>
 
@@ -331,55 +288,24 @@ const styles = StyleSheet.create({
     flex: 1,
     marginTop: -50,
   },
-  backButtonContainer: {
-    paddingHorizontal: 18,
-    paddingTop: 10,
-    paddingBottom: 10,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  backButtonText: {
-    fontSize: 14,
-    fontFamily: 'Archivo_400Regular',
-    color: Colors.black,
-    marginLeft: 4,
-  },
   producersList: {
     paddingHorizontal: 18,
-    paddingTop: 20,
-    gap: 12,
+    paddingTop: 10,
+    paddingBottom: 20,
+    gap: 20,
   },
-  producerCard: {
-    width: '100%',
-    borderRadius: 12,
-    backgroundColor: Colors.white,
-  },
-  producerCardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-  },
-  producerCardText: {
-    flex: 1,
+  producerSection: {
+    gap: 4,
   },
   producerName: {
     fontSize: 16,
     fontFamily: 'Archivo_600SemiBold',
     color: Colors.black,
-    marginBottom: 4,
-  },
-  producerCount: {
-    fontSize: 14,
-    fontFamily: 'Archivo_400Regular',
-    color: Colors.lightGray,
+    marginBottom: 8,
   },
   itemInnerContainer: {
-    paddingVertical: 0,
-    marginBottom: -8,
+    paddingVertical: 10,
+    marginBottom: 4,
   },
   avatarContainer: {
     backgroundColor: Colors.purple,
@@ -390,6 +316,11 @@ const styles = StyleSheet.create({
   itemSubtitleExpired: {
     color: Colors.lightRed,
   },
+  itemDateText: {
+    fontSize: 13,
+    color: Colors.lightGray,
+    marginBottom: 2,
+  },
   actionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -398,15 +329,20 @@ const styles = StyleSheet.create({
   noPriceLists: {
     textAlign: 'center',
   },
+  deleteWrapper: {
+    width: 80,
+    height: 62,
+    justifyContent: 'center',
+  },
   buttonDeleteStyle: {
     backgroundColor: Colors.buttons.deleteBg,
   },
   buttonContainer: {
     borderRadius: 0,
-    alignItems: 'flex-end',
+    alignItems: 'stretch',
   },
   buttonStyle: {
-    minHeight: '100%',
+    height: 62,
     width: 80,
     borderRadius: 0,
   },

@@ -15,7 +15,7 @@ import EditIcon from '../../components/icons/EditIcon';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import { OfferAddSurchargeFormScreenProps } from '../../navigation/types';
-import useOffers, { Device } from '../../providers/OffersProvider';
+import useOffers, { Device, MultiSplitResponse } from '../../providers/OffersProvider';
 
 export type Surcharge = {
   name: string;
@@ -46,9 +46,9 @@ function Surcharge({
   canRemove: boolean;
 }) {
   const [surcharges, setSurcharges] =
-    useState<{ name: string; id: number; value: number }[]>();
+    useState<{ name: string; id: number; value: number; unit?: string | null }[]>();
   const { result, execute } = useApi<
-    { name: string; id: number; value: number }[]
+    { name: string; id: number; value: number; unit?: string | null }[]
   >({
     path: 'narzut_list',
   });
@@ -128,6 +128,38 @@ function AddSurchargeForm({
   const allDevices = [...(devicesSplit ?? []), ...(devicesMultisplit ?? [])];
   const selectedDevices = allDevices.filter(d => devices.includes(d.id));
 
+  // Fallback: dograj urządzenia multisplit po devices_id, jeśli nie ma ich w kontekście
+  const [fallbackDevices, setFallbackDevices] = useState<Device[]>([]);
+  const {
+    result: multisplitDevicesResult,
+    execute: fetchMultisplitDevices,
+    loading: multisplitDevicesLoading,
+  } = useApi<MultiSplitResponse>({ path: 'devices_multisplit' });
+
+  useEffect(() => {
+    if (
+      type === 'multi_split' &&
+      devices.length > 0 &&
+      selectedDevices.length === 0 &&
+      fetchMultisplitDevices
+    ) {
+      fetchMultisplitDevices({
+        data: {
+          devices_id: devices,
+        },
+      });
+    }
+  }, [type, devices, selectedDevices.length, fetchMultisplitDevices]);
+
+  useEffect(() => {
+    if (multisplitDevicesResult?.DevicesMultiSplit) {
+      setFallbackDevices(multisplitDevicesResult.DevicesMultiSplit);
+    }
+  }, [multisplitDevicesResult]);
+
+  const effectiveSelectedDevices =
+    selectedDevices.length > 0 ? selectedDevices : fallbackDevices;
+
   const { control, handleSubmit } = useForm<FormData>({
     defaultValues: {
       surcharges: [{ name: 'montaz_0', value: null }],
@@ -158,10 +190,10 @@ function AddSurchargeForm({
 
   // Fetch surcharges once for both main form and modal
   const [surcharges, setSurcharges] = useState<
-    { name: string; id: number; value: number }[]
+    { name: string; id: number; value: number; unit?: string | null }[]
   >([]);
   const { result, execute } = useApi<
-    { name: string; id: number; value: number }[]
+    { name: string; id: number; value: number; unit?: string | null }[]
   >({
     path: 'narzut_list',
   });
@@ -217,7 +249,7 @@ function AddSurchargeForm({
     const deviceSurchargesWithManufacturerDiscounts = { ...deviceSurcharges };
 
     // Add manufacturer discounts for devices that don't have custom discounts
-    selectedDevices.forEach(device => {
+    effectiveSelectedDevices.forEach(device => {
       if (!deviceSurchargesWithManufacturerDiscounts[device.id]) {
         deviceSurchargesWithManufacturerDiscounts[device.id] = {
           surcharges: [],
@@ -246,7 +278,7 @@ function AddSurchargeForm({
       mode: 'add',
       offerName,
       deviceSurcharges: deviceSurchargesWithManufacturerDiscounts as any,
-      allDevices: selectedDevices,
+      allDevices: effectiveSelectedDevices,
       surchargesList: surcharges,
       isTemplate,
       multisplit_komplety,
@@ -294,8 +326,8 @@ function AddSurchargeForm({
         <ScrollView style={styles.scrollContainer}>
           {/* <Text>Dodane urządzenia do oferty:</Text>
           <Divider style={styles.divider} /> */}
-          {selectedDevices.length > 0 ? (
-            selectedDevices.map((tool, idx) => {
+          {effectiveSelectedDevices.length > 0 ? (
+            effectiveSelectedDevices.map((tool, idx) => {
               const deviceSurchargesList =
                 deviceSurcharges[tool.id]?.surcharges || [];
               const discountValue = deviceSurcharges[tool.id]?.discount;
@@ -435,6 +467,8 @@ function AddSurchargeForm({
                 </View>
               );
             })
+          ) : multisplitDevicesLoading && type === 'multi_split' ? (
+            <Text>Ładowanie urządzeń oferty...</Text>
           ) : (
             <Text>Brak urządzeń</Text>
           )}
@@ -473,7 +507,7 @@ function AddSurchargeForm({
                     { label: 'Brak narzutu', value: null as any },
                     { label: 'Własna kwota', value: 'custom' },
                     ...surcharges.map(s => ({
-                      label: `${s.name} - ${s.value} zł`,
+                      label: `${s.name} - ${s.value} zł${s.unit ? ` / ${s.unit}` : ''}`,
                       value: s.id,
                     })),
                   ]}
@@ -669,6 +703,7 @@ function AddSurchargeForm({
             title="Dalej"
             style={styles.continueButton}
             onPress={handleSubmit(onSubmit)}
+            disabled={effectiveSelectedDevices.length === 0}
           />
         </View>
       </View>

@@ -56,6 +56,8 @@ export default function DatePickerAndroid<
           text = format(value, mode === 'date' ? 'yyyy-MM-dd' : 'HH:mm');
         }
 
+        const hasValue = text.length > 0;
+
         return (
           <TouchableOpacity
             style={styles.container}
@@ -63,7 +65,9 @@ export default function DatePickerAndroid<
             // @ts-ignore
             onPress={() => handlePress(value, onChange)}
           >
-            <Text style={styles.text}>{text}</Text>
+            <Text style={hasValue ? styles.text : styles.placeholder}>
+              {hasValue ? text : 'Wybierz datę'}
+            </Text>
           </TouchableOpacity>
         );
       }}
@@ -73,17 +77,24 @@ export default function DatePickerAndroid<
 
 const styles = StyleSheet.create({
   container: {
-    borderWidth: 0,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    borderRadius: 0,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
     marginRight: 0,
-    flex: 1,
+    backgroundColor: '#FAFAFA',
   },
   text: {
     paddingHorizontal: 0,
     fontSize: 14,
     fontFamily: 'Archivo_400Regular',
     color: '#000000',
+  },
+  placeholder: {
+    paddingHorizontal: 0,
+    fontSize: 14,
+    fontFamily: 'Archivo_400Regular',
+    color: '#9E9E9E',
   },
 });

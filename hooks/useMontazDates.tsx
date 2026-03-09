@@ -71,16 +71,19 @@ export default function useMontazDates() {
   });
 
   /**
-   * Pobiera dostępne terminy montażu
+   * Pobiera dostępne terminy montażu. Gdy podano ofertaId (np. klient wybiera termin),
+   * backend stosuje bufor od zaakceptowania oferty i godziny pracy firmy.
    */
   const getAvailableDates = useCallback(
     async (
       startDate?: string,
       endDate?: string,
+      ofertaId?: number,
     ): Promise<AvailableDate[] | undefined> => {
       const data: any = {};
       if (startDate) data.start_date = startDate;
       if (endDate) data.end_date = endDate;
+      if (ofertaId != null) data.oferta_id = ofertaId;
 
       const response = await fetchAvailableDates({ data });
       if (response?.available_dates) {

@@ -122,17 +122,10 @@ function MenuScreen() {
 
     if (permissions.catalogs) {
       items.push({
-        label: 'Katalogi',
+        label: 'Dokumentacja',
         icon: Book2Icon,
         navigateTo: 'Catalogs',
         params: { Menu: { tab: 'catalogs' } },
-        iconProps: { viewBox: '0 0 100 80', stroke: 10 },
-      });
-      items.push({
-        label: 'Cenniki',
-        icon: Book2Icon,
-        navigateTo: 'Prices',
-        params: { Menu: { tab: 'prices' } },
         iconProps: { viewBox: '0 0 100 80', stroke: 10 },
       });
     }
@@ -275,20 +268,6 @@ function MenuScreen() {
           },
           state: {
             routes: [{ name: 'Menu' as const, params: { tab: 'Katalogi' } }],
-            index: 0,
-          },
-        }),
-      );
-      return;
-    }
-
-    if (item.navigateTo === 'Prices') {
-      navigation.dispatch(
-        CommonActions.navigate({
-          name: 'Prices',
-          params: item.params || { screen: 'Menu', params: { tab: 'Cennik' } },
-          state: {
-            routes: [{ name: 'Menu' as const, params: { tab: 'Cennik' } }],
             index: 0,
           },
         }),

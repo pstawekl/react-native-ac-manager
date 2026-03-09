@@ -29,6 +29,12 @@ type FormInputProps<T extends FieldValues> = Omit<InputProps, 'ref'> & {
   color?: string;
   rules?: object;
   isMarginBottom?: boolean;
+  /** Wariant stylów dla formularza oględzin: większe etykiety, niższe inputy, mniejsze odstępy */
+  inspectionVariant?: boolean;
+  /** Ogranicza wpisywanie do cyfr (i opcjonalnie separatora dziesiętnego) */
+  numericOnly?: boolean;
+  /** Pozwala na separator dziesiętny (kropka/przecinek) – działa razem z numericOnly */
+  allowDecimal?: boolean;
 };
 
 type TextAreaProps<T extends FieldValues> = Omit<InputProps, 'onChange'> & {
@@ -144,6 +150,9 @@ export function FormInput<
   grayBackground = false,
   noPadding = false,
   isMarginBottom = true,
+  inspectionVariant = false,
+  numericOnly = false,
+  allowDecimal = false,
   ...props
 }: FormInputProps<T>) {
   let width = '100%';
@@ -162,6 +171,10 @@ export function FormInput<
     borderRadius = 10;
   }
 
+  const inputHeight = inspectionVariant ? 42 : isThin ? 34 : 54;
+  const labelFontSize = inspectionVariant ? 14 : 12;
+  const labelMarginBottom = inspectionVariant ? 4 : 6;
+
   return (
     <Controller
       name={name}
@@ -179,10 +192,10 @@ export function FormInput<
             color: textColor || Colors.black,
             borderColor: color || Colors.borderInput,
             borderRadius: 10,
-            height: isThin ? 34 : 54,
-            minHeight: isThin ? 34 : 40,
+            height: inputHeight,
+            minHeight: inspectionVariant ? 40 : isThin ? 34 : 40,
             paddingHorizontal: 12,
-            fontSize: 14,
+            fontSize: 16,
             backgroundColor:
               grayBackground && !isBordered
                 ? Colors.invoiceFormTextContainer
@@ -214,18 +227,28 @@ export function FormInput<
           labelStyle={{
             fontFamily: 'Archivo_600SemiBold',
             marginTop: 0,
-            marginBottom: 6,
+            marginBottom: labelMarginBottom,
             color: props.disabled ? Colors.gray : textColor || Colors.black,
-            fontSize: 10,
+            fontSize: labelFontSize,
             letterSpacing: 0.3,
             fontWeight: 'normal',
           }}
           value={value != null ? String(value) : ''}
+          keyboardType={numericOnly ? 'numeric' : props.keyboardType}
           onFocus={() => setActive(true)}
           onBlur={() => setActive(false)}
-          onChangeText={(text: string) =>
-            onChange(text as FieldPathValue<T, TName>)
-          }
+          onChangeText={(text: string) => {
+            if (numericOnly) {
+              const regex = allowDecimal
+                ? /^[0-9]*[.,]?[0-9]*$/
+                : /^[0-9]*$/;
+              if (regex.test(text) || text === '') {
+                onChange(text.replace(',', '.') as FieldPathValue<T, TName>);
+              }
+            } else {
+              onChange(text as FieldPathValue<T, TName>);
+            }
+          }}
           errorMessage={error?.message}
         />
       )}

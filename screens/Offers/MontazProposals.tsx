@@ -55,7 +55,6 @@ function MontazProposals() {
                 const success = await confirmMontazDate(ofertaId);
                 if (success) {
                   Alert.alert(
-                    'Sukces',
                     'Termin został potwierdzony i dodany do kalendarza',
                   );
                   loadProposals(); // Odśwież listę
@@ -88,7 +87,7 @@ function MontazProposals() {
     try {
       const success = await rejectMontazDate(selectedOfertaId, rejectionReason);
       if (success) {
-        Alert.alert('Sukces', 'Termin został odrzucony');
+        Alert.alert('Termin został odrzucony');
         setRejectModalVisible(false);
         loadProposals(); // Odśwież listę
       } else {

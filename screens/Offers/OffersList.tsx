@@ -263,8 +263,8 @@ function OfferOverlay({
   const { result: templatesFromApi, execute: fetchTemplates } = useApi<any[]>({
     path: 'oferta_template_list',
   });
-  const { execute: getSzablonData } = useApi<any>({
-    path: 'szablon_data',
+  const { execute: getOfertaData } = useApi<any>({
+    path: 'oferta_data',
   });
   const { clients, getClients } = useClients();
   const [filteredInstallations, setFilteredInstallations] =
@@ -278,9 +278,7 @@ function OfferOverlay({
   const [templateId, setTemplateId] = useState<number | null>(null);
   const [shouldAddClient, setShouldAddClient] = useState<boolean>(false);
   const [formKey, setFormKey] = useState(0);
-  const { result: templates, execute: getTemplates } = useApi<Offer[]>({
-    path: 'oferta_list',
-  });
+  // Używamy wyłącznie oferta_template_list jako źródła szablonów
   const { result: installationsRes, execute: getInstallations } =
     useApi<ClientInstallationsListResponse>({
       path: 'installation_list',
@@ -421,14 +419,34 @@ function OfferOverlay({
   );
 
   const onPress = async () => {
-    if (isTemplate || !shouldAddClient || (shouldAddClient && installationId)) {
-      // Jeśli użytkownik wybrał szablon, pobierz dane z szablonu i przejdź do OfferOverview
+    if (shouldAddClient && !installationId) {
+      Alert.alert(
+        'Wybierz instalację',
+        'Przy wybranym kliencie należy wybrać instalację.',
+      );
+      return;
+    }
+    const effectiveIsTemplate = isTemplate || !shouldAddClient;
+    if (effectiveIsTemplate || (shouldAddClient && installationId)) {
+      // Szablony = Oferta is_template; pobierz przez oferta_data
       if (useTemplate && selectedTemplateId) {
         try {
-          const response = await getSzablonData({
-            data: { szablon_id: selectedTemplateId },
+          const response = await getOfertaData({
+            data: { oferta_id: selectedTemplateId },
           });
           if (response) {
+            const rawType = response.offer_type || response.typ || 'split';
+            const navType =
+              rawType === 'multi_split' || rawType === 'multisplit'
+                ? 'multi_split'
+                : 'split';
+            const devicesList =
+              navType === 'split'
+                ? response.devices_split || []
+                : response.devices_multi_split ||
+                  (response as any).devices_multisplit ||
+                  [];
+            const narzutList = response.narzut ?? (response as any).narzuty ?? [];
             const currentClientId = clientId || watch('client');
             const currentClient = clients?.find(x => x.id === currentClientId);
             const defaultOfferName = buildOfferName(
@@ -436,22 +454,16 @@ function OfferOverlay({
               installationId,
             );
             navigation.navigate('Overview', {
-              type: response.typ === 'multisplit' ? 'multi_split' : 'split',
+              type: navType,
               installationId: shouldAddClient ? installationId : null,
-              devices:
-                response.typ === 'split'
-                  ? (response.devices_split || []).map((d: any) => d.id)
-                  : (response.devices_multisplit || []).map((d: any) => d.id),
-              surcharges: (response.narzuty || []).map((n: any) => n.id),
+              devices: devicesList.map((d: any) => (typeof d === 'object' ? d.id : d)),
+              surcharges: narzutList.map((n: any) => (typeof n === 'object' ? n.id : n)),
               promos: [],
               mode: 'add',
               isTemplate: false,
               offerName: offerName || watch('offerName') || defaultOfferName,
-              allDevices:
-                response.typ === 'split'
-                  ? response.devices_split || []
-                  : response.devices_multisplit || [],
-              surchargesList: response.narzuty || [],
+              allDevices: devicesList,
+              surchargesList: narzutList,
             });
             onBackdropPress();
             return;
@@ -468,20 +480,20 @@ function OfferOverlay({
       const resolvedOfferName =
         offerName ||
         watch('offerName') ||
-        (isTemplate ? 'Nowy szablon' : defaultOfferName);
+        (effectiveIsTemplate ? 'Nowy szablon' : defaultOfferName);
 
       if (offerType === 'multi_split') {
-        navigation.navigate('MultisplitKompletyList', {
+        navigation.navigate('MultisplitFilters', {
           installationId: shouldAddClient ? installationId : null,
           offerName: resolvedOfferName,
-          isTemplate,
+          isTemplate: effectiveIsTemplate,
         });
       } else {
         navigation.navigate('AddToolForm', {
           type: offerType,
           installationId: shouldAddClient ? installationId : null,
           offerName: resolvedOfferName,
-          isTemplate,
+          isTemplate: effectiveIsTemplate,
         });
       }
       onBackdropPress();
@@ -537,31 +549,35 @@ function OfferOverlay({
   }, [clients, getClients, isUserClient]);
 
   useEffect(() => {
-    if (templatesFromApi) {
-      let templatesToDisplay: { label: string; value: number }[] = [];
-
-      (templatesFromApi || [])
-        .filter(item => {
-          // Filtruj szablony według typu (split/multisplit)
-          const templateType =
-            item.typ === 'multisplit' ? 'multi_split' : 'split';
-          return templateType === offerType;
-        })
-        .forEach(item => {
-          templatesToDisplay = [
-            ...templatesToDisplay,
-            {
-              label: item.nazwa || `Szablon ${item.id}`,
-              value: item.id,
-            },
-          ];
-        });
-
-      setFilteredTemplates(templatesToDisplay);
-    } else if (getTemplates) {
-      getTemplates();
+    if (!templatesFromApi) {
+      setFilteredTemplates(undefined);
+      return;
     }
-  }, [templatesFromApi, getTemplates, offerType]);
+
+    let templatesToDisplay: { label: string; value: number }[] = [];
+
+    (templatesFromApi || [])
+      .filter(item => {
+        const templateType =
+          item.offer_type === 'multi_split' ||
+          item.typ === 'multi_split' ||
+          item.typ === 'multisplit'
+            ? 'multi_split'
+            : 'split';
+        return templateType === offerType;
+      })
+      .forEach(item => {
+        templatesToDisplay = [
+          ...templatesToDisplay,
+          {
+            label: item.nazwa_oferty || item.nazwa || `Szablon ${item.id}`,
+            value: item.id,
+          },
+        ];
+      });
+
+    setFilteredTemplates(templatesToDisplay);
+  }, [templatesFromApi, offerType]);
 
   // Load templates when useTemplate switch is enabled
   useEffect(() => {

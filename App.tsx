@@ -1,4 +1,4 @@
-﻿import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { ThemeProvider } from '@rneui/themed';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Provider as ReduxProvider } from 'react-redux';
@@ -91,16 +91,16 @@ function AppContent() {
         <SafeAreaProvider>
           <NavigationContainer linking={linking}>
             <LicenseProvider>
-              <OfferSettingsProvider>
-                <AuthProvider>
+              <AuthProvider>
+                <OfferSettingsProvider>
                   <SyncHandler />
                   <NotificationsProvider>
                     <LicenseGuard>
                       <RootNavigation />
                     </LicenseGuard>
                   </NotificationsProvider>
-                </AuthProvider>
-              </OfferSettingsProvider>
+                </OfferSettingsProvider>
+              </AuthProvider>
             </LicenseProvider>
           </NavigationContainer>
         </SafeAreaProvider>

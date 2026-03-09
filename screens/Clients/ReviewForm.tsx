@@ -15,6 +15,7 @@ import EditIcon from '../../components/icons/EditIcon';
 import FilesIcon from '../../components/icons/FilesIcon';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
+import { addMonths, setDate, setMonth, setYear } from 'date-fns';
 
 type ReviewData = {
   data_przegladu?: Date | string;
@@ -42,6 +43,23 @@ type ReviewFormProps = {
   onSave?: () => void;
   onCancel?: () => void;
 };
+
+/** Najbliższa data wiosenna (15.04) lub jesienna (15.10) – ta która jest bliżej. */
+function getNearestSpringOrAutumnDate(fromDate?: Date): Date {
+  const ref = fromDate ? new Date(fromDate) : new Date();
+  const year = ref.getFullYear();
+  const spring = setDate(setMonth(setYear(new Date(), year), 3), 15); // 15.04
+  const autumn = setDate(setMonth(setYear(new Date(), year), 9), 15); // 15.10
+  if (ref <= spring) return spring;
+  if (ref <= autumn) return autumn;
+  return setDate(setMonth(setYear(new Date(), year + 1), 3), 15); // next year spring
+}
+
+/** Sześć miesięcy od daty (dla terminu przeglądu po montażu). */
+function sixMonthsFrom(date: Date | string): Date {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return addMonths(d, 6);
+}
 
 // Opcje dla dropdownów checklistów
 const checklistOptions = [
@@ -169,6 +187,22 @@ const reviewStyles = StyleSheet.create({
     fontFamily: 'Archivo_600SemiBold',
     color: Colors.black,
     marginBottom: 6,
+  },
+  springAutumnButton: {
+    marginTop: 8,
+    marginBottom: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.greenWithOpacity,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.green,
+  },
+  springAutumnButtonText: {
+    fontSize: 13,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.green,
+    textAlign: 'center',
   },
   editOverlayButtons: {
     flexDirection: 'row',
@@ -516,29 +550,23 @@ export default function ReviewProtocolForm({
                 if (montageDataResponse.device) {
                   setDeviceData(montageDataResponse.device);
                 }
+                if (
+                  montageDataResponse.data_montazu &&
+                  !reviewId
+                ) {
+                  setValue(
+                    'data_przegladu',
+                    sixMonthsFrom(montageDataResponse.data_montazu),
+                  );
+                }
               }
             } catch (error) {
               console.error('Error fetching montage device data:', error);
             }
           }
 
-          // Pobierz zdjęcia powiązane z instalacją (jeśli są)
-          try {
-            const photoResponse = await getPhotoList({
-              data: { instalacja_id: installationId },
-            });
-            if (photoResponse?.zdjecia && photoResponse.zdjecia.length > 0) {
-              // Ustaw pierwsze zdjęcie w formularzu
-              const firstPhoto = photoResponse.zdjecia[0];
-              setValue('photos', {
-                uri: firstPhoto.image,
-                name: `photo_${firstPhoto.id}.jpg`,
-                type: 'image/jpeg',
-              } as File);
-            }
-          } catch (error) {
-            console.error('Error loading photos for installation:', error);
-          }
+          // Dla nowego przeglądu NIE ładujemy zdjęć z innych przeglądów tej instalacji –
+          // jedna instalacja może mieć wiele przeglądów, każdy z własnymi zdjęciami.
         } catch (error) {
           console.error('Error loading device data from montage:', error);
         }
@@ -572,7 +600,7 @@ export default function ReviewProtocolForm({
 
       if (result?.html_content) {
         // Tutaj można otworzyć PDF w przeglądarce lub zapisać
-        Alert.alert('Sukces', 'PDF został wygenerowany');
+        Alert.alert('PDF został wygenerowany');
       } else {
         Alert.alert('Błąd', 'Nie udało się wygenerować PDF');
       }
@@ -689,14 +717,14 @@ export default function ReviewProtocolForm({
           response.status === 'Przegląd updated' ||
           response.status === 'Serwis updated'
         ) {
-          Alert.alert('Sukces', 'Dane przeglądu zostały zapisane pomyślnie');
+          Alert.alert('Dane przeglądu zostały zapisane pomyślnie');
           if (onSave) {
             onSave();
           }
         } else if ((response as any).error) {
           Alert.alert('Błąd', JSON.stringify((response as any).error));
         } else {
-          Alert.alert('Sukces', 'Dane przeglądu zostały zapisane');
+          Alert.alert('Dane przeglądu zostały zapisane');
         }
       }
     } catch (error) {
@@ -1129,6 +1157,29 @@ export default function ReviewProtocolForm({
               })()}
             </Text>
           </View>
+        </View>
+
+        {/* Data przeglądu i przycisk wiosna/jesień */}
+        <View style={reviewStyles.reviewSection}>
+          <Text style={reviewStyles.reviewSectionTitle}>Data przeglądu</Text>
+          <View style={reviewStyles.editFormSection}>
+            <DatePicker
+              name="data_przegladu"
+              control={control}
+              color={Colors.borderInput}
+            />
+          </View>
+          <TouchableOpacity
+            style={reviewStyles.springAutumnButton}
+            onPress={() => {
+              const next = getNearestSpringOrAutumnDate();
+              setValue('data_przegladu', next);
+            }}
+          >
+            <Text style={reviewStyles.springAutumnButtonText}>
+              Przesuń na najbliższy termin wiosenny/jesienny
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Sekcja checklistów */}

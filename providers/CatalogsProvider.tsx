@@ -35,8 +35,9 @@ export type Flyer = {
   id: number;
   file: string;
   cteated_date: string;
-  created_date?: string; // Fallback field name
+  created_date?: string;
   is_active: boolean;
+  od?: string;
 };
 
 type CatalogsResponse = {

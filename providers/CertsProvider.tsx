@@ -24,6 +24,18 @@ export type Training = {
   name: string;
   set_date: string;
   file: string;
+  participants?: {
+    id: number;
+    first_name: string;
+    last_name: string;
+    user_type: string;
+  }[];
+  company_user?: {
+    id: number;
+    first_name: string;
+    last_name: string;
+    user_type: string;
+  } | null;
 };
 
 export type CertificatesResponse = {

@@ -97,7 +97,11 @@ export default function DeviceSelectorScreen({
     montageId,
     montageType: paramMontageType,
   } = route.params;
-  const montageType = paramMontageType ?? 'split';
+  const initialMontageType: 'split' | 'multi_split' =
+    paramMontageType ?? 'split';
+  const [selectedMontageType, setSelectedMontageType] = useState<
+    'split' | 'multi_split'
+  >(initialMontageType);
 
   const { getDevicesSplit, getDevicesMultisplit } = useOffers();
 
@@ -186,12 +190,12 @@ export default function DeviceSelectorScreen({
   }, [splitManufacturer, getDevicesSplit]);
 
   useEffect(() => {
-    if (montageType !== 'split' || !splitManufacturer) {
+    if (selectedMontageType !== 'split' || !splitManufacturer) {
       setSplitDevicesForManufacturer([]);
       return;
     }
     fetchSplitByManufacturer();
-  }, [montageType, splitManufacturer, fetchSplitByManufacturer]);
+  }, [selectedMontageType, splitManufacturer, fetchSplitByManufacturer]);
 
   // Przy zmianie Producenta wyczyść Typ
   useEffect(() => {
@@ -229,6 +233,7 @@ export default function DeviceSelectorScreen({
           installationId: String(prevParams?.installationId || installationId),
           clientId: String(prevParams?.clientId || ''),
           activeTab: prevParams?.activeTab || 'montaz',
+          montageTypeResult: 'split',
           selectedDevice: {
             id: device.id,
             producent: device.producent,
@@ -259,6 +264,7 @@ export default function DeviceSelectorScreen({
           installationId: String(prevParams?.installationId || installationId),
           clientId: String(prevParams?.clientId || ''),
           activeTab: prevParams?.activeTab || 'montaz',
+          montageTypeResult: 'multi_split',
           selectedMultisplitDevices: { internal, aggregates },
         });
         return;
@@ -382,12 +388,12 @@ export default function DeviceSelectorScreen({
   }, [multisplitProducer, getDevicesMultisplit]);
 
   useEffect(() => {
-    if (montageType !== 'multi_split' || !multisplitProducer) {
+    if (selectedMontageType !== 'multi_split' || !multisplitProducer) {
       setMultisplitDevicesForProducer([]);
       return;
     }
     fetchMultisplitByProducer();
-  }, [montageType, multisplitProducer, fetchMultisplitByProducer]);
+  }, [selectedMontageType, multisplitProducer, fetchMultisplitByProducer]);
 
   const internalUnits =
     multisplitDevicesForProducer.length > 0
@@ -659,7 +665,7 @@ export default function DeviceSelectorScreen({
   };
 
   const title =
-    montageType === 'multi_split'
+    selectedMontageType === 'multi_split'
       ? 'Wybierz urządzenia multisplit'
       : 'Wybierz urządzenie';
 
@@ -674,7 +680,7 @@ export default function DeviceSelectorScreen({
         <ButtonsHeader
           onBackPress={() => {
             if (
-              montageType === 'multi_split' &&
+              selectedMontageType === 'multi_split' &&
               (multisplitStep === 'aggregates' || multisplitStep === 'internal')
             ) {
               setMultisplitStep(
@@ -692,12 +698,69 @@ export default function DeviceSelectorScreen({
           nestedScrollEnabled
           keyboardShouldPersistTaps="handled"
         >
-          {montageType === 'split' && renderSplitContent()}
-          {montageType === 'multi_split' && renderMultisplitContent()}
+          {/* Przełącznik typu montażu */}
+          <View style={styles.typeToggleRow}>
+            <TouchableOpacity
+              style={[
+                styles.typeToggleButton,
+                selectedMontageType === 'split' &&
+                  styles.typeToggleButtonActive,
+              ]}
+              onPress={() => {
+                setSelectedMontageType('split');
+                setFormValue('splitManufacturer', '');
+                setFormValue('splitDeviceType', '');
+                setSelectedDevice(null);
+                setMultisplitStep('producer');
+                setMultisplitDevicesForProducer([]);
+                setInternalQuantities({});
+                setAggregateQuantities({});
+              }}
+            >
+              <Text
+                style={[
+                  styles.typeToggleText,
+                  selectedMontageType === 'split' &&
+                    styles.typeToggleTextActive,
+                ]}
+              >
+                Split
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.typeToggleButton,
+                selectedMontageType === 'multi_split' &&
+                  styles.typeToggleButtonActive,
+              ]}
+              onPress={() => {
+                setSelectedMontageType('multi_split');
+                setFormValue('multisplitProducer', '');
+                setMultisplitStep('producer');
+                setMultisplitDevicesForProducer([]);
+                setInternalQuantities({});
+                setAggregateQuantities({});
+                setSelectedDevice(null);
+              }}
+            >
+              <Text
+                style={[
+                  styles.typeToggleText,
+                  selectedMontageType === 'multi_split' &&
+                    styles.typeToggleTextActive,
+                ]}
+              >
+                MultiSplit
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {selectedMontageType === 'split' && renderSplitContent()}
+          {selectedMontageType === 'multi_split' && renderMultisplitContent()}
         </ScrollView>
 
         <View style={styles.footer}>
-          {montageType === 'split' && (
+          {selectedMontageType === 'split' && (
             <SubmitButton
               disabled={!selectedDevice}
               title="Potwierdź wybór"
@@ -705,14 +768,16 @@ export default function DeviceSelectorScreen({
               onPress={handleConfirmSplit}
             />
           )}
-          {montageType === 'multi_split' && multisplitStep === 'internal' && (
+          {selectedMontageType === 'multi_split' &&
+            multisplitStep === 'internal' && (
             <SubmitButton
               title="Przejdź do agregatów"
               style={styles.submitButton}
               onPress={() => setMultisplitStep('aggregates')}
             />
           )}
-          {montageType === 'multi_split' && multisplitStep === 'aggregates' && (
+          {selectedMontageType === 'multi_split' &&
+            multisplitStep === 'aggregates' && (
             <SubmitButton
               title="Zapisz"
               style={styles.submitButton}
@@ -894,6 +959,34 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     minWidth: 28,
     textAlign: 'center',
+  },
+  typeToggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  typeToggleButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.borderButton,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+  },
+  typeToggleButtonActive: {
+    backgroundColor: Colors.green,
+    borderColor: Colors.green,
+  },
+  typeToggleText: {
+    fontSize: 13,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+  },
+  typeToggleTextActive: {
+    color: Colors.white,
   },
   divider: {
     marginVertical: 8,

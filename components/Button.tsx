@@ -141,7 +141,7 @@ export function ButtonGroup({
           style={submitStyle}
           titleStyle={submitTitleStyle}
           loading={loading}
-          disabled={disabled}
+          disabled={disabled || loading}
         />
       </View>
     </View>

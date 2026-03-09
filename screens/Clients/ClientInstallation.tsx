@@ -36,11 +36,19 @@ type MontageData = Omit<Montage, 'split_multisplit'> & {
   devicePower?: string;
   dlugosc_instalacji?: number | string;
   gwarancja_photo?: File | undefined;
+   // Pola zdjęć – mogą być ID (number/string) lub obiektem File w formularzu
+  miejsce_montazu_jedn_zew_photo?: number | File | null;
+  miejsce_montazu_jedn_wew_photo?: number | File | null;
+  miejsce_i_sposob_montazu_jedn_zew_photo?: number | File | null;
+  nr_seryjny_jedn_zew_photo?: string | File | null;
+  nr_seryjny_jedn_wew_photo?: string | File | null;
   unitName?: string;
   indoorUnitName?: string;
   outdoorUnitName?: string;
   nominalCoolingCapacity?: string;
   nominalHeatingCapacity?: string;
+  // Lista numerów seryjnych jednostek wewnętrznych (dla multisplit)
+  nr_seryjny_jedn_wew_list?: string[];
 };
 
 const montageDefaultValues = {
@@ -96,6 +104,7 @@ const montageDefaultValues = {
   // Dodatkowe pola
   kontrola_temperatury_nawiewu: undefined,
   diagnostyka_awarii_urzadzen: undefined,
+  nr_seryjny_jedn_wew_list: [] as string[],
 };
 
 export function InstallationToolForm(props: {
@@ -640,8 +649,10 @@ export function InstallationToolForm(props: {
 
 function InstallationDetailsForm({
   control,
+  internalUnitsCount,
 }: {
   control: Control<MontageData>;
+  internalUnitsCount: number;
 }) {
   return (
     <View style={{ gap: -18 }}>
@@ -667,14 +678,26 @@ function InstallationDetailsForm({
         </View>
       </View>
       <View style={styles.formContainer}>
-        <FormInput
-          name="nr_seryjny_jedn_wew"
-          control={control}
-          label="Numer seryjny jedn. wewn."
-          isThin
-          noPadding
-          customPercentWidth={48}
-        />
+        <View style={{ flex: 1 }}>
+          {Array.from({ length: Math.max(internalUnitsCount, 1) }).map(
+            (_, idx) => (
+              <FormInput
+                // eslint-disable-next-line react/no-array-index-key
+                key={idx}
+                name={`nr_seryjny_jedn_wew_list.${idx}`}
+                control={control}
+                label={
+                  internalUnitsCount > 1
+                    ? `Numer seryjny jedn. wewn. #${idx + 1}`
+                    : 'Numer seryjny jedn. wewn.'
+                }
+                isThin
+                noPadding
+                customPercentWidth={48}
+              />
+            ),
+          )}
+        </View>
         <View style={styles.pickerContainer}>
           <FilePicker
             name="nr_seryjny_jedn_wew_photo"
@@ -1099,14 +1122,21 @@ const protocolStyles = StyleSheet.create({
     color: Colors.black,
   },
   editIconButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
     backgroundColor: Colors.white,
     borderWidth: 1,
     borderColor: Colors.borderInput,
     justifyContent: 'center',
-    alignItems: 'center',
+    gap: 8,
+  },
+  editIconButtonText: {
+    fontSize: 12,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
   },
   multisplitSummaryBlock: {
     marginTop: 12,
@@ -1312,6 +1342,12 @@ export function MontageProtocolForm({
     };
   }, [initialMultisplitDevices, loadedMultisplitDevices]);
 
+  const multisplitSource = initialMultisplitDevices ?? loadedMultisplitDevices;
+  const internalUnitsCount =
+    type === 'multi_split'
+      ? Math.max((multisplitSource?.internal?.length ?? 0), 1)
+      : 1;
+
   const { execute: fetchMontageData } = useApi<MontageData>({
     path: 'montaz_data',
   });
@@ -1515,6 +1551,14 @@ export function MontageProtocolForm({
           getDevicesMultisplit();
         }
       }
+      // Ustaw listę numerów seryjnych jednostek wewnętrznych (jeśli zapisane jako jeden string)
+      if (typeof montageData.nr_seryjny_jedn_wew === 'string') {
+        const parts = montageData.nr_seryjny_jedn_wew
+          .split(/\r?\n|,|;/)
+          .map(x => x.trim())
+          .filter(Boolean);
+        setValue('nr_seryjny_jedn_wew_list', parts);
+      }
       setValue('nr_seryjny_jedn_zew', montageData.nr_seryjny_jedn_zew);
       setValue(
         'nr_seryjny_jedn_zew_photo',
@@ -1622,7 +1666,7 @@ export function MontageProtocolForm({
               uri: photo.image,
               name: `photo_${photo.id}.jpg`,
               type: 'image/jpeg',
-            } as File);
+            } as any);
           }
         }
 
@@ -1638,7 +1682,7 @@ export function MontageProtocolForm({
               uri: photo.image,
               name: `photo_${photo.id}.jpg`,
               type: 'image/jpeg',
-            } as File);
+            } as any);
           }
         }
 
@@ -1654,7 +1698,7 @@ export function MontageProtocolForm({
               uri: photo.image,
               name: `photo_${photo.id}.jpg`,
               type: 'image/jpeg',
-            } as File);
+            } as any);
           }
         }
 
@@ -1680,7 +1724,7 @@ export function MontageProtocolForm({
             uri: montageData.nr_seryjny_jedn_zew_photo,
             name: 'nr_seryjny_jedn_zew_photo.jpg',
             type: 'image/jpeg',
-          } as File);
+          } as any);
         }
 
         if (
@@ -1691,7 +1735,7 @@ export function MontageProtocolForm({
             uri: montageData.nr_seryjny_jedn_wew_photo,
             name: 'nr_seryjny_jedn_wew_photo.jpg',
             type: 'image/jpeg',
-          } as File);
+          } as any);
         }
       } catch (error) {
         console.log('[MontageProtocolForm] loadMontageWithPhotos ERROR', error);
@@ -1899,6 +1943,14 @@ export function MontageProtocolForm({
       setType('multi_split');
       setValue('split_multisplit', true);
       setValue('devices_multisplit', ids);
+      // Ustaw domyślną liczbę pól dla numerów seryjnych jednostek wewnętrznych
+      const serialsCount = initialMultisplitDevices.internal?.length ?? 0;
+      if (serialsCount > 0) {
+        setValue(
+          'nr_seryjny_jedn_wew_list',
+          Array.from({ length: serialsCount }).map(() => ''),
+        );
+      }
     }
   }, [initialMultisplitDevices, setValue]);
 
@@ -1943,6 +1995,16 @@ export function MontageProtocolForm({
         data.split_multisplit === 'multi_split' ||
         data.split_multisplit === true;
 
+      // Przekształć listę numerów seryjnych jedn. wewn. na pojedynczy string
+      if (Array.isArray(data.nr_seryjny_jedn_wew_list)) {
+        const serials = data.nr_seryjny_jedn_wew_list
+          .map((s: string | undefined) => (s ?? '').trim())
+          .filter(Boolean);
+        if (serials.length > 0) {
+          data.nr_seryjny_jedn_wew = serials.join('\n');
+        }
+      }
+
       // Wyodrębnij zdjęcia z danych przed zapisaniem
       const photosToUpload: {
         fieldName: string;
@@ -1976,6 +2038,7 @@ export function MontageProtocolForm({
       photosToUpload.forEach(({ fieldName }) => {
         delete dataWithoutPhotos[fieldName];
       });
+      delete (dataWithoutPhotos as any).nr_seryjny_jedn_wew_list;
 
       if (montage == null) {
         const finalData: MontageData & { instalacja_id: number } = {
@@ -2073,7 +2136,7 @@ export function MontageProtocolForm({
           response.status === 'Montaz updated'
         ) {
           if (typeof Alert?.alert === 'function') {
-            Alert.alert('Sukces', 'Dane montażu zostały zapisane pomyślnie');
+            Alert.alert('Dane montażu zostały zapisane pomyślnie');
           }
           if (typeof onSave === 'function') {
             onSave();
@@ -2083,7 +2146,7 @@ export function MontageProtocolForm({
             Alert.alert('Błąd', JSON.stringify(response.error));
           }
         } else if (typeof Alert?.alert === 'function') {
-          Alert.alert('Sukces', 'Dane montażu zostały zapisane');
+          Alert.alert('Dane montażu zostały zapisane');
         }
       }
     } catch (error) {
@@ -2124,43 +2187,42 @@ export function MontageProtocolForm({
         <View style={protocolStyles.protocolSection}>
           <View style={protocolStyles.protocolSectionHeader}>
             <Text style={protocolStyles.protocolSectionTitle}>Urządzenie</Text>
-            {type === 'split' || type === 'multi_split' ? (
-              <TouchableOpacity
-                style={protocolStyles.editIconButton}
-                onPress={() => {
-                  try {
-                    const nav = navigation as any;
-                    if (nav && typeof nav.navigate === 'function') {
-                      nav.navigate('DeviceSelector', {
-                        installationId,
-                        montageId: montage?.id,
-                        montageType:
-                          type === 'multi_split' ? 'multi_split' : 'split',
-                      });
-                    }
-                  } catch (_) { }
-                }}
-              >
-                <EditIcon color={Colors.black} size={20} />
-              </TouchableOpacity>
-            ) : null}
+            <TouchableOpacity
+              style={protocolStyles.editIconButton}
+              onPress={() => {
+                try {
+                  const nav = navigation as any;
+                  if (nav && typeof nav.navigate === 'function') {
+                    nav.navigate('DeviceSelector', {
+                      installationId,
+                      montageId: montage?.id,
+                      montageType:
+                        type === 'multi_split' ? 'multi_split' : 'split',
+                    });
+                  }
+                } catch (_) { }
+              }}
+            >
+              <EditIcon color={Colors.black} size={18} />
+              <Text style={protocolStyles.editIconButtonText}>
+                Edytuj urządzenie
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          <Dropdown
-            name="split_multisplit"
-            control={control}
-            label="Typ montażu"
-            options={[
-              { label: 'Split', value: 'split' },
-              { label: 'Multisplit', value: 'multi_split' },
-            ]}
-            isBordered={false}
-            onChange={
-              typeof setType === 'function'
-                ? (value: string) => setType(value)
-                : () => { }
-            }
-          />
+          <View style={protocolStyles.readOnlySection}>
+            <View style={protocolStyles.readOnlyRow}>
+              <Text style={protocolStyles.readOnlyLabel}>Typ montażu:</Text>
+              <Text style={protocolStyles.readOnlyValue}>
+                {type === 'multi_split'
+                  ? 'Multisplit'
+                  : type === 'split'
+                    ? 'Split'
+                    : '-'}
+              </Text>
+            </View>
+            <Divider style={protocolStyles.readOnlyDivider} />
+          </View>
 
           {type === 'multi_split' && (
             <View style={protocolStyles.multisplitSummaryBlock}>
@@ -2561,12 +2623,16 @@ export function MontageProtocolForm({
 
 export default function ClientInstallation({
   route: {
-    params: { montage, installationId },
+    params: { montage, installationId, clientName },
   },
 }: {
   route: Route<
-    'Inspection',
-    { montage: Montage | null; installationId: number }
+    'Installation',
+    {
+      montage?: Montage | null;
+      installationId: number | string;
+      clientName?: string;
+    }
   >;
 }) {
   const navigation = useNavigation();
@@ -2613,10 +2679,7 @@ export default function ClientInstallation({
       const response = await generatePDF({ data });
 
       if (response?.success) {
-        Alert.alert(
-          'Sukces',
-          'Dokument PDF został wygenerowany i zapisany do rekordu montażu',
-        );
+        Alert.alert('Dokument PDF został wygenerowany i zapisany do rekordu montażu');
       } else {
         Alert.alert('Błąd', 'Nie udało się wygenerować dokumentu PDF');
       }
@@ -2926,13 +2989,13 @@ export default function ClientInstallation({
           response.status === 'Montaz created' ||
           response.status === 'Montaz updated'
         ) {
-          Alert.alert('Sukces', 'Dane montażu zostały zapisane pomyślnie');
-          await getMontages(installationId);
+          Alert.alert('Dane montażu zostały zapisane pomyślnie');
+          await getMontages(Number(installationId));
           navigation.goBack();
         } else if (response.error) {
           Alert.alert('Błąd', JSON.stringify(response.error));
         } else {
-          Alert.alert('Sukces', 'Dane montażu zostały zapisane');
+          Alert.alert('Dane montażu zostały zapisane');
         }
       }
     } catch (error) {
@@ -2944,7 +3007,10 @@ export default function ClientInstallation({
     <View style={styles.container}>
       <ButtonsHeader
         onBackPress={navigation.goBack}
-        title={montage ? `Montaż ${montage.id}` : 'Nowy montaż'}
+        title={
+          clientName ??
+          (montage ? `Montaż ${montage.id}` : 'Nowy montaż')
+        }
       />
       <ScrollView
         style={styles.scrollContainer}
@@ -2961,7 +3027,7 @@ export default function ClientInstallation({
         />
         <Text>Szczegóły montażu</Text>
         <Divider style={styles.divider} />
-        <InstallationDetailsForm control={control} />
+        <InstallationDetailsForm control={control} internalUnitsCount={1} />
       </ScrollView>
       <View style={styles.footer}>
         <SubmitButton title="Zapisz zmiany" onPress={handleSubmit(onSubmit)} />

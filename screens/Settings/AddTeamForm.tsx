@@ -341,7 +341,7 @@ function AddTeamForm({ navigation, route }: any) {
 
   const onSubmit = async (data: TeamData) => {
     if (!team) {
-      const response = await createTeam(data);
+      const response = await createTeam({ data });
 
       if (response?.status === 'Group added') {
         Alert.alert('Ekipa dodana.');
@@ -355,10 +355,12 @@ function AddTeamForm({ navigation, route }: any) {
       if (listedEmployees) {
         listedEmployees.forEach(item => newEmployees.push(item.id));
       }
-      const response = await editTeam({
-        group_id: team.id,
-        nazwa: data.nazwa ?? '',
-        user_ids: newEmployees,
+      await editTeam({
+        data: {
+          group_id: team.id,
+          nazwa: data.nazwa ?? '',
+          user_ids: newEmployees,
+        },
       });
       Alert.alert('Zmiany zapisane');
       if (getTeams) {

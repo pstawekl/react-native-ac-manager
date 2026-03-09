@@ -1,11 +1,12 @@
 import { useRoute } from '@react-navigation/native';
 import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { ButtonGroup } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import Container from '../../components/Container';
+import DatePicker from '../../components/DatePicker';
 import { Dropdown, FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
@@ -14,25 +15,43 @@ import useCatalogs, { Flyer } from '../../providers/CatalogsProvider';
 
 type FlyerData = {
   is_active: boolean;
+  producent: string;
   name: string;
+  od?: Date;
 };
+
+function parseName(fullName: string): { producent: string; name: string } {
+  const parts = fullName.split(' ');
+  if (parts.length <= 1) return { producent: '', name: fullName };
+  const producent = parts[0];
+  const name = parts.slice(1).join(' ');
+  return { producent, name };
+}
 
 function EditFlyerForm({ navigation }: CatalogsEditFlyerScreenProps) {
   const route = useRoute();
   const { flyer } = (route.params as { flyer: Flyer }) || {};
 
+  const parsed = parseName(flyer?.name ?? '');
+
   const { control, handleSubmit, setValue } = useForm<FlyerData>({
     defaultValues: {
       is_active: flyer?.is_active ?? true,
-      name: flyer?.name ?? '',
+      producent: parsed.producent,
+      name: parsed.name,
+      od: flyer?.od ? new Date(flyer.od) : undefined,
     },
   });
 
-  // Set initial values when flyer is loaded
   useEffect(() => {
     if (flyer) {
-      setValue('name', flyer.name);
+      const p = parseName(flyer.name);
+      setValue('producent', p.producent);
+      setValue('name', p.name);
       setValue('is_active', flyer.is_active);
+      if (flyer.od) {
+        setValue('od', new Date(flyer.od));
+      }
     }
   }, [flyer, setValue]);
 
@@ -48,10 +67,18 @@ function EditFlyerForm({ navigation }: CatalogsEditFlyerScreenProps) {
       return;
     }
 
+    const fullName = data.producent
+      ? `${data.producent} ${data.name}`.trim()
+      : data.name.trim();
+
     const requestData = new FormData();
     requestData.append('ulotka_id', flyer.id.toString());
-    requestData.append('name', data.name);
+    requestData.append('name', fullName);
     requestData.append('is_active', data.is_active.toString());
+    if (data.od) {
+      const dateStr = data.od.toISOString().split('T')[0];
+      requestData.append('od', dateStr);
+    }
 
     const response = await execute({ data: requestData });
 
@@ -59,7 +86,7 @@ function EditFlyerForm({ navigation }: CatalogsEditFlyerScreenProps) {
       if (getFlyers) {
         getFlyers();
       }
-      Alert.alert('Sukces', 'Zaktualizowano ulotkę', [
+      Alert.alert('Zaktualizowano ulotkę', [
         {
           text: 'OK',
           onPress: () => navigation.goBack(),
@@ -76,12 +103,22 @@ function EditFlyerForm({ navigation }: CatalogsEditFlyerScreenProps) {
         <ButtonsHeader onBackPress={navigation.goBack} />
         <View style={styles.formContainer}>
           <FormInput
+            name="producent"
+            control={control}
+            label="Producent"
+            noPadding
+            style={styles.firstInput}
+          />
+          <FormInput
             name="name"
             control={control}
             label="Nazwa ulotki"
             noPadding
-            style={styles.firstInput}
           />
+          <View style={styles.datePickerWrapper}>
+            <Text style={styles.datePickerLabel}>Data obowiązywania</Text>
+            <DatePicker control={control} name="od" color={Colors.purple} />
+          </View>
           <Dropdown
             name="is_active"
             control={control}
@@ -132,6 +169,15 @@ const styles = StyleSheet.create({
   },
   firstInput: {
     marginBottom: -4,
+  },
+  datePickerWrapper: {
+    marginBottom: 10,
+  },
+  datePickerLabel: {
+    fontSize: 14,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.black,
+    marginBottom: 8,
   },
   footer: {
     marginBottom: 30,

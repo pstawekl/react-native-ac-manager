@@ -15,26 +15,39 @@ import useCatalogs, { Catalog } from '../../providers/CatalogsProvider';
 
 type CatalogData = {
   is_active: boolean;
+  producent: string;
   name: string;
   od?: Date;
 };
+
+function parseName(fullName: string): { producent: string; name: string } {
+  const parts = fullName.split(' ');
+  if (parts.length <= 1) return { producent: '', name: fullName };
+  const producent = parts[0];
+  const name = parts.slice(1).join(' ');
+  return { producent, name };
+}
 
 function EditCatalogForm({ navigation }: CatalogsEditCatalogScreenProps) {
   const route = useRoute();
   const { catalog } = (route.params as { catalog: Catalog }) || {};
 
+  const parsed = parseName(catalog?.name ?? '');
+
   const { control, handleSubmit, setValue } = useForm<CatalogData>({
     defaultValues: {
       is_active: catalog?.is_active ?? false,
-      name: catalog?.name ?? '',
+      producent: parsed.producent,
+      name: parsed.name,
       od: catalog?.od ? new Date(catalog.od) : undefined,
     },
   });
 
-  // Set initial values when catalog is loaded
   useEffect(() => {
     if (catalog) {
-      setValue('name', catalog.name);
+      const p = parseName(catalog.name);
+      setValue('producent', p.producent);
+      setValue('name', p.name);
       setValue('is_active', catalog.is_active);
       if (catalog.od) {
         setValue('od', new Date(catalog.od));
@@ -54,12 +67,16 @@ function EditCatalogForm({ navigation }: CatalogsEditCatalogScreenProps) {
       return;
     }
 
+    const fullName = data.producent
+      ? `${data.producent} ${data.name}`.trim()
+      : data.name.trim();
+
     const requestData = new FormData();
     requestData.append('katalog_id', catalog.id.toString());
-    requestData.append('name', data.name);
+    requestData.append('name', fullName);
     requestData.append('is_active', data.is_active.toString());
     if (data.od) {
-      const dateStr = data.od.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      const dateStr = data.od.toISOString().split('T')[0];
       requestData.append('od', dateStr);
     }
 
@@ -69,7 +86,7 @@ function EditCatalogForm({ navigation }: CatalogsEditCatalogScreenProps) {
       if (getCatalogs) {
         getCatalogs();
       }
-      Alert.alert('Sukces', 'Zaktualizowano katalog', [
+      Alert.alert('Zaktualizowano katalog', [
         {
           text: 'OK',
           onPress: () => navigation.goBack(),
@@ -86,17 +103,21 @@ function EditCatalogForm({ navigation }: CatalogsEditCatalogScreenProps) {
         <ButtonsHeader onBackPress={navigation.goBack} />
         <View style={styles.formContainer}>
           <FormInput
+            name="producent"
+            control={control}
+            label="Producent"
+            noPadding
+            style={styles.firstInput}
+          />
+          <FormInput
             name="name"
             control={control}
             label="Nazwa katalogu"
             noPadding
-            style={styles.firstInput}
           />
           <View style={styles.datePickerWrapper}>
             <Text style={styles.datePickerLabel}>Data obowiązywania</Text>
-            <View style={styles.datePickerContainer}>
-              <DatePicker control={control} name="od" color={Colors.purple} />
-            </View>
+            <DatePicker control={control} name="od" color={Colors.purple} />
           </View>
           <Dropdown
             name="is_active"
@@ -156,9 +177,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_400Regular',
     color: Colors.black,
     marginBottom: 8,
-  },
-  datePickerContainer: {
-    marginBottom: -4,
   },
   footer: {
     marginBottom: 30,

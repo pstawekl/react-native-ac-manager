@@ -87,7 +87,7 @@ export default function AgreementForm({ route }: any) {
   const onSubmit = async (data: AgreementFormData) => {
     try {
       // TODO: Implementacja wysyłania umowy do API
-      Alert.alert('Sukces', 'Umowa została wysłana');
+      Alert.alert('Umowa została wysłana');
       navigation.goBack();
     } catch (error) {
       Alert.alert('Błąd', 'Nie udało się wysłać umowy');

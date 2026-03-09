@@ -176,11 +176,17 @@ export default function MultisplitAddKomplet({ navigation, route }: Props) {
       )
       : [];
 
+  const getDeviceLabel = useCallback(
+    (d: Device) =>
+      d.nazwa_modelu_producenta || d.nazwa_modelu || `ID ${d.id}`,
+    [],
+  );
+
   const getModelKey = useCallback((d: Device) => {
-    const name = d.nazwa_modelu_producenta || d.nazwa_modelu || String(d.id);
+    const name = getDeviceLabel(d);
     const moc = `${d.moc_chlodnicza ?? ''}/${d.moc_grzewcza ?? ''}`;
     return `${d.producent ?? ''}|${name}|${moc}`;
-  }, []);
+  }, [getDeviceLabel]);
 
   const internalGrouped = useMemo(() => {
     const map: Record<string, Device[]> = {};
@@ -313,10 +319,7 @@ export default function MultisplitAddKomplet({ navigation, route }: Props) {
           <View style={styles.devicesList}>
             {Object.entries(internalGrouped).map(([modelKey, devices]) => {
               const device = devices[0];
-              const label =
-                device.nazwa_modelu_producenta ||
-                device.nazwa_modelu ||
-                `ID ${device.id}`;
+              const label = getDeviceLabel(device);
               const moc = `${device.moc_chlodnicza}/${device.moc_grzewcza} kW`;
               return (
                 <QuantityRow
@@ -357,10 +360,7 @@ export default function MultisplitAddKomplet({ navigation, route }: Props) {
         <View style={styles.devicesList}>
           {Object.entries(aggregateGrouped).map(([modelKey, devices]) => {
             const device = devices[0];
-            const label =
-              device.nazwa_modelu_producenta ||
-              device.nazwa_modelu ||
-              `ID ${device.id}`;
+            const label = getDeviceLabel(device);
             const moc = `${device.moc_chlodnicza}/${device.moc_grzewcza} kW`;
             return (
               <QuantityRow

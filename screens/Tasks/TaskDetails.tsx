@@ -20,7 +20,9 @@ import ButtonsHeader from '../../components/ButtonsHeader';
 import ConfirmationOverlay from '../../components/ConfirmationOverlay';
 import { Dropdown } from '../../components/Input';
 import Colors from '../../consts/Colors';
+import { getClientDisplayPrimary } from '../../helpers/clientDisplay';
 import useApi from '../../hooks/useApi';
+import useClients from '../../providers/ClientsProvider';
 import useStaff from '../../providers/StaffProvider';
 import useTasks from '../../providers/TasksProvider';
 
@@ -47,6 +49,32 @@ function TaskDetails({ navigation, route }: any) {
 
   const { execute: getTasks } = useTasks();
   const { teams, employees } = useStaff();
+  const { clients } = useClients();
+
+  const headerTitle = useMemo(() => {
+    if (!fromInstallation) return 'Montaż';
+    const instId =
+      installationId ?? (task && task.instalacja ? task.instalacja : null);
+    if (!instId) return 'Montaż';
+    let displayName: string | null = null;
+    if (task?.instalacja_info) {
+      const info = task.instalacja_info as {
+        nazwa_firmy?: string;
+        first_name?: string;
+        last_name?: string;
+      };
+      displayName =
+        info.nazwa_firmy ||
+        `${info.first_name || ''} ${info.last_name || ''}`.trim() ||
+        null;
+    }
+    if (!displayName && clientId && clients?.length) {
+      const client = clients.find(c => c.id === Number(clientId));
+      if (client) displayName = getClientDisplayPrimary(client);
+    }
+    if (!displayName) return `Instalacja ${instId}`;
+    return `Instalacja ${instId} – ${displayName}`;
+  }, [fromInstallation, installationId, clientId, task, clients]);
 
   const { control, setValue } = useForm({
     defaultValues: {
@@ -107,7 +135,7 @@ function TaskDetails({ navigation, route }: any) {
   if (!task) {
     return (
       <View style={styles.container}>
-        <ButtonsHeader onBackPress={handleGoBack} title="Montaż" />
+        <ButtonsHeader onBackPress={handleGoBack} title={headerTitle} />
         <View style={styles.center}>
           <Text style={styles.errorText}>Nie znaleziono zadania</Text>
         </View>
@@ -190,7 +218,7 @@ function TaskDetails({ navigation, route }: any) {
 
   return (
     <View style={styles.container}>
-      <ButtonsHeader onBackPress={handleGoBack} title="Montaż" />
+      <ButtonsHeader onBackPress={handleGoBack} title={headerTitle} />
 
       <ScrollView contentContainerStyle={styles.scroll}>
         {/* Title */}

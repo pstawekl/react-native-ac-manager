@@ -5,6 +5,7 @@ export type ClientsInstallationListItem = {
   owner: number;
   klient_id: number;
   created_date: string;
+  data_montazu?: string | null;
   name: string;
   ulica?: string | null;
   numer_domu?: string | null;

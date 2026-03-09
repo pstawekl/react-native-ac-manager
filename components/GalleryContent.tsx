@@ -104,7 +104,7 @@ function GalleryContent({
                   method: 'POST',
                   data: { gallery_type: galleryType },
                 });
-                Alert.alert('Sukces', 'Zdjęcie zostało usunięte');
+                Alert.alert('Zdjęcie zostało usunięte');
               } catch (error) {
                 Alert.alert('Błąd', 'Nie udało się usunąć zdjęcia');
               }
@@ -127,7 +127,7 @@ function GalleryContent({
         method: 'POST',
         data: { gallery_type: galleryType },
       });
-      Alert.alert('Sukces', 'Zdjęcie zostało usunięte');
+      Alert.alert('Zdjęcie zostało usunięte');
     } catch (error) {
       Alert.alert('Błąd', 'Nie udało się usunąć zdjęcia.');
     }
@@ -292,21 +292,21 @@ function GalleryContent({
         onBackdropPress={() => setContextMenuVisible(false)}
         options={
           galleryType === 'device_gallery' &&
-            !hasAccess(Scopes.manageDeviceGallery)
+          !hasAccess(Scopes.manageDeviceGallery)
             ? [] // Pusta lista opcji dla device gallery bez uprawnień
             : [
-              {
-                title: 'Edytuj',
-                icon: <EditIcon color={Colors.black} size={20} />,
-                onPress: handleEditImage,
-              },
-              {
-                title: 'Usuń',
-                icon: <TrashIcon color={Colors.red} size={20} />,
-                onPress: handleDeleteImage,
-                color: Colors.red,
-              },
-            ]
+                {
+                  title: 'Edytuj',
+                  icon: <EditIcon color={Colors.black} size={20} />,
+                  onPress: handleEditImage,
+                },
+                {
+                  title: 'Usuń',
+                  icon: <TrashIcon color={Colors.red} size={20} />,
+                  onPress: handleDeleteImage,
+                  color: Colors.red,
+                },
+              ]
         }
       />
 
@@ -328,7 +328,7 @@ function GalleryContent({
         tags={tags || undefined}
         onDeletePhoto={
           galleryType === 'device_gallery' &&
-            !hasAccess(Scopes.manageDeviceGallery)
+          !hasAccess(Scopes.manageDeviceGallery)
             ? undefined
             : handleLightboxDelete
         }

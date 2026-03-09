@@ -273,7 +273,7 @@ export default function ClientInstallationsList({
       try {
         await deleteInstallation({ data: { installation_id: idToDelete } });
         await fetchInstallationList();
-        Alert.alert('Sukces', 'Instalacja została usunięta');
+        Alert.alert('Instalacja została usunięta');
         toggleDeleteOverlay();
       } catch (error) {
         Alert.alert('Błąd', 'Nie udało się usunąć instalacji');
@@ -320,7 +320,7 @@ export default function ClientInstallationsList({
         data: { klient_id: Number(clientId), name },
       });
       await fetchInstallationList();
-      Alert.alert('Sukces', 'Instalacja została dodana');
+      Alert.alert('Instalacja została dodana');
       toggleAddOverlay();
     } catch (error) {
       Alert.alert(

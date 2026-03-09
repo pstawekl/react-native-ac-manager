@@ -25,6 +25,7 @@ import useApi from '../../hooks/useApi';
 
 type SurchargeItemType = {
   name: string;
+  unit: string | null;
   cost: string | null;
   itemId: number | null;
   order: number;
@@ -38,8 +39,8 @@ type EditModalProps = {
   visible: boolean;
   onClose: () => void;
   onDelete: () => void;
-  onSave: (data: { name: string; cost: string }) => Promise<void>;
-  initialData: { name: string; cost: string | null };
+  onSave: (data: { name: string; unit: string; cost: string }) => Promise<void>;
+  initialData: { name: string; unit: string | null; cost: string | null };
 };
 
 const EditSurchargeModal = memo(function EditSurchargeModal({
@@ -52,6 +53,7 @@ const EditSurchargeModal = memo(function EditSurchargeModal({
   const { control, handleSubmit, reset } = useForm({
     defaultValues: {
       name: initialData.name,
+      unit: initialData.unit || '',
       cost: initialData.cost || '',
     },
   });
@@ -60,12 +62,13 @@ const EditSurchargeModal = memo(function EditSurchargeModal({
   useEffect(() => {
     reset({
       name: initialData.name,
+      unit: initialData.unit || '',
       cost: initialData.cost || '',
     });
   }, [initialData, reset]);
 
   const handleSave = useCallback(
-    async (data: { name: string; cost: string }) => {
+    async (data: { name: string; unit: string; cost: string }) => {
       await onSave(data);
       onClose();
     },
@@ -89,6 +92,14 @@ const EditSurchargeModal = memo(function EditSurchargeModal({
             name="name"
             control={control}
             label="Nazwa narzutu"
+            textColor="#737373"
+            color={Colors.grayBorder}
+          />
+
+          <FormInput
+            name="unit"
+            control={control}
+            label="Jednostka (np. szt)"
             textColor="#737373"
             color={Colors.grayBorder}
           />
@@ -139,11 +150,12 @@ const AddSurchargeModal = memo(function AddSurchargeModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  onSave: (data: { name: string; cost: string }) => void;
+  onSave: (data: { name: string; unit: string; cost: string }) => void;
 }) {
   const { control, handleSubmit, reset } = useForm({
     defaultValues: {
       name: '',
+      unit: '',
       cost: '',
     },
   });
@@ -151,12 +163,12 @@ const AddSurchargeModal = memo(function AddSurchargeModal({
   // Reset form when modal closes
   useEffect(() => {
     if (!visible) {
-      reset({ name: '', cost: '' });
+      reset({ name: '', unit: '', cost: '' });
     }
   }, [visible, reset]);
 
   const handleSave = useCallback(
-    (data: { name: string; cost: string }) => {
+    (data: { name: string; unit: string; cost: string }) => {
       onSave(data);
       onClose();
     },
@@ -180,6 +192,14 @@ const AddSurchargeModal = memo(function AddSurchargeModal({
             name="name"
             control={control}
             label="Nazwa narzutu"
+            textColor="#737373"
+            color={Colors.grayBorder}
+          />
+
+          <FormInput
+            name="unit"
+            control={control}
+            label="Jednostka (np. szt)"
             textColor="#737373"
             color={Colors.grayBorder}
           />
@@ -216,6 +236,7 @@ const AddSurchargeModal = memo(function AddSurchargeModal({
 
 type SurchargeItemProps = {
   name: string;
+  unit: string | null;
   cost: string | null;
   onEditPress: () => void;
   index: number;
@@ -224,6 +245,7 @@ type SurchargeItemProps = {
 
 const SurchargeItem = memo(function SurchargeItem({
   name,
+  unit,
   cost,
   onEditPress,
   index,
@@ -275,7 +297,10 @@ const SurchargeItem = memo(function SurchargeItem({
         onLongPress={drag}
       >
         <Text style={styles.itemText}>{name}</Text>
-        <Text style={styles.itemText}>{cost}</Text>
+        <Text style={styles.itemText}>
+          {cost}
+          {unit ? ` / ${unit}` : ''}
+        </Text>
         <DraggableGroupIcon />
       </Pressable>
     </Swipeable>
@@ -300,7 +325,14 @@ function SettingsSurcharge() {
     path: 'narzut_delete',
   });
   const { result: surchargesList, execute: fetchSurcharges } = useApi<
-    { id: number; name: string; owner: number; value: number; order: number }[]
+    {
+      id: number;
+      name: string;
+      owner: number;
+      value: number;
+      order: number;
+      unit?: string | null;
+    }[]
   >({
     path: 'narzut_list',
   });
@@ -344,6 +376,7 @@ function SettingsSurcharge() {
           if (!loadedSurchargeIdsRef.current.has(item.id)) {
             itemsToAdd.push({
               name: item.name,
+              unit: item.unit ?? '',
               cost: String(item.value),
               itemId: item.id,
               order: item.order,
@@ -370,13 +403,14 @@ function SettingsSurcharge() {
   );
 
   const handleEditSave = useCallback(
-    async (data: { name: string; cost: string }) => {
+    async (data: { name: string; unit: string; cost: string }) => {
       if (editingItem) {
         try {
           const response = await editSurcharge({
             data: {
               narzut_id: editingItem.data.itemId,
               name: data.name,
+              unit: data.unit,
               value: data.cost,
               order: editingItem.data.order,
             },
@@ -387,6 +421,7 @@ function SettingsSurcharge() {
             updatedFields[editingItem.index] = {
               ...updatedFields[editingItem.index],
               name: data.name,
+              unit: data.unit,
               cost: data.cost,
             };
             setValue('surcharges', updatedFields);
@@ -402,11 +437,12 @@ function SettingsSurcharge() {
   );
 
   const handleAddSurcharge = useCallback(
-    async (data: { name: string; cost: string }) => {
+    async (data: { name: string; unit: string; cost: string }) => {
       try {
         const response = await addSurcharge({
           data: {
             name: data.name,
+            unit: data.unit,
             value: data.cost,
             order: fields.length + 1,
           },
@@ -416,15 +452,21 @@ function SettingsSurcharge() {
           response &&
           typeof response === 'object' &&
           'id' in response &&
-          response.id
+          (response as { id: unknown }).id != null
         ) {
-          append({
-            name: data.name,
-            cost: data.cost,
-            itemId: response.id,
-            order: fields.length + 1,
-          });
-          loadedSurchargeIdsRef.current.add(response.id);
+          const newId = Number((response as { id: unknown }).id);
+          if (!Number.isNaN(newId)) {
+            append({
+              name: data.name,
+              unit: data.unit,
+              cost: data.cost,
+              itemId: newId,
+              order: fields.length + 1,
+            });
+            loadedSurchargeIdsRef.current.add(newId);
+          } else {
+            Alert.alert('Błąd', 'Nieprawidłowy identyfikator nowego narzutu.');
+          }
         } else {
           Alert.alert('Błąd', 'Nie udało się dodać narzutu.');
         }
@@ -479,12 +521,13 @@ function SettingsSurcharge() {
               return (
                 <SurchargeItem
                   name={item.name}
+                  unit={item.unit}
                   cost={item.cost}
                   onEditPress={() => handleEditPress(index)}
                   removeItem={removeItem}
                   drag={drag}
                   isActive={isActive}
-                  index={item.itemId ?? -1}
+                  index={index}
                 />
               );
             }}
@@ -519,6 +562,7 @@ function SettingsSurcharge() {
           onSave={handleEditSave}
           initialData={{
             name: editingItem.data.name,
+            unit: editingItem.data.unit,
             cost: editingItem.data.cost,
           }}
         />

@@ -9,6 +9,8 @@ import ButtonsHeader from '../../components/ButtonsHeader';
 import { FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
+import useAuth from '../../providers/AuthProvider';
+import FilePicker, { File } from '../../components/FilePicker';
 import { SettingsDataScreenProps } from '../../navigation/types';
 
 type FormData = {
@@ -23,7 +25,9 @@ type FormData = {
   miasto: string | null;
   email: string | null;
   numer_telefonu: string | null;
-  [key: string]: string | null;
+  fgaz_certificate_number?: string | null;
+  company_logo_file?: File | null;
+  company_logo_url?: string | null;
 };
 
 type MyDataKey =
@@ -40,11 +44,15 @@ type MyDataKey =
   | 'numer_telefonu';
 
 function SettingsData({ navigation }: SettingsDataScreenProps) {
+  const { user } = useAuth();
   const { result: myData, execute: getMyData } = useApi<FormData>({
     path: 'data',
   });
   const { execute: updateData } = useApi({
     path: 'change_own_data',
+  });
+  const { execute: uploadLogo } = useApi<object, FormData>({
+    path: 'company_logo_upload',
   });
   const { control, handleSubmit, setValue } = useForm<FormData>();
 
@@ -57,8 +65,22 @@ function SettingsData({ navigation }: SettingsDataScreenProps) {
   useEffect(() => {
     if (myData) {
       Object.keys(myData).forEach(key => {
-        const dataKey = key as MyDataKey; // Rzutujemy klucz na MyDataKey
-        setValue(dataKey, myData[key]);
+        if (key === 'company_logo_url') {
+          const url = myData[key] as unknown as string | null;
+          if (url) {
+            const fileFromUrl: File = {
+              uri: url,
+              name: url.split('/').pop() || 'logo.png',
+              type: 'image/png',
+            };
+            setValue('company_logo_file', fileFromUrl);
+          }
+          return;
+        }
+        const dataKey = key as MyDataKey;
+        if (dataKey in myData) {
+          setValue(dataKey, myData[dataKey]);
+        }
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,19 +95,33 @@ function SettingsData({ navigation }: SettingsDataScreenProps) {
   const onSubmit = useCallback(
     async (data: FormData) => {
       const response = await updateData({
-        nazwa_firmy: data.nazwa_firmy,
-        nip: data.nip,
-        first_name: data.first_name,
-        last_name: data.last_name,
-        ulica: data.ulica,
-        numer_domu: data.numer_domu,
-        mieszkanie: data.mieszkanie,
-        kod_pocztowy: data.kod_pocztowy,
-        miasto: data.miasto,
-        numer_telefonu: data.numer_telefonu,
+        data: {
+          nazwa_firmy: data.nazwa_firmy,
+          nip: data.nip,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          ulica: data.ulica,
+          numer_domu: data.numer_domu,
+          mieszkanie: data.mieszkanie,
+          kod_pocztowy: data.kod_pocztowy,
+          miasto: data.miasto,
+          numer_telefonu: data.numer_telefonu,
+          fgaz_certificate_number: data.fgaz_certificate_number ?? null,
+        },
       });
 
-      if (response?.message === 'User and user data updated successfully') {
+      if ((response as any)?.message === 'User and user data updated successfully') {
+        const logoFile = data.company_logo_file as File | undefined | null;
+        if (logoFile && (user?.userType === 'admin' || user?.userType === 'global_admin')) {
+          const formData = new FormData();
+          // @ts-ignore: React Native FormData typings
+          formData.append('company_logo', {
+            uri: logoFile.uri,
+            name: logoFile.name,
+            type: logoFile.type,
+          });
+          await uploadLogo({ method: 'POST', data: formData as any });
+        }
         Alert.alert('Zaktualizowano dane użytkownika');
         handleBackPress();
       } else {
@@ -179,6 +215,29 @@ function SettingsData({ navigation }: SettingsDataScreenProps) {
               control={control}
               label="Numer telefonu"
             />
+          </View>
+
+          <Text style={styles.sectionText}>Certyfikaty i logo</Text>
+          <View style={{ gap: -18 }}>
+            <FormInput
+              name="fgaz_certificate_number"
+              control={control}
+              label="Numer certyfikatu F-GAZ"
+            />
+            {(user?.userType === 'admin' || user?.userType === 'global_admin') && (
+              <View style={{ paddingHorizontal: 8, marginTop: 12 }}>
+                <FilePicker<FormData>
+                  name="company_logo_file"
+                  control={control}
+                  label="Logo firmy"
+                  type="image"
+                  variant="gray"
+                  title="Dodaj logo firmy"
+                  subtitle="Zostanie pokazane w ofertach i dokumentach"
+                  // initialValue ustawiamy z myData w useEffect (company_logo_url)
+                />
+              </View>
+            )}
           </View>
         </ScrollView>
 

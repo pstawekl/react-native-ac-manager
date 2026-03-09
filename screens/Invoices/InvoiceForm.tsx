@@ -1,6 +1,6 @@
 /* eslint-disable react-native/no-inline-styles */
 import { Button, Divider, Input, Text } from '@rneui/themed';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Control, useController, useForm, useWatch } from 'react-hook-form';
 import { Alert, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-virtualized-view';
@@ -843,6 +843,26 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
 
   const { clients, getClients } = useClients();
 
+  const headerTitle = useMemo(() => {
+    if (
+      params.from === 'Installation' &&
+      paramInstallationId != null &&
+      paramClientId != null &&
+      clients?.length
+    ) {
+      const client = clients.find(c => c.id === Number(paramClientId));
+      if (client) {
+        return `Faktura – Instalacja ${paramInstallationId} – ${getClientDisplayPrimary(client)}`;
+      }
+    }
+    return 'Nowa faktura';
+  }, [
+    params.from,
+    paramInstallationId,
+    paramClientId,
+    clients,
+  ]);
+
   const [visible, setVisible] = useState(false);
 
   const toggleOverlay = useCallback(() => {
@@ -1133,7 +1153,7 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
     }
     toggleOverlay();
 
-    Alert.alert('Sukces', 'Utworzono fakturę', [
+    Alert.alert('Utworzono fakturę', [
       {
         text: 'OK',
         onPress: () => {
@@ -1239,7 +1259,7 @@ function InvoiceForm({ navigation, route }: InvoiceFormScreenProps) {
       <Container style={styles.container}>
         <ButtonsHeader
           onBackPress={handleBackNavigation}
-          title="Nowa faktura"
+          title={headerTitle}
         />
 
         <ScrollView style={styles.scrollContainer}>

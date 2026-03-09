@@ -97,7 +97,7 @@ type FormData = {
 
 export default function ClientForm({ route }: ClientFormScreenProps) {
   const clientFromParams = route.params?.client;
-  const { clients, getClients } = useClients();
+  const { clients, getClients, resetClients } = useClients();
   const { token } = useAuth();
 
   // Pobierz aktualne dane klienta z ClientsProvider na podstawie ID
@@ -111,6 +111,7 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
 
   const isEditMode = Boolean(client);
   const navigation = useNavigation<ClientFormScreenProps['navigation']>();
+  const [submitting, setSubmitting] = useState(false);
   const { execute, loading } = useApi<{
     message: string;
     error: string;
@@ -217,6 +218,23 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
 
   const onSubmit = useCallback(
     async (data: FormData) => {
+      if (submitting) return;
+      setSubmitting(true);
+
+      // Jeśli zaznaczono zaproszenie, wymagaj przynajmniej e-maila lub numeru telefonu
+      if (
+        data.sendInvitation === true &&
+        (!data.email || data.email.trim() === '') &&
+        (!data.numer_telefonu || data.numer_telefonu.trim() === '')
+      ) {
+        Alert.alert(
+          'Błąd',
+          'Wypełnij pole e-mail lub numer telefonu, aby wysłać zaproszenie.',
+        );
+        setSubmitting(false);
+        return;
+      }
+
       // W trybie dodawania (nie edycji) sprawdź czy email już istnieje
       if (!isEditMode && data.email && !data.email.endsWith('@temp.local')) {
         try {
@@ -264,7 +282,7 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
 
                         if (addResponse?.status) {
                           Alert.alert(
-                            'Sukces',
+                            'Użytkownik dodany do listy klientów',
                             `Użytkownik ${addResponse.user_name} został dodany do listy klientów.`,
                             [
                               {
@@ -313,16 +331,19 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
 
       // Geokodowanie adresu przed zapisem
       const hasAddress =
+        Boolean(data.ulica) &&
+        Boolean(data.numer_domu) &&
+        Boolean(data.mieszkanie) &&
         Boolean(data.kod_pocztowy) &&
-        Boolean(data.miasto) &&
-        Boolean(data.ulica);
+        Boolean(data.miasto);
 
       if (hasAddress) {
         const geocodeQuery = [
-          data.kod_pocztowy,
-          data.miasto,
           data.ulica,
           data.numer_domu ?? '',
+          data.mieszkanie ?? '',
+          data.kod_pocztowy,
+          data.miasto,
         ]
           .filter(Boolean)
           .join(', ');
@@ -386,7 +407,7 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
 
                   if (addResponse?.status) {
                     Alert.alert(
-                      'Sukces',
+                      'Użytkownik dodany do listy klientów',
                       `Użytkownik ${addResponse.user_name} został dodany do listy klientów.`,
                       [
                         {
@@ -486,10 +507,10 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
           Alert.alert(isEditMode ? 'Klient zaktualizowany.' : 'Klient dodany.');
         }
 
-        if (getClients) {
-          await getClients();
+        if (resetClients && getClients) {
+          resetClients();
+          await getClients(1, false);
         }
-
         navigation.goBack();
       } else {
         Alert.alert(
@@ -497,6 +518,8 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
           'Wystąpił nieoczekiwany błąd podczas zapisywania klienta.',
         );
       }
+
+      setSubmitting(false);
     },
     [
       execute,
@@ -507,6 +530,8 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
       sendInvitationApi,
       token,
       checkEmailApi,
+      resetClients,
+      submitting,
     ],
   );
 
@@ -583,61 +608,72 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
                 }}
               />
             </View>
-            <View style={styles.inputContainer}>
+            <View style={{ paddingHorizontal: 8 }}>
               <FormInput
-                name="miasto"
+                name="ulica"
                 control={control}
-                label="Miasto"
+                label="Ulica"
                 noPadding
+                rules={{
+                  required: 'Ulica jest wymagana',
+                }}
               />
+              <FormInput
+                name="numer_domu"
+                control={control}
+                label="Numer budynku"
+                noPadding
+                rules={{
+                  required: 'Numer budynku jest wymagany',
+                }}
+              />
+              <FormInput
+                name="mieszkanie"
+                control={control}
+                label="Numer lokalu"
+                noPadding
+                rules={{
+                  required: 'Numer lokalu jest wymagany',
+                }}
+              />
+            </View>
+            <View style={styles.inputContainer}>
               <FormInput
                 name="kod_pocztowy"
                 control={control}
                 label="Kod pocztowy"
                 noPadding
                 rules={{
+                  required: 'Kod pocztowy jest wymagany',
                   pattern: {
                     value: /^\d{2}-\d{3}$/,
                     message: 'Nieprawidłowy format kodu pocztowego (XX-XXX)',
                   },
                 }}
               />
-            </View>
-            <View style={{ paddingHorizontal: 8 }}>
               <FormInput
-                name="ulica"
+                name="miasto"
                 control={control}
-                label="Ulica / Nr domu"
+                label="Miasto"
                 noPadding
+                rules={{
+                  required: 'Miasto jest wymagane',
+                }}
               />
             </View>
           </View>
           <Text style={styles.sectionText}>Dane kontaktowe</Text>
-          {watchedClientType === 'osoba_prywatna' && (
-            <Text style={styles.infoText}>
-              💡 Dla osób prywatnych email nie jest wymagany
-            </Text>
-          )}
           <View style={{ gap: -18 }}>
             <View style={styles.inputContainer}>
               <FormInput
                 name="email"
                 control={control}
-                disabled={Boolean(client?.email)}
-                label={watchedClientType === 'firma' ? 'E-mail *' : 'E-mail'}
-                editable={client?.email ? false : undefined}
+                label="E-mail *"
                 noPadding
                 error={errors.email}
                 rules={{
-                  required:
-                    watchedClientType === 'firma'
-                      ? 'E-mail jest wymagany dla firm'
-                      : false,
+                  required: 'E-mail jest wymagany',
                   validate: (value: string | null) => {
-                    // Jeśli pole jest puste i to nie firma, to jest OK
-                    if (!value && watchedClientType !== 'firma') {
-                      return true;
-                    }
                     // Jeśli to adres @temp.local, nie sprawdzaj poprawności
                     if (value && value.endsWith('@temp.local')) {
                       return true;
@@ -697,14 +733,28 @@ export default function ClientForm({ route }: ClientFormScreenProps) {
             submitTitle={isEditMode ? 'Zapisz' : 'Dodaj'}
             cancelTitle="Anuluj"
             onSubmitPress={handleSubmit(onSubmit)}
-            onCancel={navigation.goBack}
+            onCancel={() => {
+              Alert.alert(
+                'Anulować wprowadzanie danych?',
+                'Wprowadzone dane zostaną utracone.',
+                [
+                  { text: 'Nie', style: 'cancel' },
+                  {
+                    text: 'Tak, anuluj',
+                    style: 'destructive',
+                    onPress: () => navigation.goBack(),
+                  },
+                ],
+              );
+            }}
             stretch
             groupStyle={styles.buttonGroup}
             cancelStyle={styles.cancelButton}
             cancelTitleStyle={styles.cancelButtonTitle}
             submitStyle={styles.submitButton}
             submitTitleStyle={styles.submitButtonTitle}
-            loading={loading}
+            loading={loading || submitting}
+            disabled={submitting}
           />
         </ScrollView>
       </View>

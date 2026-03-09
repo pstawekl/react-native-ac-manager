@@ -73,7 +73,7 @@ export default function ClientInvoiceData({
       setValue('kod_pocztowy', client.kod_pocztowy || '');
       setValue('miasto', client.miasto || '');
       setValue('nip', client.nip || '');
-      Alert.alert('Sukces', 'Dane zostały pobrane z profilu klienta');
+      Alert.alert('Dane zostały pobrane z profilu klienta');
     } else {
       Alert.alert('Błąd', 'Nie znaleziono danych klienta');
     }
@@ -99,7 +99,7 @@ export default function ClientInvoiceData({
       });
 
       if (response?.message === 'User and user data updated successfully') {
-        Alert.alert('Sukces', 'Dane faktury zostały zaktualizowane');
+        Alert.alert('Dane faktury zostały zaktualizowane');
         // Odśwież listę klientów
         if (getClients) {
           getClients();

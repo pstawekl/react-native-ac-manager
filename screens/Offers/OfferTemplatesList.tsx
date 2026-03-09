@@ -190,7 +190,7 @@ export default function OfferTemplatesList({
       try {
         await deleteTemplate({ data: { oferta_id: idToDelete } });
         toggleDeleteOverlay();
-        Alert.alert('Sukces', 'Szablon został usunięty');
+        Alert.alert('Szablon został usunięty');
         loadTemplates();
       } catch (error) {
         Alert.alert('Błąd', 'Nie udało się usunąć szablonu');
@@ -199,8 +199,15 @@ export default function OfferTemplatesList({
   };
 
   const handleEditTemplate = (template: Offer) => {
-    // Przejście do formularza szablonu w trybie edycji z przekazaniem danych szablonu
-    // @TODO
+    (navigation as any).navigate('Overview', {
+      offerId: template.id,
+      isTemplate: true,
+      mode: 'view',
+      type: template.offer_type || 'split',
+      installationId: 0,
+      devices: [],
+      surcharges: [],
+    });
   };
   return (
     <View style={styles.container}>

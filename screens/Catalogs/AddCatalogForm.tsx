@@ -9,24 +9,29 @@ import FilePicker, { File } from '../../components/FilePicker';
 import { Dropdown, FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
+import useDiscountProducers from '../../hooks/useDiscountProducers';
 import { CatalogsAddCatalogScreenProps } from '../../navigation/types';
 import useCatalogs from '../../providers/CatalogsProvider';
 
 type CatalogData = {
   file: File | null;
   is_active: boolean;
+  producent: string;
   name: string;
   od?: Date;
 };
 
+const defaultCatalogValues: CatalogData = {
+  file: null,
+  is_active: false,
+  producent: '',
+  name: '',
+  od: undefined,
+};
+
 function AddCatalogForm({ navigation }: CatalogsAddCatalogScreenProps) {
-  const { control, handleSubmit } = useForm<CatalogData>({
-    defaultValues: {
-      file: null,
-      is_active: false,
-      name: '',
-      od: undefined,
-    },
+  const { control, handleSubmit, reset } = useForm<CatalogData>({
+    defaultValues: defaultCatalogValues,
   });
 
   const { execute, loading } = useApi<object, FormData>({
@@ -34,19 +39,29 @@ function AddCatalogForm({ navigation }: CatalogsAddCatalogScreenProps) {
   });
 
   const { getCatalogs } = useCatalogs();
+  const { producers, loading: producersLoading } = useDiscountProducers();
 
   const onSubmit = async (data: CatalogData) => {
+    if (!data.producent) {
+      Alert.alert('Błąd', 'Wybierz producenta z listy rabatów.');
+      return;
+    }
+
     if (!data.file) {
       Alert.alert('Błąd', 'Wybierz plik katalogu.');
       return;
     }
 
+    const fullName = data.producent
+      ? `${data.producent} ${data.name}`.trim()
+      : data.name.trim();
+
     const requestData = new FormData();
     requestData.append('file', data.file);
-    requestData.append('name', data.name);
+    requestData.append('name', fullName);
     requestData.append('is_active', data.is_active);
     if (data.od) {
-      const dateStr = data.od.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      const dateStr = data.od.toISOString().split('T')[0];
       requestData.append('od', dateStr);
     }
 
@@ -56,12 +71,9 @@ function AddCatalogForm({ navigation }: CatalogsAddCatalogScreenProps) {
       if (getCatalogs) {
         getCatalogs();
       }
-      Alert.alert('Sukces', 'Dodano katalog', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      reset(defaultCatalogValues);
+      navigation.navigate('Menu', { tab: 'catalogs' });
+      Alert.alert('Dodano katalog');
     } else if (response && 'error' in response) {
       Alert.alert('Błąd', (response as { error: string }).error);
     }
@@ -72,18 +84,33 @@ function AddCatalogForm({ navigation }: CatalogsAddCatalogScreenProps) {
       <View>
         <ButtonsHeader onBackPress={navigation.goBack} />
         <View style={styles.formContainer}>
+          <Dropdown
+            name="producent"
+            control={control}
+            label="Producent (zdefiniowany w rabatach)"
+            options={producers.map(producent => ({
+              label: producent,
+              value: producent,
+            }))}
+            isBordered
+            isThin
+            disabled={producersLoading || producers.length === 0}
+          />
+          {producers.length === 0 && !producersLoading && (
+            <Text style={styles.infoText}>
+              Brak zdefiniowanych producentów w rabatach. Dodaj rabat dla
+              producenta w ustawieniach, aby móc przypisać go do dokumentacji.
+            </Text>
+          )}
           <FormInput
             name="name"
             control={control}
             label="Nazwa katalogu"
             noPadding
-            style={styles.firstInput}
           />
           <View style={styles.datePickerWrapper}>
             <Text style={styles.datePickerLabel}>Data obowiązywania</Text>
-            <View style={styles.datePickerContainer}>
-              <DatePicker control={control} name="od" color={Colors.purple} />
-            </View>
+            <DatePicker control={control} name="od" color={Colors.purple} />
           </View>
           <Dropdown
             name="is_active"
@@ -115,6 +142,7 @@ function AddCatalogForm({ navigation }: CatalogsAddCatalogScreenProps) {
       <View style={styles.footer}>
         <ButtonGroup
           loading={loading}
+          disabled={producers.length === 0 || producersLoading}
           submitTitle="Zapisz"
           submitStyle={styles.submitButton}
           cancelTitle="Anuluj"
@@ -142,6 +170,13 @@ const styles = StyleSheet.create({
   firstInput: {
     marginBottom: -4,
   },
+  infoText: {
+    fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.red,
+    marginTop: 4,
+    marginBottom: 8,
+  },
   datePickerWrapper: {
     marginBottom: 10,
   },
@@ -150,9 +185,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_400Regular',
     color: Colors.black,
     marginBottom: 8,
-  },
-  datePickerContainer: {
-    marginBottom: -4,
   },
   footer: {
     marginBottom: 30,

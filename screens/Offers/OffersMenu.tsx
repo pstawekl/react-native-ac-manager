@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import Tabs from '../../components/Tabs';
 import { OffersParamList } from '../../navigation/types';
 import useAuth from '../../providers/AuthProvider';
+import { useOfferSettings } from '../../providers/OfferSettingsProvider';
 import MontazProposals from './MontazProposals';
 import OffersList from './OffersList';
 
@@ -37,6 +38,8 @@ function OffersListTab({
 
 function OffersMenu({ route }: OffersMenuProps) {
   const { isUserClient } = useAuth();
+  const { settings: offerSettings } = useOfferSettings();
+  const reservationSystemEnabled = offerSettings?.reservationSystemEnabled ?? true;
   const navigation = useNavigation();
   const [shouldShowAddOffer, setShouldShowAddOffer] = useState(
     route.params?.autoShowAddOverlay || false,
@@ -117,7 +120,7 @@ function OffersMenu({ route }: OffersMenuProps) {
       id: 'offers',
       onAddPress: !isUserClient() ? handleAddOffer : undefined,
     },
-    // Szablony tylko dla admin/monter
+    // Szablony i Terminy tylko dla admin/monter; Terminy tylko gdy rezerwacja włączona
     ...(!isUserClient()
       ? [
         {
@@ -126,11 +129,9 @@ function OffersMenu({ route }: OffersMenuProps) {
           id: 'templates',
           onAddPress: handleAddTemplate,
         },
-        {
-          title: 'Terminy',
-          component: ProposalsComponent,
-          id: 'proposals',
-        },
+        ...(reservationSystemEnabled
+          ? [{ title: 'Terminy', component: ProposalsComponent, id: 'proposals' as const }]
+          : []),
       ]
       : []),
   ];

@@ -1,143 +1,77 @@
 /* eslint-disable react-native/no-inline-styles */
 import { Route, useNavigation } from '@react-navigation/native';
-import { Button, Input } from '@rneui/themed';
+import { Button } from '@rneui/themed';
 import { useCallback, useEffect, useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { useFieldArray, useForm } from 'react-hook-form';
 import {
   Alert,
   FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
+import * as ImagePicker from 'expo-image-picker';
 
 import { LinearGradient } from 'expo-linear-gradient';
 import { SubmitButton } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import FilePicker, { File } from '../../components/FilePicker';
-import { FormInput, Textarea } from '../../components/Input';
+import { Dropdown, FormInput, Textarea } from '../../components/Input';
 import Photo from '../../components/Photo';
 import Colors from '../../consts/Colors';
 import { getImageUrl } from '../../helpers/image';
 import useApi from '../../hooks/useApi';
 
-// Komponent dla pól numerycznych - blokuje nieprawidłowe znaki
-function NumericInput({
-  name,
-  control,
-  label,
-  allowDecimal = false,
-  noPadding = false,
-}: {
-  name: keyof ClientInspectionData;
-  control: any;
-  label: string;
-  allowDecimal?: boolean;
-  noPadding?: boolean;
-}) {
-  const handleTextChange = (
-    text: string,
-    onChange: (value: string) => void,
-  ) => {
-    // Usuń wszystkie znaki oprócz cyfr i opcjonalnie kropki/przecinka
-    const regex = allowDecimal ? /^[0-9]*[.,]?[0-9]*$/ : /^[0-9]*$/;
-
-    if (regex.test(text) || text === '') {
-      // Zamień przecinek na kropkę dla spójności
-      const normalizedText = text.replace(',', '.');
-      onChange(normalizedText);
-    }
-  };
-
-  return (
-    <Controller
-      name={name}
-      control={control}
-      render={({ field: { onChange, value } }) => (
-        <Input
-          label={label}
-          value={value || ''}
-          onChangeText={text => handleTextChange(text, onChange)}
-          keyboardType="numeric"
-          inputStyle={{
-            fontFamily: 'Archivo_400Regular',
-            borderWidth: 1,
-            color: Colors.black,
-            borderColor: Colors.borderInput,
-            borderRadius: 10,
-            height: 54,
-            minHeight: 40,
-            paddingHorizontal: 12,
-            fontSize: 14,
-            backgroundColor: Colors.white,
-          }}
-          inputContainerStyle={{
-            borderBottomWidth: 0,
-          }}
-          containerStyle={{
-            paddingHorizontal: noPadding ? 0 : 8,
-            width: '100%',
-          }}
-          labelStyle={{
-            fontFamily: 'Archivo_600SemiBold',
-            marginTop: 0,
-            marginBottom: 6,
-            color: Colors.black,
-            fontSize: 10,
-            letterSpacing: 0.3,
-            fontWeight: 'normal',
-          }}
-        />
-      )}
-    />
-  );
-}
+type InspectionSection = {
+  rooms_m2: number | string | undefined;
+  power_amount: number | string | undefined;
+  typ_urzadzenia_wewnetrznego: string;
+  miejsce_montazu: string;
+  dlugosc_instalacji: number | string | undefined;
+  prowadzenie_instalacji: string;
+  prowadzenie_skroplin: string;
+  device_photo?: { id: number; image: string } | undefined;
+};
 
 type ClientInspectionData = {
-  // Pola z pierwszego zdjęcia
-  rooms: number | undefined; // Ilość chłodzonych pomieszczeń
-  rooms_m2: number | undefined; // Wielkość chłodzonych pomieszczeń
-  device_amount: number | undefined; // Ilość urządzeń
-  power_amount: number | undefined; // Moc urządzeń
-  typ_urzadzenia_wewnetrznego: string | undefined; // Typ urządzenia wewnętrznego
-  miejsce_montazu: string | undefined; // Miejsce montażu
-  dlugosc_instalacji: number | undefined; // Długość instalacji
-  prowadzenie_instalacji: string | undefined; // Prowadzenie instalacji
-
-  // Pola z drugiego zdjęcia
-  prowadzenie_skroplin: string | undefined; // Prowadzenie skroplin
-  miejsce_agregatu: string | undefined; // Miejsce i sposób montażu agregatu
-  podlaczenie_elektryki: string | undefined; // Miejsce podłączenia elektryki
-  miejsce_urzadzen_wew: string | undefined; // Miejsce montażu urządzeń wewnętrznych
-  obnizenie: number | undefined; // Obniżenie jednostki naściennej
-  uwagi: string | undefined; // Uwagi
-
-  // Pole na zdjęcia
+  rooms: number | undefined;
+  device_amount: number;
+  roomSections: InspectionSection[];
+  deviceSections: InspectionSection[];
+  miejsce_agregatu: string;
+  podlaczenie_elektryki: string;
+  miejsce_urzadzen_wew: string;
+  obnizenie: number | undefined;
+  uwagi: string;
   photo: File | undefined;
 };
 
-const clientInspectDefaultData = {
-  // Pola z pierwszego zdjęcia
-  rooms: undefined,
+const defaultInspectionSection: InspectionSection = {
   rooms_m2: undefined,
-  device_amount: undefined,
   power_amount: undefined,
   typ_urzadzenia_wewnetrznego: '',
   miejsce_montazu: '',
   dlugosc_instalacji: undefined,
   prowadzenie_instalacji: '',
-
-  // Pola z drugiego zdjęcia
   prowadzenie_skroplin: '',
+  device_photo: undefined,
+};
+
+const clientInspectDefaultData: ClientInspectionData = {
+  rooms: 1,
+  device_amount: 1,
+  roomSections: [{ ...defaultInspectionSection }],
+  deviceSections: [],
   miejsce_agregatu: '',
   podlaczenie_elektryki: '',
   miejsce_urzadzen_wew: '',
   obnizenie: undefined,
   uwagi: '',
-
-  // Pole na zdjęcia
   photo: undefined,
 };
 
@@ -149,14 +83,20 @@ type InspectionPhoto = {
 
 type InstallationDataResponse = {
   inspekcja?: Array<{
+    rooms?: number;
+    rooms_m2?: number;
+    device_amount?: number;
+    power_amount?: number;
+    typ_urzadzenia_wewnetrznego?: string;
+    miejsce_montazu?: string;
+    dlugosc_instalacji?: number;
+    prowadzenie_instalacji?: string;
+    prowadzenie_skroplin?: string;
     miejsce_agregatu?: string;
     podlaczenie_elektryki?: string;
     miejsce_urzadzen_wew?: string;
-    sposob_montazu?: string;
-    uwagi_agregat?: string;
-    uwagi_instalacja?: string;
-    uwagi_elektryka?: string;
-    uwagi_ogolne?: string;
+    obnizenie?: number;
+    uwagi?: string;
   }>;
   photos?: Array<{
     id: number;
@@ -257,9 +197,23 @@ export default function ClientInspection({
 }) {
   const navigation = useNavigation();
   const [photos, setPhotos] = useState<InspectionPhoto[]>([]);
-  const { control, handleSubmit, setValue, reset, watch } =
+  const { control, handleSubmit, setValue, reset, watch, getValues } =
     useForm<ClientInspectionData>({
       defaultValues: clientInspectDefaultData,
+    });
+  const {
+    fields: roomFields,
+    replace: replaceRoomSections,
+    append: appendRoomSection,
+    remove: removeRoomSection,
+  } = useFieldArray({
+    control,
+    name: 'roomSections',
+  });
+  const { fields: deviceFields, replace: replaceDeviceSections } =
+    useFieldArray({
+      control,
+      name: 'deviceSections',
     });
   const currentPhoto = watch('photo');
   const { execute } = useApi<object, ClientInspectionData>({
@@ -288,7 +242,7 @@ export default function ClientInspection({
         formData.append('klient', clientId);
         formData.append('inspekcja', 'true');
 
-        const result = await addPhotoToGallery({ data: formData });
+        const result = await addPhotoToGallery({ data: formData as any });
 
         if (result) {
           // Refresh photos list by fetching installation data again
@@ -329,37 +283,117 @@ export default function ClientInspection({
         throw new Error('No data received');
       }
 
-      // Wczytaj dane inspekcji
-      if (res.inspekcja && res.inspekcja.length > 0) {
-        const inspectionData = res.inspekcja[0];
-        const fieldsToSet = Object.keys(clientInspectDefaultData);
+      reset(clientInspectDefaultData);
 
-        fieldsToSet.forEach((field: string) => {
-          if (
-            field !== 'photo' &&
-            inspectionData[field as keyof typeof inspectionData]
-          ) {
-            setValue(
-              field as keyof ClientInspectionData,
-              String(inspectionData[field as keyof typeof inspectionData]) ||
-              '',
-            );
-          }
+      if (res.inspekcja && res.inspekcja.length > 0) {
+        const insp = res.inspekcja[0] as Record<string, unknown>;
+        const apiSectionToForm = (item: Record<string, unknown>): InspectionSection => ({
+          rooms_m2: item.rooms_m2 != null ? Number(item.rooms_m2) : undefined,
+          power_amount: item.power_amount != null ? Number(item.power_amount) : undefined,
+          typ_urzadzenia_wewnetrznego: item.typ_urzadzenia_wewnetrznego != null ? String(item.typ_urzadzenia_wewnetrznego) : '',
+          miejsce_montazu: item.miejsce_montazu != null ? String(item.miejsce_montazu) : '',
+          dlugosc_instalacji: item.dlugosc_instalacji != null ? Number(item.dlugosc_instalacji) : undefined,
+          prowadzenie_instalacji: item.prowadzenie_instalacji != null ? String(item.prowadzenie_instalacji) : '',
+          prowadzenie_skroplin: item.prowadzenie_skroplin != null ? String(item.prowadzenie_skroplin) : '',
         });
-      } else {
-        Alert.alert('Błąd', 'Nie udało się wczytać danych inspekcji');
+
+        const rawRoomSections = Array.isArray(insp.room_sections) ? insp.room_sections : [];
+        const rawDeviceSections = Array.isArray(insp.device_sections) ? insp.device_sections : [];
+        const hasRoomSections = rawRoomSections.length > 0;
+        const hasDeviceSections = rawDeviceSections.length > 0;
+
+        let rooms: number;
+        let deviceAmount: number;
+        let roomSections: InspectionSection[];
+        let deviceSections: InspectionSection[];
+
+        if (hasRoomSections) {
+          rooms = rawRoomSections.length;
+          roomSections = rawRoomSections.map((item: unknown) =>
+            apiSectionToForm((item as Record<string, unknown>) || {}),
+          );
+        } else {
+          rooms = insp.rooms != null ? Number(insp.rooms) : 1;
+          const sectionFromFlat = (): InspectionSection => apiSectionToForm(insp);
+          roomSections = Array.from(
+            { length: Math.max(1, rooms) },
+            (_, i) => (i === 0 ? sectionFromFlat() : { ...defaultInspectionSection }),
+          );
+        }
+
+        if (hasDeviceSections) {
+          deviceAmount = rawDeviceSections.length;
+          deviceSections = rawDeviceSections.map((item: unknown) =>
+            apiSectionToForm((item as Record<string, unknown>) || {}),
+          );
+        } else {
+          deviceAmount = insp.device_amount != null ? Number(insp.device_amount) : 1;
+          const sectionFromFlat = (): InspectionSection => apiSectionToForm(insp);
+          deviceSections = Array.from(
+            { length: Math.max(1, deviceAmount) },
+            (_, i) => (i === 0 ? sectionFromFlat() : { ...defaultInspectionSection }),
+          );
+        }
+
+        setValue('rooms', rooms);
+        setValue('device_amount', deviceAmount);
+        replaceRoomSections(roomSections);
+        replaceDeviceSections(deviceSections);
+        setValue(
+          'miejsce_agregatu',
+          insp.miejsce_agregatu != null ? String(insp.miejsce_agregatu) : '',
+        );
+        setValue(
+          'podlaczenie_elektryki',
+          insp.podlaczenie_elektryki != null
+            ? String(insp.podlaczenie_elektryki)
+            : '',
+        );
+        setValue(
+          'miejsce_urzadzen_wew',
+          insp.miejsce_urzadzen_wew != null
+            ? String(insp.miejsce_urzadzen_wew)
+            : '',
+        );
+        setValue(
+          'obnizenie',
+          insp.obnizenie != null ? Number(insp.obnizenie) : undefined,
+        );
+        setValue(
+          'uwagi',
+          insp.uwagi != null ? String(insp.uwagi) : '',
+        );
       }
 
-      // Wczytaj zdjęcia
       if (res.photos && Array.isArray(res.photos)) {
-        const formattedPhotos: InspectionPhoto[] = res.photos.map(
-          (photo: any) => ({
-            id: photo.id,
-            image: photo.image,
-            created_date: photo.created_date || new Date().toISOString(),
-          }),
+        const allPhotos = res.photos as any[];
+        const galleryPhotos: InspectionPhoto[] = allPhotos
+          .filter((p: any) => p.device_section_index == null)
+          .map((p: any) => ({
+            id: p.id,
+            image: p.image,
+            created_date: p.created_date || new Date().toISOString(),
+          }));
+        setPhotos(galleryPhotos);
+
+        const devicePhotos = allPhotos.filter(
+          (p: any) => p.device_section_index != null,
         );
-        setPhotos(formattedPhotos);
+        if (devicePhotos.length > 0) {
+          const currentDevices = getValues('deviceSections') ?? [];
+          let updated = false;
+          const next = currentDevices.map((section, idx) => {
+            const dp = devicePhotos.find(
+              (p: any) => p.device_section_index === idx,
+            );
+            if (dp) {
+              updated = true;
+              return { ...section, device_photo: { id: dp.id, image: dp.image } };
+            }
+            return section;
+          });
+          if (updated) replaceDeviceSections(next);
+        }
       } else {
         setPhotos([]);
       }
@@ -384,35 +418,72 @@ export default function ClientInspection({
     try {
       await deletePhoto({ data: { photo_id: photoId } });
       setPhotos(photos.filter(p => p.id !== photoId));
-      Alert.alert('Sukces', 'Zdjęcie zostało usunięte');
+      Alert.alert('Zdjęcie zostało usunięte');
     } catch (error) {
       Alert.alert('Błąd', 'Nie udało się usunąć zdjęcia');
     }
   };
 
   const onSubmit = async (data: ClientInspectionData) => {
+    const firstRoom = data.roomSections?.[0];
+    const firstDevice = data.deviceSections?.[0];
+    const toNum = (v: number | string | undefined) =>
+      v !== undefined && v !== '' ? Number(v) : undefined;
+    const sectionToApi = (s: InspectionSection) => ({
+      rooms_m2: toNum(s.rooms_m2) ?? null,
+      power_amount: toNum(s.power_amount) ?? null,
+      typ_urzadzenia_wewnetrznego: s.typ_urzadzenia_wewnetrznego ?? '',
+      miejsce_montazu: s.miejsce_montazu ?? '',
+      dlugosc_instalacji: toNum(s.dlugosc_instalacji) ?? null,
+      prowadzenie_instalacji: s.prowadzenie_instalacji ?? '',
+      prowadzenie_skroplin: s.prowadzenie_skroplin ?? '',
+    });
+
     try {
-      // Konwertuj pola numeryczne na odpowiednie typy
       const processedData = {
-        ...data,
-        // Konwertuj stringi na liczby dla pól numerycznych
-        rooms: data.rooms ? Number(data.rooms) : undefined,
-        rooms_m2: data.rooms_m2 ? Number(data.rooms_m2) : undefined,
-        device_amount: data.device_amount
-          ? Number(data.device_amount)
-          : undefined,
-        power_amount: data.power_amount ? Number(data.power_amount) : undefined,
-        dlugosc_instalacji: data.dlugosc_instalacji
-          ? Number(data.dlugosc_instalacji)
-          : undefined,
-        obnizenie: data.obnizenie ? Number(data.obnizenie) : undefined,
+        rooms:
+          data.roomSections && data.roomSections.length > 0
+            ? data.roomSections.length
+            : undefined,
+        device_amount:
+          data.roomSections && data.roomSections.length > 0
+            ? data.roomSections.length
+            : undefined,
+        rooms_m2: toNum(firstRoom?.rooms_m2),
+        power_amount: toNum(firstRoom?.power_amount ?? firstDevice?.power_amount),
+        typ_urzadzenia_wewnetrznego:
+          firstRoom?.typ_urzadzenia_wewnetrznego ??
+          firstDevice?.typ_urzadzenia_wewnetrznego ??
+          '',
+        miejsce_montazu:
+          firstRoom?.miejsce_montazu ?? firstDevice?.miejsce_montazu ?? '',
+        dlugosc_instalacji: toNum(
+          firstRoom?.dlugosc_instalacji ?? firstDevice?.dlugosc_instalacji,
+        ),
+        prowadzenie_instalacji:
+          firstRoom?.prowadzenie_instalacji ??
+          firstDevice?.prowadzenie_instalacji ??
+          '',
+        prowadzenie_skroplin:
+          firstRoom?.prowadzenie_skroplin ??
+          firstDevice?.prowadzenie_skroplin ??
+          '',
+        room_sections: (data.roomSections ?? []).map(sectionToApi),
+        device_sections: [],
+        miejsce_agregatu: data.miejsce_agregatu ?? '',
+        podlaczenie_elektryki: data.podlaczenie_elektryki ?? '',
+        miejsce_urzadzen_wew: data.miejsce_urzadzen_wew ?? '',
+        obnizenie: toNum(data.obnizenie),
+        uwagi: data.uwagi ?? '',
         instalacja_id: installationId,
       };
 
-      const response = await execute({ data: processedData });
+      const response = await execute({
+        data: processedData as unknown as ClientInspectionData,
+      });
 
       if ((response as any)?.status === 'Inspekcja updated') {
-        Alert.alert('Sukces', 'Zaktualizowano dane inspekcji');
+        Alert.alert('Zaktualizowano dane inspekcji');
         // Odśwież dane po zapisaniu
         await loadInspectionData();
       } else {
@@ -427,8 +498,10 @@ export default function ClientInspection({
   };
 
   const content = (
-    <View
+    <KeyboardAvoidingView
       style={hideHeader ? styles.inspectionFormContainer : styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
     >
       {!hideHeader && <ButtonsHeader onBackPress={navigation.goBack} />}
       <ScrollView
@@ -436,68 +509,91 @@ export default function ClientInspection({
           hideHeader ? styles.inspectionScrollView : styles.scrollContainer
         }
         contentContainerStyle={{ gap: 10 }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {hideHeader && <Text style={styles.inspectionTitle}>Oględziny</Text>}
-        {/* Pola z pierwszego zdjęcia */}
-        <NumericInput
-          label="Ilość chłodzonych pomieszczeń"
-          name="rooms"
-          control={control}
-          noPadding
-        />
-        <NumericInput
-          label="Wielkość chłodzonych pomieszczeń (m²)"
-          name="rooms_m2"
-          control={control}
-          allowDecimal
-          noPadding
-        />
-        <NumericInput
-          label="Ilość urządzeń"
-          name="device_amount"
-          control={control}
-          noPadding
-        />
-        <NumericInput
-          label="Moc urządzeń"
-          name="power_amount"
-          control={control}
-          allowDecimal
-          noPadding
-        />
-        <FormInput
-          label="Typ urządzenia wewnętrznego"
-          name="typ_urzadzenia_wewnetrznego"
-          control={control}
-          noPadding
-        />
-        <FormInput
-          label="Miejsce montażu"
-          name="miejsce_montazu"
-          control={control}
-          noPadding
-        />
-        <NumericInput
-          label="Długość instalacji"
-          name="dlugosc_instalacji"
-          control={control}
-          allowDecimal
-          noPadding
-        />
-        <FormInput
-          label="Prowadzenie instalacji"
-          name="prowadzenie_instalacji"
-          control={control}
-          noPadding
-        />
 
-        {/* Pola z drugiego zdjęcia */}
-        <FormInput
-          label="Prowadzenie skroplin"
-          name="prowadzenie_skroplin"
-          control={control}
-          noPadding
-        />
+        <View style={styles.roomsHeaderRow}>
+          <Text style={styles.roomsHeaderTitle}>
+            Pomieszczenia ({roomFields.length})
+          </Text>
+          <TouchableOpacity
+            style={styles.roomsHeaderAddButton}
+            onPress={() => appendRoomSection({ ...defaultInspectionSection })}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.roomsHeaderAddButtonText}>+ Dodaj pomieszczenie</Text>
+          </TouchableOpacity>
+        </View>
+
+        {roomFields.map((field, index) => (
+          <View key={field.id} style={styles.inspectionSection}>
+            <View style={styles.roomHeaderRow}>
+              <Text style={styles.roomHeaderTitle}>
+                Pomieszczenie {index + 1}
+              </Text>
+              {roomFields.length > 1 && (
+                <TouchableOpacity
+                  style={styles.roomHeaderDeleteButton}
+                  onPress={() => removeRoomSection(index)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.roomHeaderDeleteButtonText}>Usuń</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <FormInput
+              label="Wielkość urządzenia / pomieszczenia (m²)"
+              name={`roomSections.${index}.rooms_m2`}
+              control={control}
+              numericOnly
+              allowDecimal
+              noPadding
+              inspectionVariant
+            />
+            <FormInput
+              label="Moc"
+              name={`roomSections.${index}.power_amount`}
+              control={control}
+              numericOnly
+              allowDecimal
+              noPadding
+              inspectionVariant
+            />
+            <FormInput
+              label="Typ urządzenia"
+              name={`roomSections.${index}.typ_urzadzenia_wewnetrznego`}
+              control={control}
+              noPadding
+              inspectionVariant
+            />
+            <FormInput
+              label="Miejsce montażu"
+              name={`roomSections.${index}.miejsce_montazu`}
+              control={control}
+              noPadding
+              inspectionVariant
+            />
+            <FormInput
+              label="Długość instalacji"
+              name={`roomSections.${index}.dlugosc_instalacji`}
+              control={control}
+              numericOnly
+              allowDecimal
+              noPadding
+              inspectionVariant
+            />
+            <FormInput
+              label="Prowadzenie instalacji"
+              name={`roomSections.${index}.prowadzenie_instalacji`}
+              control={control}
+              noPadding
+              inspectionVariant
+            />
+          </View>
+        ))}
+
         <Textarea
           label="Miejsce i sposób montażu agregatu"
           noPadding
@@ -506,8 +602,8 @@ export default function ClientInspection({
           borderColor={Colors.black}
           textColor={Colors.black}
           labelColor={Colors.black}
-          fontSize={14}
-          labelFontSize={11}
+          fontSize={16}
+          labelFontSize={14}
           backgroundColor={Colors.white}
           height={20}
         />
@@ -516,19 +612,23 @@ export default function ClientInspection({
           name="podlaczenie_elektryki"
           control={control}
           noPadding
+          inspectionVariant
         />
         <FormInput
           label="Miejsce montażu urządzeń wewnętrznych"
           name="miejsce_urzadzen_wew"
           control={control}
           noPadding
+          inspectionVariant
         />
-        <NumericInput
+        <FormInput
           label="Obniżenie jednostki naściennej przez np. sufit podwieszany, sztukaterię"
           name="obnizenie"
           control={control}
+          numericOnly
           allowDecimal
           noPadding
+          inspectionVariant
         />
         <Textarea
           label="Uwagi"
@@ -538,8 +638,8 @@ export default function ClientInspection({
           borderColor={Colors.black}
           textColor={Colors.black}
           labelColor={Colors.black}
-          fontSize={14}
-          labelFontSize={11}
+          fontSize={16}
+          labelFontSize={14}
           backgroundColor={Colors.white}
           height={20}
         />
@@ -561,7 +661,7 @@ export default function ClientInspection({
           }
         />
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 
   if (hideHeader) {
@@ -610,6 +710,98 @@ const styles = StyleSheet.create({
     fontFamily: 'Archivo_600SemiBold',
     color: Colors.black,
     marginBottom: 12,
+  },
+  roomsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  roomsHeaderTitle: {
+    fontSize: 14,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+  },
+  roomsHeaderAddButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: Colors.teal,
+  },
+  roomsHeaderAddButtonText: {
+    fontSize: 12,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.white,
+  },
+  inspectionSection: {
+    marginTop: 16,
+    marginBottom: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+  },
+  roomHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  roomHeaderTitle: {
+    fontSize: 15,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+  },
+  roomHeaderDeleteButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: Colors.buttons.deleteBg,
+  },
+  roomHeaderDeleteButtonText: {
+    fontSize: 11,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.white,
+  },
+  devicePhotoSection: {
+    marginTop: 12,
+  },
+  devicePhotoLabel: {
+    fontSize: 14,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+    marginBottom: 6,
+  },
+  devicePhotoPreview: {
+    alignItems: 'center' as const,
+  },
+  devicePhotoImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+  },
+  devicePhotoDeleteBtn: {
+    marginTop: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.red,
+    borderRadius: 6,
+  },
+  devicePhotoDeleteText: {
+    color: '#fff',
+    fontFamily: 'Archivo_600SemiBold',
+    fontSize: 13,
+  },
+  devicePhotoAddBtn: {
+    borderWidth: 1,
+    borderColor: Colors.gray,
+    borderStyle: 'dashed' as const,
+    borderRadius: 8,
+    paddingVertical: 18,
+    alignItems: 'center' as const,
+  },
+  devicePhotoAddText: {
+    color: Colors.gray,
+    fontFamily: 'Archivo_600SemiBold',
+    fontSize: 14,
   },
   scrollContainer: {
     paddingTop: 10,

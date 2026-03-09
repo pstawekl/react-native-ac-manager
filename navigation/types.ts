@@ -39,12 +39,23 @@ export type MainParamList = {
   Calendar: TasksParamList;
   Invoices: undefined;
   Offers: undefined;
+  Przeglady: NavigatorScreenParams<PrzegladyParamList>;
   Catalogs: TasksParamList;
   Certs: undefined;
   GalleryStack: NavigatorScreenParams<GalleryParamList>;
   Prices: TasksParamList;
   Chat: NavigatorScreenParams<ChatParamList>;
   Settings: NavigatorScreenParams<SettingsParamList>;
+};
+
+export type PrzegladyParamList = {
+  Menu: undefined;
+  ReviewForm: {
+    installationId: string;
+    reviewId?: number;
+    clientId?: number;
+    montazId?: number;
+  };
 };
 
 export type GalleryParamList = {
@@ -107,6 +118,20 @@ export type OffersParamList = {
     isTemplate?: boolean;
     multisplit_komplety?: MultisplitKompletPayload[];
   };
+  MultisplitFilters: {
+    installationId: number | null;
+    offerName?: string;
+    isTemplate?: boolean;
+  };
+  MultisplitKompletFlow: {
+    selectedManufacturers: string[];
+    selectedDeviceTypes: string[];
+    declaredInternalCount: number;
+    installationId: number | null;
+    offerName?: string;
+    isTemplate?: boolean;
+    filters?: Record<string, any>;
+  };
   MultisplitKompletyList: {
     installationId: number | null;
     offerName?: string;
@@ -150,6 +175,7 @@ export type OffersParamList = {
   };
   OfferTemplatesList: undefined;
   OfferTemplateForm: { template?: any };
+  CreateOfferFromTemplate: { templateId: number };
 };
 
 export type TasksParamList = {
@@ -170,7 +196,11 @@ export type ClientsParamList = {
     autoShowInstallationOverlay?: boolean;
   };
   Inspection: { installationId: string; clientId: string };
-  Installation: undefined;
+  Installation: {
+    installationId: string;
+    montageId?: number;
+    clientName?: string;
+  };
   InstallationsList: { clientId: number };
   Service: {
     installationId: string;
@@ -187,6 +217,8 @@ export type ClientsParamList = {
     selectedDevice?: Device;
     /** Wynik wyboru multisplit: jednostki wewnętrzne i agregaty */
     selectedMultisplitDevices?: { internal: Device[]; aggregates: Device[] };
+    /** Wynik wyboru typu montażu na ekranie DeviceSelector */
+    montageTypeResult?: 'split' | 'multi_split';
   };
   InstallationForm: undefined;
   AgreementForm: { installationId: string; clientId: string };

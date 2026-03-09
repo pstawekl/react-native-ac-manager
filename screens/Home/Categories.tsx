@@ -5,10 +5,10 @@ import { Text } from '@rneui/themed';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import PermissionGate from '../../components/PermissionGate';
-import ArchiveTickIcon from '../../components/icons/ArchiveTickIcon';
 import AwardIcon from '../../components/icons/AwardIcon';
 import Book2Icon from '../../components/icons/Book2Icon';
 import Calendar2Icon from '../../components/icons/Calendar2Icon';
+import DocumentSearchIcon from '../../components/icons/DocumentSearchIcon';
 import FolderOpenIcon from '../../components/icons/FolderOpenIcon';
 import GalleryIcon from '../../components/icons/GalleryIcon';
 import MapIcon from '../../components/icons/MapIcon';
@@ -85,26 +85,25 @@ function Categories() {
           />
         </PermissionGate>
 
-        <PermissionGate permission={Scopes.viewCatalogs}>
-          <>
-            <Category
-              screen="Catalogs"
-              title="Dokumentacja"
-              icon={Book2Icon}
-              iconBackgroundColor="#7C18B226"
-              iconColor="#7C18B2"
-              params={{ defaultTab: 'Katalogi' }}
-            />
+        <PermissionGate permission={Scopes.clients}>
+          <Category
+            screen="Przeglady"
+            title="Przeglądy"
+            icon={DocumentSearchIcon}
+            iconBackgroundColor="#0A868626"
+            iconColor="#0A8686"
+          />
+        </PermissionGate>
 
-            <Category
-              screen="Prices"
-              title="Cenniki"
-              icon={ArchiveTickIcon}
-              iconBackgroundColor="#1D469D26"
-              iconColor="#1D469D"
-              params={{ defaultTab: 'Cennik' }}
-            />
-          </>
+        <PermissionGate permission={Scopes.viewCatalogs}>
+          <Category
+            screen="Catalogs"
+            title="Dokumentacja"
+            icon={Book2Icon}
+            iconBackgroundColor="#7C18B226"
+            iconColor="#7C18B2"
+            params={{ defaultTab: 'Katalogi' }}
+          />
         </PermissionGate>
 
         <PermissionGate permission={Scopes.gallery}>

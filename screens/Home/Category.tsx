@@ -149,20 +149,6 @@ function Category({
       return;
     }
 
-    if (screen === 'Prices') {
-      navigation.dispatch(
-        CommonActions.navigate({
-          name: 'Prices',
-          params: params || { screen: 'Menu', params: { tab: 'Cennik' } },
-          state: {
-            routes: [{ name: 'Menu' as const, params: { tab: 'Cennik' } }],
-            index: 0,
-          },
-        }),
-      );
-      return;
-    }
-
     // Dla modułów bez nested navigatora (Map, Offers, etc.) - resetuj przez navigate
     // Map nie ma nested navigatora, więc po prostu navigate
     if (screen === 'Map') {

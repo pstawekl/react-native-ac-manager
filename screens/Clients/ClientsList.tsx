@@ -312,16 +312,36 @@ export default function ClientsList() {
         setFilteredClients(clients);
       } else {
         // Filtruj po wyszukiwaniu
-        const searchLower = searchValue.toLocaleLowerCase();
-        const filteredData = clients.filter(
-          client =>
-            getClientDisplayPrimary(client)
-              .toLocaleLowerCase()
-              .includes(searchLower) ||
-            (getClientDisplaySecondary(client) ?? '')
-              .toLocaleLowerCase()
-              .includes(searchLower),
-        );
+        const searchLower = searchValue.trim().toLocaleLowerCase();
+
+        const filteredData = clients.filter(client => {
+          const primary = getClientDisplayPrimary(client).toLocaleLowerCase();
+          const secondary = (getClientDisplaySecondary(client) ?? '')
+            .toLocaleLowerCase()
+            .includes(searchLower);
+
+          // Dodatkowe pola do wyszukiwania:
+          // imię, nazwisko, nazwa firmy, adres (ulica, miasto, kod, nr domu, mieszkanie)
+          const extraFields = [
+            client.first_name,
+            client.last_name,
+            client.nazwa_firmy,
+            client.ulica,
+            client.miasto,
+            client.kod_pocztowy,
+            client.numer_domu,
+            client.mieszkanie,
+          ]
+            .filter(Boolean)
+            .map(value => String(value).toLocaleLowerCase())
+            .join(' ');
+
+          const matchesPrimary = primary.includes(searchLower);
+          const matchesSecondary = secondary;
+          const matchesExtra = extraFields.includes(searchLower);
+
+          return matchesPrimary || matchesSecondary || matchesExtra;
+        });
         setFilteredClients(filteredData);
       }
     } else {

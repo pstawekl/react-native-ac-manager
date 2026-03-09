@@ -9,24 +9,29 @@ import FilePicker, { File } from '../../components/FilePicker';
 import { Dropdown, FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
+import useDiscountProducers from '../../hooks/useDiscountProducers';
 import { CatalogsAddPriceListScreenProps } from '../../navigation/types';
 import useCatalogs from '../../providers/CatalogsProvider';
 
 type PriceListData = {
   file: File | null;
+  producent: string;
   name: string;
   is_active: boolean;
   od?: Date;
 };
 
+const defaultPriceListValues: PriceListData = {
+  file: null,
+  is_active: true,
+  producent: '',
+  name: 'Cennik',
+  od: undefined,
+};
+
 function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
-  const { control, handleSubmit } = useForm<PriceListData>({
-    defaultValues: {
-      file: null,
-      is_active: true,
-      name: 'Cennik',
-      od: undefined,
-    },
+  const { control, handleSubmit, reset } = useForm<PriceListData>({
+    defaultValues: defaultPriceListValues,
   });
 
   const { execute, loading } = useApi<object, FormData>({
@@ -34,19 +39,29 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
   });
 
   const { getPriceList } = useCatalogs();
+  const { producers, loading: producersLoading } = useDiscountProducers();
 
   const onSubmit = async (data: PriceListData) => {
+    if (!data.producent) {
+      Alert.alert('Błąd', 'Wybierz producenta z listy rabatów.');
+      return;
+    }
+
     if (!data.file) {
       Alert.alert('Błąd', 'Wybierz plik PDF cennika.');
       return;
     }
 
+    const fullName = data.producent
+      ? `${data.producent} ${data.name}`.trim()
+      : data.name.trim();
+
     const requestData = new FormData();
     requestData.append('file', data.file);
-    requestData.append('name', data.name);
+    requestData.append('name', fullName);
     requestData.append('is_active', data.is_active);
     if (data.od) {
-      const dateStr = data.od.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      const dateStr = data.od.toISOString().split('T')[0];
       requestData.append('od', dateStr);
     }
 
@@ -56,8 +71,9 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
       if (getPriceList) {
         getPriceList();
       }
-      Alert.alert('Sukces', 'Dodano cennik');
-      navigation.navigate('Catalogs');
+      reset(defaultPriceListValues);
+      navigation.navigate('Menu', { tab: 'prices' });
+      Alert.alert('Dodano cennik');
     } else if (response && 'error' in response) {
       Alert.alert('Błąd', (response as { error: string }).error);
     }
@@ -68,18 +84,33 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
       <View>
         <ButtonsHeader onBackPress={navigation.goBack} />
         <View style={styles.formContainer}>
+          <Dropdown
+            name="producent"
+            control={control}
+            label="Producent (zdefiniowany w rabatach)"
+            options={producers.map(producent => ({
+              label: producent,
+              value: producent,
+            }))}
+            isBordered
+            isThin
+            disabled={producersLoading || producers.length === 0}
+          />
+          {producers.length === 0 && !producersLoading && (
+            <Text style={styles.infoText}>
+              Brak zdefiniowanych producentów w rabatach. Dodaj rabat dla
+              producenta w ustawieniach, aby móc przypisać go do dokumentacji.
+            </Text>
+          )}
           <FormInput
             name="name"
             control={control}
             label="Nazwa cennika"
             noPadding
-            style={styles.firstInput}
           />
           <View style={styles.datePickerWrapper}>
             <Text style={styles.datePickerLabel}>Data obowiązywania</Text>
-            <View style={styles.datePickerContainer}>
-              <DatePicker control={control} name="od" color={Colors.purple} />
-            </View>
+            <DatePicker control={control} name="od" color={Colors.purple} />
           </View>
           <Dropdown
             name="is_active"
@@ -111,6 +142,7 @@ function AddPriceListForm({ navigation }: CatalogsAddPriceListScreenProps) {
       <View style={styles.footer}>
         <ButtonGroup
           loading={loading}
+          disabled={producers.length === 0 || producersLoading}
           submitTitle="Zapisz"
           submitStyle={styles.submitButton}
           cancelTitle="Anuluj"
@@ -139,6 +171,13 @@ const styles = StyleSheet.create({
   firstInput: {
     marginBottom: -4,
   },
+  infoText: {
+    fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.red,
+    marginTop: 4,
+    marginBottom: 8,
+  },
   datePickerWrapper: {
     marginBottom: 10,
   },
@@ -147,9 +186,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_400Regular',
     color: Colors.black,
     marginBottom: 8,
-  },
-  datePickerContainer: {
-    marginBottom: -4,
   },
   footer: {
     marginBottom: 30,

@@ -33,7 +33,7 @@ type useApiParams = {
 //   return null;
 // }
 
-type HttpMethod = 'GET' | 'POST';
+type HttpMethod = 'GET' | 'POST' | 'PUT';
 
 type ExecuteOptions<TRequest> = {
   data?: TRequest;
@@ -136,7 +136,7 @@ export default function useApi<
     //   console.error('Błąd pobierania z lokalnej bazy:', error);
     //   return undefined;
     // }
-  }, [path]);
+  }, []);
 
   const execute = useCallback(
     async (
@@ -166,7 +166,7 @@ export default function useApi<
           // const mapping = await getRepositoryForPath(path);
           // if (mapping && mapping.repo) { ... }
           setLoading(false);
-          return data as TResponse;
+          return data as unknown as TResponse;
         }
       }
 
@@ -179,11 +179,20 @@ export default function useApi<
         if (method === 'GET' && queryParams) {
           url += buildQueryString(queryParams);
         }
+        // Dla GET i PUT dodaj token w URL (backend może go brać z query_params)
+        if ((method === 'GET' || method === 'PUT') && authorized && token) {
+          url += `${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(
+            token,
+          )}`;
+        }
         const requestHeaders: { [key: string]: string } = {
           Accept: 'application/json',
         };
+        if (authorized && token) {
+          requestHeaders['X-Auth-Token'] = token;
+        }
         let body: any;
-        if (method === 'POST') {
+        if (method === 'POST' || method === 'PUT') {
           const bodyData = authorized ? addApiToken(data) : data;
 
           if (bodyData instanceof FormData) {
@@ -194,27 +203,82 @@ export default function useApi<
             body = JSON.stringify(bodyData);
           }
         }
-        if (method === 'GET') {
-          // For GET, do not send body
-          if (authorized && token) {
-            // Add token as query param if not already present
-            url += `${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(
-              token,
-            )}`;
-          }
+        if (
+          typeof __DEV__ !== 'undefined' &&
+          __DEV__ &&
+          path.toLowerCase().includes('offer_settings')
+        ) {
+          const bodyStr = typeof body === 'string' ? body : '';
+          console.warn('[useApi] offer_settings BEFORE FETCH:', {
+            method,
+            url: url.substring(0, 120),
+            authorized,
+            tokenFromAuth: token
+              ? `${token.substring(0, 20)}...len=${token.length}`
+              : 'NULL/EMPTY',
+            hasTokenInBody: bodyStr.includes('"token"'),
+            bodyLength: bodyStr.length,
+            bodyPreview: bodyStr.substring(0, 300),
+            headers: Object.keys(requestHeaders),
+          });
+        }
+        if (
+          typeof __DEV__ !== 'undefined' &&
+          __DEV__ &&
+          path.toLowerCase().includes('szkolenie')
+        ) {
+          const isFormData = body instanceof FormData;
+          const bodyStr =
+            !isFormData && typeof body === 'string' ? body : '';
+          console.warn('[useApi] szkolenie BEFORE FETCH:', {
+            method,
+            url: url.substring(0, 200),
+            authorized,
+            tokenFromAuth: token
+              ? `${token.substring(0, 10)}...len=${token.length}`
+              : 'NULL/EMPTY',
+            isFormData,
+            hasTokenInBody: bodyStr.includes('"token"'),
+            bodyLength: bodyStr.length,
+            bodyPreview: bodyStr.substring(0, 300),
+            headers: Object.keys(requestHeaders),
+          });
         }
         const response = await fetch(url, {
           method,
           headers: requestHeaders,
           signal: controller.signal, // Dodaj signal dla timeoutu
-          ...(method === 'POST' ? { body } : {}),
+          ...(method === 'POST' || method === 'PUT' ? { body } : {}),
         });
 
         // Wyczyść timeout jeśli odpowiedź przyszła przed timeoutem
         clearTimeout(timeoutId);
 
+        if (
+          typeof __DEV__ !== 'undefined' &&
+          __DEV__ &&
+          path.toLowerCase().includes('szkolenie')
+        ) {
+          console.warn('[useApi] szkolenie AFTER FETCH:', {
+            url: url.substring(0, 200),
+            status: response.status,
+            ok: response.ok,
+            contentType: response.headers.get('content-type'),
+          });
+        }
+
         if (response.status === 500) {
           const text = await response.text();
+          if (
+            typeof __DEV__ !== 'undefined' &&
+            __DEV__ &&
+            path.toLowerCase().includes('szkolenie')
+          ) {
+            console.warn('[useApi] szkolenie 500 response body:', {
+              status: response.status,
+              textPreview: text.substring(0, 1000),
+            });
+          }
           // Spróbuj sparsować jako JSON
           try {
             const errorJson = JSON.parse(text);
@@ -230,6 +294,17 @@ export default function useApi<
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
           const text = await response.text();
+          if (
+            typeof __DEV__ !== 'undefined' &&
+            __DEV__ &&
+            path.toLowerCase().includes('szkolenie')
+          ) {
+            console.warn('[useApi] szkolenie invalid content-type response:', {
+              status: response.status,
+              contentType,
+              textPreview: text.substring(0, 1000),
+            });
+          }
           Alert.alert('Błąd', 'Serwer zwrócił nieprawidłową odpowiedź');
           return undefined;
         }
@@ -237,6 +312,24 @@ export default function useApi<
         // Check for other error status codes
         if (!response.ok) {
           const json = await response.json();
+          if (
+            typeof __DEV__ !== 'undefined' &&
+            __DEV__ &&
+            path.toLowerCase().includes('offer_settings')
+          ) {
+            console.warn('offer_settings API error:', response.status, json);
+          }
+          if (
+            typeof __DEV__ !== 'undefined' &&
+            __DEV__ &&
+            path.toLowerCase().includes('szkolenie')
+          ) {
+            console.warn(
+              '[useApi] szkolenie API error:',
+              response.status,
+              json,
+            );
+          }
 
           // Check if it's an authentication error
           // TYLKO wyloguj jeśli to JEDNOZNACZNIE błąd tokenu AUTORYZACYJNEGO (nie push tokena)
@@ -249,6 +342,7 @@ export default function useApi<
             'push_token',
             'notification',
             'register',
+            'offer_settings',
           ];
           const isNonCriticalPath = nonCriticalPaths.some(nonCritical =>
             path.toLowerCase().includes(nonCritical.toLowerCase()),
@@ -318,6 +412,16 @@ export default function useApi<
 
           // Tymczasowo wyłączone - obsługa offline
           // if (offlineEnabled && (e.message?.includes('Network') || e.message?.includes('fetch'))) { ... }
+        }
+        if (
+          typeof __DEV__ !== 'undefined' &&
+          __DEV__ &&
+          path.toLowerCase().includes('szkolenie')
+        ) {
+          // Szczegółowe logi błędów dla endpointów szkoleń
+          // (widoczne w logach Metro / Logcat)
+          // eslint-disable-next-line no-console
+          console.warn('[useApi] szkolenie FETCH ERROR:', e?.message, e);
         }
       } finally {
         setLoading(false);

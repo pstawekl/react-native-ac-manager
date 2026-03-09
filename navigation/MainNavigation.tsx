@@ -42,6 +42,7 @@ import HamburgerIcon from '../components/icons/HamburgerIcon';
 import HomeIcon from '../components/icons/HomeIcon';
 import MapIcon from '../components/icons/MapIcon';
 import ReceiptIcon from '../components/icons/ReceiptIcon';
+import DocumentSearchIcon from '../components/icons/DocumentSearchIcon';
 import TaskListIcon from '../components/icons/TaskListIcon';
 import { Scopes } from '../consts/Permissions';
 import useChat from '../providers/ChatProvider';
@@ -53,6 +54,7 @@ import ClientsNavigation from './ClientsNavigation';
 import GalleryNavigation from './GalleryNavigation';
 import InvoicesNavigation from './InvoicesNavigation';
 import OffersNavigation from './OffersNavigation';
+import PrzegladyNavigation from './PrzegladyNavigation';
 import SettingsNavigation from './SettingsNavigation';
 import TasksNavigation from './TasksNavigation';
 import HomeButton from './components/HomeButton';
@@ -503,6 +505,28 @@ function MainNavigation() {
           }}
         />
       )}
+      {permissions.clients && (
+        <Main.Screen
+          name="Przeglady"
+          component={PrzegladyNavigation}
+          options={{
+            headerTitle: 'Przeglądy',
+            drawerLabel: 'Przeglądy',
+            headerShown: false,
+            drawerIcon: () => (
+              <DocumentSearchIcon color={Colors.black} size={20} />
+            ),
+            headerBackground: OffersHeaderBackground,
+            headerStyle: {
+              height: insets.top + Styles.headerWithSubNavigationHeight,
+            },
+            headerLeft: HeaderLeft,
+            headerRight: () => (
+              <HeaderRightWithNotifications origin="Przeglady" />
+            ),
+          }}
+        />
+      )}
       {permissions.catalogs && (
         <Main.Screen
           name="Catalogs"
@@ -514,7 +538,8 @@ function MainNavigation() {
           }}
           options={{
             headerTitle: 'Dokumentacja',
-            drawerLabel: 'Katalogi',
+            drawerLabel: 'Dokumentacja',
+            unmountOnBlur: true,
             drawerIcon: () => (
               <Book2Icon
                 color={Colors.black}
@@ -531,36 +556,6 @@ function MainNavigation() {
             headerRight: () => (
               <HeaderRightWithNotifications origin="Catalogs" />
             ),
-            headerShown: false,
-          }}
-        />
-      )}
-      {permissions.catalogs && (
-        <Main.Screen
-          name="Prices"
-          component={CatalogsNavigation}
-          initialParams={{
-            Menu: {
-              tab: 'prices',
-            },
-          }}
-          options={{
-            headerTitle: 'Cenniki',
-            drawerLabel: 'Cenniki',
-            drawerIcon: () => (
-              <Book2Icon
-                color={Colors.black}
-                size={20}
-                viewBox="0 0 100 80"
-                stroke={10}
-              />
-            ),
-            headerBackground: CatalogsHeaderBackground,
-            headerStyle: {
-              height: insets.top + Styles.headerWithSubNavigationHeight,
-            },
-            headerLeft: HeaderLeft,
-            headerRight: HeaderRightNotificationsOnly,
             headerShown: false,
           }}
         />

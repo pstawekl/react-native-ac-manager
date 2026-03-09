@@ -60,7 +60,7 @@ function AddCertificate({ navigation }: AddCertificateScreenProps) {
       if (getCertificates) {
         getCertificates();
       }
-      Alert.alert('Sukces', 'Dodano certyfikat');
+      Alert.alert('Dodano certyfikat');
       navigation.navigate('CertificatesList');
     } else {
       Alert.alert('Błąd', 'Nie udało się dodać certyfikatu');

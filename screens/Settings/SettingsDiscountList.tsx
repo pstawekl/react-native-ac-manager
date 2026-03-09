@@ -1,17 +1,14 @@
 /* eslint-disable react-native/no-inline-styles */
 import { useNavigation } from '@react-navigation/native';
 import { Text } from '@rneui/themed';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Control, useFieldArray, useForm, useWatch } from 'react-hook-form';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { ButtonGroup } from '../../components/Button';
-import ButtonsHeader from '../../components/ButtonsHeader';
-import FloatingActionButton from '../../components/FloatingActionButton';
 import ConfirmationOverlay from '../../components/ConfirmationOverlay';
-import { Dropdown, FormInput } from '../../components/Input';
-import CloseIcon from '../../components/icons/CloseIcon';
+import { FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 
@@ -28,81 +25,39 @@ type FormData = {
 type DiscountItemProps = {
   control: Control<FormData>;
   index: number;
-  onDeletePress: () => void;
-  manufacturers: string[];
-  usedManufacturers: string[];
 };
 
 const DiscountItem = memo(function DiscountItem({
   control,
   index,
-  onDeletePress,
-  manufacturers,
-  usedManufacturers,
 }: DiscountItemProps) {
-  const selectedProducent = useWatch({
+  const producent = useWatch({
     control,
     name: `discounts.${index}.producent`,
   });
 
-  // Filter manufacturers: exclude those already used in other fields
-  // but include the currently selected one (if any)
-  const availableManufacturers = useMemo(() => {
-    return manufacturers.filter(
-      m => !usedManufacturers.includes(m) || m === selectedProducent,
-    );
-  }, [manufacturers, usedManufacturers, selectedProducent]);
-
-  const dropdownOptions = useMemo(
-    () =>
-      availableManufacturers.map(item => ({
-        label: item,
-        value: item,
-      })),
-    [availableManufacturers],
-  );
-
   return (
     <View style={styles.itemContainer}>
-      <View style={styles.customDropdownWrapper}>
-        <Dropdown
-          name={`discounts.${index}.producent`}
-          control={control}
-          label="Producent"
-          options={dropdownOptions}
-          customWidth="60%"
-          isBordered
-          isThin
-        />
-        <View style={styles.customInputSpacing}>
-          <FormInput
-            name={`discounts.${index}.cost`}
-            control={control}
-            label="Rabat (%)"
-            textColor="#737373"
-            color={Colors.grayBorder}
-            isThin
-            keyboardType="numeric"
-            rules={{
-              required: 'Rabat jest wymagany',
-              pattern: {
-                value: /^\d+(\.\d+)?$/,
-                message: 'Wprowadź poprawną liczbę',
-              },
-            }}
-          />
-        </View>
+      <View style={styles.producerColumn}>
+        <Text style={styles.producerLabel}>{producent}</Text>
       </View>
-      <Pressable onPress={onDeletePress}>
-        <CloseIcon color={Colors.black} />
-      </Pressable>
+      <View style={styles.customInputSpacing}>
+        <FormInput
+          name={`discounts.${index}.cost`}
+          control={control}
+          label="Rabat (%)"
+          textColor="#737373"
+          color={Colors.grayBorder}
+          isThin
+          keyboardType="numeric"
+        />
+      </View>
     </View>
   );
 });
 
 function SettingsDiscountList() {
   const [manufacturers, setManufacturers] = useState<string[]>([]);
-
   const navigation = useNavigation();
 
   const { result: manufacturersList, execute: fetchManufacturers } = useApi<{
@@ -114,9 +69,10 @@ function SettingsDiscountList() {
   const [discounts, setDiscounts] = useState<
     { id: number; producent: string; owner: number; value: number }[]
   >([]);
-  const [removedIds, setRemovedIds] = useState<number[]>([]);
-  const { control, handleSubmit } = useForm<FormData>();
-  const { fields, append, remove } = useFieldArray<FormData>({
+  const { control, handleSubmit, reset } = useForm<FormData>({
+    defaultValues: { discounts: [] },
+  });
+  const { fields } = useFieldArray<FormData>({
     control,
     name: 'discounts',
   });
@@ -136,11 +92,6 @@ function SettingsDiscountList() {
   });
 
   const [visible, setVisible] = useState(false);
-  const [idToDelete, setIdToDelete] = useState<number | null>(null);
-
-  // Track if discounts have been loaded to prevent duplicates
-  const discountsLoadedRef = useRef(false);
-  const loadedDiscountIdsRef = useRef<Set<number>>(new Set());
 
   const toggleOverlay = useCallback(() => {
     setVisible(prev => !prev);
@@ -148,8 +99,7 @@ function SettingsDiscountList() {
 
   // Fetch discounts only once on mount
   useEffect(() => {
-    if (fetchDiscounts && !discountsLoadedRef.current) {
-      discountsLoadedRef.current = true;
+    if (fetchDiscounts) {
       fetchDiscounts();
     }
   }, [fetchDiscounts]);
@@ -161,44 +111,22 @@ function SettingsDiscountList() {
     }
   }, [fetchManufacturers, manufacturers.length]);
 
-  // Load discounts into form only once, preventing duplicates
+  // Po załadowaniu producentów i rabatów zbuduj pełną listę (każdy producent ma jeden wiersz).
   useEffect(() => {
-    if (discountsList && discountsList.length > 0) {
-      // Check if we've already loaded these discounts
-      const newDiscounts = discountsList.filter(
-        discount => !loadedDiscountIdsRef.current.has(discount.id),
-      );
-
-      if (newDiscounts.length > 0) {
-        // Add only new discounts that haven't been loaded
-        const itemsToAdd: Item[] = [];
-        newDiscounts.forEach(item => {
-          if (!loadedDiscountIdsRef.current.has(item.id)) {
-            itemsToAdd.push({
-              producent: item.producent,
-              cost: String(item.value),
-              itemId: item.id,
-            });
-            loadedDiscountIdsRef.current.add(item.id);
-          }
-        });
-
-        // Add all items at once
-        itemsToAdd.forEach(item => {
-          append(item);
-        });
-
-        setDiscounts(prev => {
-          const existingIds = new Set(prev.map(d => d.id));
-          const uniqueNewDiscounts = newDiscounts.filter(
-            d => !existingIds.has(d.id),
-          );
-          return [...prev, ...uniqueNewDiscounts];
-        });
-      }
+    if (manufacturers.length > 0) {
+      const currentDiscounts = discountsList ?? [];
+      setDiscounts(currentDiscounts);
+      const items: Item[] = manufacturers.map(producent => {
+        const existing = currentDiscounts.find(d => d.producent === producent);
+        return {
+          producent,
+          cost: existing ? String(existing.value) : '0',
+          itemId: existing ? existing.id : null,
+        };
+      });
+      reset({ discounts: items });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discountsList]);
+  }, [manufacturers, discountsList, reset]);
 
   // Load manufacturers only once
   useEffect(() => {
@@ -207,164 +135,107 @@ function SettingsDiscountList() {
     }
   }, [manufacturersList, manufacturers.length]);
 
-  // Watch all discount fields to track which manufacturers are used
   const watchedDiscounts = useWatch({
     control,
     name: 'discounts',
   });
 
-  // Check if there are incomplete new discounts (without itemId)
   const hasIncompleteNewDiscounts = useMemo(() => {
     if (!watchedDiscounts) return false;
     return watchedDiscounts.some(item => {
-      // Check if it's a new discount (no itemId)
-      if (item?.itemId !== null && item?.itemId !== undefined) {
-        return false;
-      }
-      // Check if producent or cost is missing
-      const hasProducent = item?.producent && item.producent.trim() !== '';
-      const hasCost =
-        item?.cost &&
-        item.cost.trim() !== '' &&
-        !Number.isNaN(parseFloat(item.cost));
-      return !hasProducent || !hasCost;
+      if (!item?.cost) return false;
+      return Number.isNaN(parseFloat(item.cost));
     });
   }, [watchedDiscounts]);
 
-  // Calculate used manufacturers (excluding the current index for each item)
-  // Also include manufacturers that already have discounts in the database
-  const getUsedManufacturers = useCallback(
-    (currentIndex: number) => {
-      const usedInForm: string[] = [];
-      if (watchedDiscounts) {
-        watchedDiscounts.forEach((item, idx) => {
-          if (idx !== currentIndex && item?.producent) {
-            usedInForm.push(item.producent);
-          }
-        });
-      }
-
-      // Also include manufacturers from existing discounts (that are not being edited)
-      const existingManufacturers: string[] = [];
-      if (discounts.length > 0) {
-        discounts.forEach(discount => {
-          // Check if this discount is being edited in the current field
-          const isBeingEdited =
-            watchedDiscounts?.[currentIndex]?.itemId === discount.id;
-          if (!isBeingEdited && !usedInForm.includes(discount.producent)) {
-            existingManufacturers.push(discount.producent);
-          }
-        });
-      }
-
-      return [...usedInForm, ...existingManufacturers];
-    },
-    [watchedDiscounts, discounts],
-  );
-
   const onSubmit = async (data: FormData) => {
-    if (removedIds.length !== 0) {
-      removedIds.forEach(itemId => {
-        deleteDiscount({ data: { rabat_id: itemId } });
-      });
-    }
+    const currentDiscounts = discounts ?? [];
+    const operations: Promise<unknown>[] = [];
 
     data.discounts.forEach(item => {
-      // Validate required fields
-      if (!item.producent || !item.cost) {
+      if (!item.producent || item.cost == null) {
+        return;
+      }
+      const value = parseFloat(item.cost);
+      if (Number.isNaN(value)) {
         return;
       }
 
-      const existingItem = discounts
-        ? discounts.find(s => s.id === item.itemId)
-        : null;
+      const existingItem = currentDiscounts.find(
+        d => d.producent === item.producent,
+      );
 
-      if (!item.itemId) {
-        // Adding new discount
-        const value = parseFloat(item.cost);
-        if (Number.isNaN(value)) {
+      if (existingItem) {
+        if (value === existingItem.value) {
           return;
         }
-        addDiscount({ data: { producent: item.producent, value } });
-      }
-      if (
-        existingItem &&
-        (existingItem.producent !== item.producent ||
-          String(existingItem.value) !== item.cost)
-      ) {
-        // Editing existing discount
-        const value = parseFloat(item.cost);
-        if (Number.isNaN(value)) {
+        if (value === 0) {
+          operations.push(
+            deleteDiscount({ data: { rabat_id: existingItem.id } }),
+          );
           return;
         }
-        editDiscount({
-          data: {
-            rabat_id: item.itemId,
-            producent: item.producent,
-            value,
-          },
-        });
+        operations.push(
+          editDiscount({
+            data: {
+              rabat_id: existingItem.id,
+              producent: item.producent,
+              value,
+            },
+          }),
+        );
+      } else if (value !== 0) {
+        operations.push(
+          addDiscount({ data: { producent: item.producent, value } }),
+        );
       }
     });
+
+    if (operations.length) {
+      await Promise.all(operations);
+    }
 
     toggleOverlay();
   };
 
   return (
     <View style={styles.container}>
-      <ButtonsHeader
-        onBackPress={navigation.goBack}
-      />
-
-      <ScrollView style={styles.scrollContainer}>
+      <ScrollView
+        style={styles.scrollContainer}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
         {manufacturers.length > 0 && (
-          <View style={{ gap: -18 }}>
+          <View style={styles.listWrapper}>
             {fields.length > 0 ? (
-              fields.map((field, index) => {
-                const handleDelete = () => {
-                  if (field.itemId) {
-                    setRemovedIds(prev => [...prev, field.itemId!]);
-                    loadedDiscountIdsRef.current.delete(field.itemId);
-                  }
-                  remove(index);
-                };
-                return (
-                  <DiscountItem
-                    control={control}
-                    index={index}
-                    key={field.id}
-                    onDeletePress={handleDelete}
-                    manufacturers={manufacturers}
-                    usedManufacturers={getUsedManufacturers(index)}
-                  />
-                );
-              })
+              fields.map((field, index) => (
+                <DiscountItem control={control} index={index} key={field.id} />
+              ))
             ) : (
               <Text style={styles.noDataText}>Brak rabatów.</Text>
             )}
           </View>
         )}
-      </ScrollView>
-
-      <View style={styles.footer}>
         <ButtonGroup
           cancelTitle="Anuluj"
-          submitTitle="Akceptuj"
+          submitTitle="Zapisz"
           onCancel={navigation.goBack}
           onSubmitPress={toggleOverlay}
+          stretch
+          groupStyle={styles.buttonGroup}
+          cancelStyle={styles.cancelButton}
+          cancelTitleStyle={styles.cancelButtonTitle}
+          submitStyle={styles.submitButton}
+          submitTitleStyle={styles.submitButtonTitle}
           disabled={hasIncompleteNewDiscounts}
         />
-      </View>
+      </ScrollView>
+
       <ConfirmationOverlay
         visible={visible}
         onBackdropPress={toggleOverlay}
         onSubmit={handleSubmit(onSubmit)}
-        title="Czy na pewno chcesz wprowadzić zmiany ?"
-      />
-
-      <FloatingActionButton
-        onPress={() => append({ producent: '', cost: null, itemId: null })}
-        backgroundColor={Colors.primary}
+        title="Czy na pewno chcesz wprowadzić zmiany?"
       />
     </View>
   );
@@ -373,20 +244,89 @@ function SettingsDiscountList() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.homeScreenBackground,
   },
   scrollContainer: {
+    flex: 1,
     paddingHorizontal: 6,
   },
+  contentContainer: {
+    paddingTop: 16,
+    paddingBottom: 24,
+  },
+  listWrapper: {
+    gap: 8,
+  },
   itemContainer: {
-    display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginHorizontal: 8,
+    marginBottom: 8,
+    borderRadius: 12,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    shadowColor: Colors.cardShadow,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
-  footer: {
-    marginBottom: 30,
-    paddingTop: 20,
-    paddingHorizontal: 16,
+  producerColumn: {
+    width: '50%',
+    paddingRight: 8,
+  },
+  producerLabel: {
+    fontSize: 14,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+  },
+  buttonGroup: {
+    display: 'flex',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 20,
+    paddingTop: 30,
+  },
+  cancelButton: {
+    flex: 1,
+    minHeight: 48,
+    height: 48,
+    paddingLeft: 12,
+    paddingRight: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderRadius: 60,
+    borderWidth: 1,
+    backgroundColor: Colors.transparent,
+    borderColor: Colors.borderButton,
+  },
+  cancelButtonTitle: {
+    color: Colors.black,
+    fontFamily: 'Archivo_600SemiBold',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  submitButton: {
+    backgroundColor: Colors.green,
+    flex: 1,
+    minHeight: 48,
+    height: 48,
+    paddingLeft: 16,
+    paddingRight: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderRadius: 60,
+  },
+  submitButtonTitle: {
+    color: Colors.white,
+    fontFamily: 'Archivo_600SemiBold',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
   },
   noDataText: {
     textAlign: 'center',
@@ -394,10 +334,6 @@ const styles = StyleSheet.create({
   customInputSpacing: {
     width: '40%',
     paddingTop: 3,
-  },
-  customDropdownWrapper: {
-    width: '80%',
-    flexDirection: 'row',
   },
 });
 

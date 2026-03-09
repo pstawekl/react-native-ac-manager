@@ -1,5 +1,6 @@
 import React, {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -11,7 +12,9 @@ import {
   Alert,
   Linking,
   Modal,
+  ScrollView,
   StyleSheet,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -20,15 +23,23 @@ import { Callout, Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 
 import { Icon, Text } from '@rneui/themed';
 import PhoneIcon from '../../components/icons/PhoneIcon';
+import SearchIcon from '../../components/icons/SearchIcon';
 import Colors from '../../consts/Colors';
 import { Place } from './MapScreen';
 
 export type MapTabRef = {
   getVisiblePlaces: () => Place[];
+  animateToPlace: (place: Place) => void;
 };
 
-const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
-  ({ places, isLoading }, ref) => {
+type MapTabProps = {
+  places: Place[];
+  isLoading: boolean;
+  onAddListFromView?: () => void;
+};
+
+const MapTab = forwardRef<MapTabRef, MapTabProps>(
+  ({ places, isLoading, onAddListFromView }, ref) => {
     const mapRef = useRef<any>(null);
     const markerRefs = useRef<Map<number, any>>(new Map());
     const [region, setRegion] = useState<Region>({
@@ -41,11 +52,43 @@ const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
     const [actionModalVisible, setActionModalVisible] = useState(false);
     const [currentZoom, setCurrentZoom] = useState<number>(0.1);
     const [currentRegion, setCurrentRegion] = useState<Region>(region);
+    const [mapSearchQuery, setMapSearchQuery] = useState('');
+    const [activePlaceId, setActivePlaceId] = useState<number | null>(null);
 
-    // Expose method to get visible places
+    // Expose method to get visible places and animate to place
     useImperativeHandle(
       ref,
       () => ({
+        animateToPlace: (place: Place) => {
+          if (
+            !Number.isFinite(place.lat) ||
+            !Number.isFinite(place.lng) ||
+            place.lat === 0 ||
+            place.lng === 0
+          ) {
+            return;
+          }
+          const regionToAnimate = {
+            latitude: place.lat,
+            longitude: place.lng,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          };
+          mapRef.current?.animateToRegion?.(regionToAnimate, 500);
+          setTimeout(() => {
+            const markerRef = markerRefs.current.get(place.id);
+            if (
+              markerRef &&
+              typeof markerRef.showCallout === 'function'
+            ) {
+              try {
+                markerRef.showCallout();
+              } catch {
+                // ignore
+              }
+            }
+          }, 550);
+        },
         getVisiblePlaces: () => {
           // Use currentRegion state which is updated on every region change
           // This should be accurate as it's updated in onRegionChangeComplete
@@ -121,9 +164,90 @@ const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
       [places, currentRegion],
     );
 
+    const searchResults = useMemo(() => {
+      const q = mapSearchQuery.trim().toLowerCase();
+      if (!q) return [];
+      return places.filter(place => {
+        const firstName = (place.firstName ?? '').toLowerCase();
+        const lastName = (place.lastName ?? '').toLowerCase();
+        const address = (place.address ?? '').toLowerCase();
+        const companyName = (place.companyName ?? '').toLowerCase();
+        const name = (place.name ?? '').toLowerCase();
+        return (
+          firstName.includes(q) ||
+          lastName.includes(q) ||
+          address.includes(q) ||
+          companyName.includes(q) ||
+          name.includes(q)
+        );
+      });
+    }, [places, mapSearchQuery]);
+
+    const handleSearchResultPress = (place: Place) => {
+      setMapSearchQuery('');
+      if (
+        Number.isFinite(place.lat) &&
+        Number.isFinite(place.lng) &&
+        place.lat !== 0 &&
+        place.lng !== 0
+      ) {
+        setActivePlaceId(place.id);
+        mapRef.current?.animateToRegion?.(
+          {
+            latitude: place.lat,
+            longitude: place.lng,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          },
+          500,
+        );
+        setTimeout(() => {
+          const markerRef = markerRefs.current.get(place.id);
+          if (
+            markerRef &&
+            typeof markerRef.showCallout === 'function'
+          ) {
+            try {
+              markerRef.showCallout();
+            } catch {
+              // ignore
+            }
+          }
+        }, 550);
+      }
+    };
+
     // Threshold for showing callouts automatically (smaller = more zoomed in)
     const CALLOUT_SHOW_THRESHOLD = 0.1; // Show callouts at zoom 0.1 or less
     const ADDRESS_SHOW_THRESHOLD = 0.05; // Show address at zoom 0.05 or less
+
+    // Find the place whose pin is closest to the center of the visible region (so we show only its callout)
+    const getPlaceIdClosestToCenter = useCallback(
+      (placesList: Place[], centerLat: number, centerLng: number): number | null => {
+        const valid = placesList.filter(
+          p =>
+            Number.isFinite(p.lat) &&
+            Number.isFinite(p.lng) &&
+            p.lat !== 0 &&
+            p.lng !== 0,
+        );
+        if (valid.length === 0) return null;
+        let bestId = valid[0].id;
+        let bestDist =
+          (valid[0].lat - centerLat) ** 2 + (valid[0].lng - centerLng) ** 2;
+        for (let i = 1; i < valid.length; i++) {
+          const d =
+            (valid[i].lat - centerLat) ** 2 +
+            (valid[i].lng - centerLng) ** 2;
+          if (d < bestDist) {
+            bestDist = d;
+            bestId = valid[i].id;
+          }
+        }
+        return bestId;
+      },
+      [],
+    );
 
     const markerCoordinates = useMemo(
       () =>
@@ -155,18 +279,20 @@ const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
       });
     }, [markerCoordinates]);
 
-    // Automatically show/hide callouts based on zoom level
-    // This effect handles initial callout display when places change
+    // Automatically show callout only for the pin closest to the center of the visible region
     useEffect(() => {
-      // Show callouts when zoom <= 0.1, hide when zoom > 0.1
       const shouldShowCallouts = currentZoom <= CALLOUT_SHOW_THRESHOLD;
 
       if (markerRefs.current.size === 0) {
-        // No markers yet, wait for them to be rendered
         return undefined;
       }
 
-      // Small delay to ensure markers are rendered
+      const centerLat = currentRegion.latitude;
+      const centerLng = currentRegion.longitude;
+      const closestPlaceId = shouldShowCallouts
+        ? getPlaceIdClosestToCenter(places, centerLat, centerLng)
+        : null;
+
       const timeoutId = setTimeout(() => {
         markerRefs.current.forEach((markerRef, placeId) => {
           if (
@@ -174,25 +300,27 @@ const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
             typeof markerRef.showCallout === 'function' &&
             typeof markerRef.hideCallout === 'function'
           ) {
-            if (shouldShowCallouts) {
-              try {
+            try {
+              if (activePlaceId != null && placeId === activePlaceId) {
                 markerRef.showCallout();
-              } catch (error) {
-                // Ignore errors if callout is already shown
-              }
-            } else {
-              try {
+              } else if (
+                activePlaceId == null &&
+                shouldShowCallouts &&
+                placeId === closestPlaceId
+              ) {
+                markerRef.showCallout();
+              } else {
                 markerRef.hideCallout();
-              } catch (error) {
-                // Ignore errors if callout is already hidden
               }
+            } catch {
+              // ignore
             }
           }
         });
       }, 300);
 
       return () => clearTimeout(timeoutId);
-    }, [places, currentZoom]); // Trigger when places or zoom change
+    }, [places, currentZoom, currentRegion, getPlaceIdClosestToCenter, activePlaceId]);
 
     const handlePhoneCall = (phone: string) => {
       setActionModalVisible(false);
@@ -210,6 +338,7 @@ const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
     };
 
     const openPlaceModal = (place: Place, isModal = false) => {
+      setActivePlaceId(place.id);
       setSelectedPlace(place);
       setActionModalVisible(true);
     };
@@ -251,17 +380,6 @@ const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
             <View style={styles.placeCardActions}>
               <TouchableOpacity
                 style={styles.placeCardActionBtn}
-                onPress={() => handleOpenMaps(place)}
-              >
-                <Icon
-                  name="map-marker"
-                  type="material-community"
-                  color={Colors.black}
-                  size={24}
-                />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.placeCardActionBtn}
                 onPress={() => place.phone && handlePhoneCall(place.phone)}
                 disabled={!place.phone?.trim()}
               >
@@ -272,8 +390,8 @@ const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
                 onPress={() => handleOpenMaps(place)}
               >
                 <Icon
-                  name="map-marker"
-                  type="material-community"
+                  name="directions"
+                  type="material"
                   color={Colors.black}
                   size={24}
                 />
@@ -284,8 +402,61 @@ const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
       );
     };
 
+    const cap = (s: string) =>
+      s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+    const getPlaceDisplayName = (place: Place) => {
+      const isCompany = place.rodzaj_klienta === 'firma';
+      const companyName =
+        place.companyName?.trim() && place.companyName !== 'Osoba'
+          ? place.companyName.trim()
+          : '';
+      const contactName = `${cap((place.lastName ?? '').trim())} ${cap(
+        (place.firstName ?? '').trim(),
+      )}`.trim();
+      return isCompany
+        ? companyName || contactName || place.name || 'Klient'
+        : contactName || companyName || place.name || 'Klient';
+    };
+
     return (
       <View style={styles.container}>
+        <View style={styles.searchBarContainer}>
+          <View style={styles.searchBar}>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Szukaj (imię, nazwisko, adres)"
+              placeholderTextColor={Colors.lightGray}
+              value={mapSearchQuery}
+              onChangeText={setMapSearchQuery}
+            />
+            <View style={styles.searchBarIcon}>
+              <SearchIcon color={Colors.black} size={18} />
+            </View>
+          </View>
+        </View>
+        {searchResults.length > 0 && mapSearchQuery.trim() ? (
+          <ScrollView
+            style={styles.searchResultsList}
+            keyboardShouldPersistTaps="handled"
+          >
+            {searchResults.map(place => (
+              <TouchableOpacity
+                key={place.id}
+                style={styles.searchResultItem}
+                onPress={() => handleSearchResultPress(place)}
+              >
+                <Text style={styles.searchResultName} numberOfLines={1}>
+                  {getPlaceDisplayName(place)}
+                </Text>
+                {place.address ? (
+                  <Text style={styles.searchResultAddress} numberOfLines={1}>
+                    {place.address}
+                  </Text>
+                ) : null}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : null}
         <Modal
           visible={actionModalVisible}
           transparent
@@ -324,29 +495,35 @@ const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
             setCurrentZoom(newZoom);
             setCurrentRegion(newRegion);
 
-            // Show/hide callouts after map movement is complete
+            // Show callout only for the pin closest to the center of the visible region
             const shouldShowCallouts = newZoom <= CALLOUT_SHOW_THRESHOLD;
+            const centerLat = newRegion.latitude;
+            const centerLng = newRegion.longitude;
+            const closestPlaceId = shouldShowCallouts
+              ? getPlaceIdClosestToCenter(places, centerLat, centerLng)
+              : null;
 
-            // Small delay to ensure markers are rendered
             setTimeout(() => {
-              markerRefs.current.forEach(markerRef => {
+              markerRefs.current.forEach((markerRef, placeId) => {
                 if (
                   markerRef &&
                   typeof markerRef.showCallout === 'function' &&
                   typeof markerRef.hideCallout === 'function'
                 ) {
-                  if (shouldShowCallouts) {
-                    try {
+                  try {
+                    if (activePlaceId != null && placeId === activePlaceId) {
                       markerRef.showCallout();
-                    } catch (error) {
-                      // Ignore errors - callout might already be shown
-                    }
-                  } else {
-                    try {
+                    } else if (
+                      activePlaceId == null &&
+                      shouldShowCallouts &&
+                      placeId === closestPlaceId
+                    ) {
+                      markerRef.showCallout();
+                    } else {
                       markerRef.hideCallout();
-                    } catch (error) {
-                      // Ignore errors - callout might already be hidden
                     }
+                  } catch {
+                    // ignore
                   }
                 }
               });
@@ -378,6 +555,20 @@ const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
                   }}
                   coordinate={{ latitude: place.lat, longitude: place.lng }}
                   image={require('../../assets/marker.png')}
+                  onPress={() => {
+                    setActivePlaceId(place.id);
+                    const markerRef = markerRefs.current.get(place.id);
+                    if (
+                      markerRef &&
+                      typeof markerRef.showCallout === 'function'
+                    ) {
+                      try {
+                        markerRef.showCallout();
+                      } catch {
+                        // ignore
+                      }
+                    }
+                  }}
                   onCalloutPress={() => openPlaceModal(place, true)}
                 >
                   <Callout style={styles.callout} tooltip={false}>
@@ -392,6 +583,17 @@ const MapTab = forwardRef<MapTabRef, { places: Place[]; isLoading: boolean }>(
             <ActivityIndicator size="large" color={Colors.yellow} />
           </View>
         )}
+        {onAddListFromView ? (
+          <TouchableOpacity
+            style={styles.floatingAddListButton}
+            onPress={onAddListFromView}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.floatingAddListButtonText}>
+              Stwórz listę z widoku
+            </Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     );
   },
@@ -406,6 +608,73 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
+  },
+  searchBarContainer: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: Colors.white,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.menuIconBackground,
+    borderRadius: 25,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.black,
+    padding: 0,
+  },
+  searchBarIcon: {
+    marginLeft: 8,
+  },
+  searchResultsList: {
+    maxHeight: 220,
+    backgroundColor: Colors.white,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    marginHorizontal: 12,
+    marginBottom: 4,
+  },
+  searchResultItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.grayBorder,
+  },
+  searchResultName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.black,
+  },
+  searchResultAddress: {
+    fontSize: 12,
+    color: Colors.companyText,
+    marginTop: 2,
+  },
+  floatingAddListButton: {
+    position: 'absolute',
+    bottom: 24,
+    alignSelf: 'center',
+    backgroundColor: Colors.white,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: Colors.gray,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  floatingAddListButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: Colors.black,
   },
   loadingOverlay: {
     position: 'absolute',

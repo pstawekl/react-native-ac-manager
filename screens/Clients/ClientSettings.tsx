@@ -32,6 +32,7 @@ import FilesIcon from '../../components/icons/FilesIcon';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
 import useAuth from '../../providers/AuthProvider';
+import { getClientDisplayPrimary } from '../../helpers/clientDisplay';
 import useClients, { Client } from '../../providers/ClientsProvider';
 import { Montage } from '../../providers/MontageProvider';
 import useOffers from '../../providers/OffersProvider';
@@ -70,6 +71,11 @@ const installationTabs: TabItem[] = [
   { id: 'faktury', label: 'Faktury' },
   { id: 'przeglady', label: 'Przeglądy' },
 ];
+
+type SuggestedReview = {
+  date: string;
+  day_name?: string | null;
+};
 
 // Komponent wiersza montażu
 function MontageRow({
@@ -135,7 +141,7 @@ function MontageRow({
           <View style={styles.montageRight}>
             <View style={styles.montageStatusBadge}>
               <Text style={styles.montageStatusText}>
-                {montage.status || 'W trakcie'}
+                {(montage as any).status || 'W trakcie'}
               </Text>
             </View>
           </View>
@@ -738,7 +744,7 @@ function AgreementFormContent({
       const response = await createAgreement({ data: formData });
 
       if (response && response.status === 'Agreement created') {
-        Alert.alert('Sukces', 'Umowa została zapisana');
+        Alert.alert('Umowa została zapisana');
         onCancel();
       } else {
         Alert.alert('Błąd', response?.error || 'Nie udało się zapisać umowy');
@@ -1066,6 +1072,7 @@ function PrzegladyView({
 }) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+  const [suggestedReviews, setSuggestedReviews] = useState<SuggestedReview[]>([]);
 
   const {
     result: reviewsResult,
@@ -1075,11 +1082,32 @@ function PrzegladyView({
     path: 'przeglad_list',
   });
 
+  const {
+    result: suggestedResult,
+    execute: fetchSuggestedReviews,
+  } = useApi<{ suggested_reviews: SuggestedReview[] }>({
+    path: 'suggested_reviews',
+  });
+
+  const { execute: scheduleReview } = useApi<{
+    status: string;
+    serwis_id: number;
+    task_id?: number;
+  }>({
+    path: 'serwis_edit',
+  });
+
   useEffect(() => {
     if (fetchReviews) {
       fetchReviews({ data: { instalacja_id: installationId } });
     }
   }, [fetchReviews, installationId]);
+
+  useEffect(() => {
+    if (fetchSuggestedReviews) {
+      fetchSuggestedReviews({ data: { instalacja_id: installationId } });
+    }
+  }, [fetchSuggestedReviews, installationId]);
 
   useEffect(() => {
     if (reviewsResult !== undefined) {
@@ -1092,8 +1120,33 @@ function PrzegladyView({
     }
   }, [reviewsResult]);
 
-  // Grupuj przeglądy po roku
-  const groupedReviews = reviews.reduce((acc, review) => {
+  useEffect(() => {
+    if (suggestedResult !== undefined) {
+      if (suggestedResult?.suggested_reviews) {
+        setSuggestedReviews(suggestedResult.suggested_reviews);
+      } else {
+        setSuggestedReviews([]);
+      }
+    }
+  }, [suggestedResult]);
+
+  const now = new Date();
+  const upcomingReviews = reviews.filter(review => {
+    if (!review.data_przegladu) {
+      return false;
+    }
+    try {
+      const date = parseISO(review.data_przegladu);
+      return date > now;
+    } catch {
+      return false;
+    }
+  });
+
+  const pastReviews = reviews.filter(review => !upcomingReviews.includes(review));
+
+  // Grupuj przeszłe przeglądy po roku
+  const groupedReviews = pastReviews.reduce((acc, review) => {
     const dateStr = review.data_przegladu || review.created_date;
     if (!dateStr) {
       const noDateKey = 'Brak daty';
@@ -1142,26 +1195,16 @@ function PrzegladyView({
     );
   }
 
-  if (reviews.length === 0) {
-    return (
-      <View style={styles.contentView}>
-        <Text style={styles.emptyText}>
-          Brak przeglądów dla tej instalacji.
-        </Text>
-      </View>
-    );
-  }
-
   return (
     <View style={styles.contentView}>
       <ScrollView
         style={styles.reviewsScrollView}
         contentContainerStyle={styles.reviewsScrollContent}
       >
-        {sortedYears.map(year => (
-          <View key={year} style={styles.reviewsYearGroup}>
-            <Text style={styles.reviewsYearHeader}>{year}</Text>
-            {groupedReviews[year].map(review => (
+        {upcomingReviews.length > 0 && (
+          <View style={styles.reviewsSection}>
+            <Text style={styles.reviewsSectionHeader}>Zaplanowane przeglądy</Text>
+            {upcomingReviews.map(review => (
               <ReviewCard
                 key={review.id}
                 review={review}
@@ -1169,7 +1212,90 @@ function PrzegladyView({
               />
             ))}
           </View>
-        ))}
+        )}
+
+        {suggestedReviews.length > 0 && (
+          <View style={styles.reviewsSection}>
+            <Text style={styles.reviewsSectionHeader}>
+              Sugerowane terminy przeglądów
+            </Text>
+            {suggestedReviews.map(item => {
+              let formattedDate = item.date;
+              try {
+                formattedDate = format(parseISO(item.date), 'dd.MM.yyyy');
+              } catch {
+                // leave as raw string
+              }
+              const label =
+                item.day_name && item.day_name.length > 0
+                  ? `${formattedDate} (${item.day_name})`
+                  : formattedDate;
+              return (
+                <View key={item.date} style={styles.suggestedReviewRow}>
+                  <Text style={styles.suggestedReviewLabel}>{label}</Text>
+                  <TouchableOpacity
+                    style={styles.suggestedReviewButton}
+                    activeOpacity={0.7}
+                    onPress={async () => {
+                      if (!scheduleReview) {
+                        return;
+                      }
+                      try {
+                        await scheduleReview({
+                          data: {
+                            instalacja_id: Number(installationId),
+                            typ: 'przeglad',
+                            data_przegladu: item.date,
+                          },
+                        });
+                        Alert.alert('Sukces', 'Przegląd zaplanowany.');
+                        if (fetchReviews) {
+                          fetchReviews({ data: { instalacja_id: installationId } });
+                        }
+                        if (fetchSuggestedReviews) {
+                          fetchSuggestedReviews({
+                            data: { instalacja_id: installationId },
+                          });
+                        }
+                      } catch (error) {
+                        Alert.alert(
+                          'Błąd',
+                          'Nie udało się zaplanować przeglądu. Spróbuj ponownie.',
+                        );
+                      }
+                    }}
+                  >
+                    <Text style={styles.suggestedReviewButtonText}>
+                      Zaplanuj przegląd
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        <View style={styles.reviewsSection}>
+          <Text style={styles.reviewsSectionHeader}>Historia przeglądów</Text>
+          {pastReviews.length === 0 ? (
+            <Text style={styles.emptyText}>
+              Brak przeglądów dla tej instalacji.
+            </Text>
+          ) : (
+            sortedYears.map(year => (
+              <View key={year} style={styles.reviewsYearGroup}>
+                <Text style={styles.reviewsYearHeader}>{year}</Text>
+                {groupedReviews[year].map(review => (
+                  <ReviewCard
+                    key={review.id}
+                    review={review}
+                    onPress={() => handleReviewPress(review)}
+                  />
+                ))}
+              </View>
+            ))
+          )}
+        </View>
       </ScrollView>
     </View>
   );
@@ -1192,7 +1318,7 @@ function InstallationOfferRow({
       screen: 'Overview',
       params: {
         type: offer.offer_type,
-        installationId: offer.instalacja,
+        offerInstallationId: offer.instalacja,
         devices:
           offer.offer_type === 'split'
             ? offer.devices_split || []
@@ -1279,36 +1405,66 @@ function OfertyInstallationView({
     }
   }, [offers, installationId]);
 
-  if (offersLoading) {
-    return (
-      <View style={styles.contentView}>
-        <Text style={styles.emptyText}>Ładowanie ofert...</Text>
-      </View>
-    );
-  }
+  const handleAddOffer = () => {
+    const goToOffer = (selectedType: 'split' | 'multi_split') => {
+      navigation('Offers', {
+        screen: 'Overview',
+        params: {
+          type: selectedType,
+          installationId: Number(installationId),
+          devices: [],
+          surcharges: [],
+          mode: 'create',
+          fromInstallation: true,
+          clientId: Number(clientId),
+        },
+      });
+    };
 
-  if (installationOffers.length === 0) {
-    return (
-      <View style={styles.contentView}>
-        <Text style={styles.emptyText}>Brak ofert dla tej instalacji.</Text>
-      </View>
-    );
-  }
+    Alert.alert('Nowa oferta', 'Wybierz typ oferty', [
+      {
+        text: 'Split',
+        onPress: () => goToOffer('split'),
+      },
+      {
+        text: 'Multisplit',
+        onPress: () => goToOffer('multi_split'),
+      },
+      {
+        text: 'Anuluj',
+        style: 'cancel',
+      },
+    ]);
+  };
 
   return (
     <View style={styles.installationOffersContentView}>
-      <FlatList
-        data={installationOffers}
-        contentContainerStyle={styles.installationOffersList}
-        renderItem={({ item }) => (
-          <InstallationOfferRow
-            offer={item}
-            navigation={navigation}
-            installationId={installationId}
-            clientId={clientId}
-          />
-        )}
-        keyExtractor={item => item.id.toString()}
+      {offersLoading ? (
+        <View style={styles.contentView}>
+          <Text style={styles.emptyText}>Ładowanie ofert...</Text>
+        </View>
+      ) : installationOffers.length === 0 ? (
+        <View style={styles.contentView}>
+          <Text style={styles.emptyText}>Brak ofert dla tej instalacji.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={installationOffers}
+          contentContainerStyle={styles.installationOffersList}
+          renderItem={({ item }) => (
+            <InstallationOfferRow
+              offer={item}
+              navigation={navigation}
+              installationId={installationId}
+              clientId={clientId}
+            />
+          )}
+          keyExtractor={item => item.id.toString()}
+        />
+      )}
+      <FloatingActionButton
+        onPress={handleAddOffer}
+        backgroundColor={Colors.teal}
       />
     </View>
   );
@@ -1349,7 +1505,7 @@ function SzczegolyView({
   onCancel?: () => void;
   returnTab?: TabType;
 }) {
-  const { control, handleSubmit, setValue, watch } = useForm({
+  const { control, handleSubmit, setValue } = useForm({
     defaultValues: {
       nazwa_instalacji: installation?.name || '',
       ulica: installation?.ulica || '',
@@ -1357,11 +1513,8 @@ function SzczegolyView({
       mieszkanie: installation?.mieszkanie || '',
       kod_pocztowy: installation?.kod_pocztowy || '',
       miasto: installation?.miasto || '',
-      data_utworzenia: installation?.created_date
-        ? format(parseISO(installation.created_date), 'dd/MM/yyyy')
-        : '',
-      id_instalacji: installation?.id
-        ? `#${installation.id.toString().padStart(4, '0')}`
+      data_montazu: installation?.data_montazu
+        ? format(parseISO(installation.data_montazu), 'dd/MM/yyyy')
         : '',
     },
   });
@@ -1400,7 +1553,7 @@ function SzczegolyView({
       });
 
       if (response) {
-        Alert.alert('Sukces', 'Instalacja została zaktualizowana');
+        Alert.alert('Instalacja została zaktualizowana');
         if (onSave) {
           onSave();
         }
@@ -1410,22 +1563,31 @@ function SzczegolyView({
     }
   };
 
+  const handleCopyAddressFromClient = () => {
+    if (!client) {
+      Alert.alert(
+        'Brak danych klienta',
+        'Nie udało się odczytać adresu z danych klienta.',
+      );
+      return;
+    }
+
+    setValue('ulica', client.ulica || '');
+    setValue('numer_domu', client.numer_domu || '');
+    setValue('mieszkanie', client.mieszkanie || '');
+    setValue('kod_pocztowy', client.kod_pocztowy || '');
+    setValue('miasto', client.miasto || '');
+  };
+
   useEffect(() => {
     if (installation) {
       setValue('nazwa_instalacji', installation.name || '');
       setValue(
-        'data_utworzenia',
-        installation.created_date
-          ? format(parseISO(installation.created_date), 'dd/MM/yyyy')
+        'data_montazu',
+        installation.data_montazu
+          ? format(parseISO(installation.data_montazu), 'dd/MM/yyyy')
           : '',
       );
-      setValue(
-        'id_instalacji',
-        installation.id
-          ? `#${installation.id.toString().padStart(4, '0')}`
-          : '',
-      );
-      // Używamy tylko danych instalacji - jeśli nie ma, pola są puste
       setValue('ulica', installation.ulica || '');
       setValue('numer_domu', installation.numer_domu || '');
       setValue('mieszkanie', installation.mieszkanie || '');
@@ -1454,6 +1616,13 @@ function SzczegolyView({
           noPadding
         />
 
+        <SubmitButton
+          title="Skopiuj adres z zakładki dane klienta"
+          onPress={handleCopyAddressFromClient}
+          style={styles.szczegolyCopyAddressButton}
+          titleStyle={styles.szczegolyCopyAddressButtonTitle}
+        />
+
         <FormInput name="ulica" control={control} label="Ulica" noPadding />
 
         <View>
@@ -1461,14 +1630,14 @@ function SzczegolyView({
             <FormInput
               name="numer_domu"
               control={control}
-              label="Numer domu"
+              label="Numer budynku"
               noPadding
               customPercentWidth={48}
             />
             <FormInput
               name="mieszkanie"
               control={control}
-              label="Numer mieszkania"
+              label="Numer lokalu"
               noPadding
               customPercentWidth={48}
             />
@@ -1491,17 +1660,9 @@ function SzczegolyView({
           </View>
           <View style={styles.szczegolyInputContainer}>
             <FormInput
-              name="data_utworzenia"
+              name="data_montazu"
               control={control}
-              label="Data utworzenia instalacji"
-              editable={false}
-              noPadding
-              customPercentWidth={48}
-            />
-            <FormInput
-              name="id_instalacji"
-              control={control}
-              label="ID Instalacji"
+              label="Data montażu"
               editable={false}
               noPadding
               customPercentWidth={48}
@@ -1571,6 +1732,7 @@ function ClientSettings({
       returnTab,
       selectedDevice,
       selectedMultisplitDevices,
+      montageTypeResult,
     },
   },
 }: {
@@ -1583,6 +1745,7 @@ function ClientSettings({
       returnTab?: TabType;
       selectedDevice?: any;
       selectedMultisplitDevices?: { internal: any[]; aggregates: any[] };
+      montageTypeResult?: 'split' | 'multi_split';
     }
   >;
 }) {
@@ -1678,8 +1841,9 @@ function ClientSettings({
     navigate('Installation', {
       montageId: undefined,
       installationId,
+      clientName: client ? getClientDisplayPrimary(client) : undefined,
     });
-  }, [navigate, installationId]);
+  }, [navigate, installationId, client]);
 
   const handleAddInvoice = useCallback(() => {
     // Nawiguj do formularza faktury z pre-wypełnioną instalacją
@@ -1881,7 +2045,10 @@ function ClientSettings({
       style={styles.linearGradient}
     >
       <View style={styles.container}>
-        <ButtonsHeader onBackPress={goBack} />
+        <ButtonsHeader
+          onBackPress={goBack}
+          title={client ? getClientDisplayPrimary(client) : title}
+        />
 
         {title && (
           <View style={styles.installationTitleContainer}>
@@ -2067,6 +2234,27 @@ const styles = StyleSheet.create({
     gap: 12,
     width: '100%',
     paddingBottom: 20,
+  },
+  szczegolyCopyAddressButton: {
+    marginTop: 8,
+    marginBottom: 12,
+    minHeight: 40,
+    height: 40,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: Colors.white,
+    borderWidth: 1,
+    borderColor: Colors.borderButton,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  szczegolyCopyAddressButtonTitle: {
+    color: Colors.black,
+    fontFamily: 'Archivo_600SemiBold',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
   },
   // Style dla listy ofert instalacji
   installationOffersContentView: {
@@ -2394,6 +2582,15 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 20,
   },
+  reviewsSection: {
+    marginBottom: 24,
+  },
+  reviewsSectionHeader: {
+    fontSize: 18,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.black,
+    marginBottom: 12,
+  },
   reviewsYearGroup: {
     marginBottom: 24,
   },
@@ -2402,6 +2599,32 @@ const styles = StyleSheet.create({
     fontFamily: 'Archivo_600SemiBold',
     color: Colors.black,
     marginBottom: 16,
+  },
+  suggestedReviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.grayBorder,
+  },
+  suggestedReviewLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Archivo_400Regular',
+    color: Colors.black,
+    marginRight: 12,
+  },
+  suggestedReviewButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: Colors.teal,
+  },
+  suggestedReviewButtonText: {
+    fontSize: 12,
+    fontFamily: 'Archivo_600SemiBold',
+    color: Colors.white,
   },
   // Style dla widoku Umowy
   umowaContentView: {

@@ -522,6 +522,7 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
         ref={mapTabRef}
         places={filteredClients}
         isLoading={isLoadingPlaces}
+        onAddListFromView={() => setAddModalVisible(true)}
       />
     ),
     [filteredClients, isLoadingPlaces],
@@ -632,18 +633,7 @@ function MapScreen({ navigation }: DrawerScreenProps<MainParamList, 'Map'>) {
     <Container style={styles.container}>
       <View style={styles.headerContainer}>
         <ButtonsHeader onBackPress={navigation.goBack} title="Mapa" />
-        {listTabIndex === 0 && (
-          <TouchableOpacity
-            style={styles.createListButton}
-            onPress={() => setAddModalVisible(true)}
-          >
-            <Text style={styles.createListButtonText}>
-              Stwórz listę klientów
-            </Text>
-          </TouchableOpacity>
-        )}
       </View>
-      <Text style={styles.title}>Lista klientów</Text>
       {listTabIndex === 1 && (
         <View style={styles.listsSearchContainer}>
           <View style={styles.listsSearchBar}>
@@ -684,29 +674,6 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     position: 'relative',
-  },
-  createListButton: {
-    backgroundColor: Colors.transparent,
-    paddingHorizontal: 5,
-    paddingVertical: 10,
-    borderRadius: 20,
-    marginHorizontal: 20,
-    marginVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Colors.gray,
-  },
-  createListButtonText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: Colors.black,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: Colors.black,
-    paddingHorizontal: 20,
   },
   listsSearchContainer: {
     flexDirection: 'row',

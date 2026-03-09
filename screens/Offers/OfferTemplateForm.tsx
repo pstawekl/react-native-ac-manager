@@ -91,7 +91,7 @@ export default function OfferTemplateForm() {
       }
 
       if (response) {
-        Alert.alert('Sukces', `${successMessage}. ${questionMessage}`, [
+        Alert.alert(`${successMessage}. ${questionMessage}`, [
           { text: 'Później', onPress: () => navigation.goBack() },
           {
             text: 'Tak',

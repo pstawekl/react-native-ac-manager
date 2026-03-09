@@ -1,6 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Input, Text } from '@rneui/themed';
-import React, { Dispatch, ReactNode, SetStateAction, useState } from 'react';
+import React, {
+  Dispatch,
+  ReactNode,
+  SetStateAction,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
 
 import Colors from '../consts/Colors';
@@ -31,6 +38,14 @@ function ButtonsHeader({
   title?: string;
 }) {
   const [searchActive, setSearchActive] = useState<boolean>(false);
+  const searchInputRef = useRef<Input | null>(null);
+
+  useEffect(() => {
+    if (searchActive && searchInputRef.current) {
+      // Wymuś fokus po aktywacji wyszukiwarki, żeby pokazać klawiaturę
+      (searchInputRef.current as any)?.focus?.();
+    }
+  }, [searchActive]);
 
   const onClosePress = () => {
     if (onChangeSearchValue) {
@@ -46,8 +61,10 @@ function ButtonsHeader({
         {searchActive ? (
           <>
             <Input
+              ref={searchInputRef}
               containerStyle={styles.searchInputContainer}
               value={searchValue}
+              autoFocus
               autoCapitalize="none"
               autoCorrect={false}
               onChangeText={onChangeSearchValue}

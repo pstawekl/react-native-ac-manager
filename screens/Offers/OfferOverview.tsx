@@ -3,7 +3,7 @@ import { Divider, Input, Overlay, Text } from '@rneui/themed';
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, StyleSheet, View } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,8 +12,11 @@ import { IconButton, SubmitButton } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import DownloadIcon from '../../components/icons/DownloadIcon';
 import Colors from '../../consts/Colors';
+import { getClientDisplayPrimary } from '../../helpers/clientDisplay';
 import useApi from '../../hooks/useApi';
 import useAuth from '../../providers/AuthProvider';
+import useClients from '../../providers/ClientsProvider';
+import { useOfferSettings } from '../../providers/OfferSettingsProvider';
 import useOffers, { Device } from '../../providers/OffersProvider';
 
 // Typy dla odpowiedzi API
@@ -41,6 +44,8 @@ type OfertaDataResponse = {
   client_id?: number | null;
   client_has_account?: boolean;
   is_current_user_client?: boolean;
+  fgaz_certificate_number?: string;
+  company_logo_url?: string | null;
   [key: string]: any;
 };
 
@@ -179,6 +184,7 @@ function OfferOverview({
         name: string;
         id: number;
         value: number | null;
+        unit?: string | null;
       }[];
       multisplit_komplety?: Array<{
         producent: string;
@@ -189,6 +195,9 @@ function OfferOverview({
   };
 }) {
   const { isUserClient } = useAuth();
+  const { settings: offerSettings } = useOfferSettings();
+  const reservationSystemEnabled =
+    offerSettings?.reservationSystemEnabled ?? true;
   const [templateName, setTemplateName] = useState('');
   const [templateOverlayVisible, setTemplateOverlayVisible] = useState(false);
   const openTemplateOverlay = () => setTemplateOverlayVisible(true);
@@ -230,6 +239,8 @@ function OfferOverview({
   const [isCurrentUserClient, setIsCurrentUserClient] =
     useState<boolean>(false);
   const [montazStatus, setMontazStatus] = useState<string>('none');
+  const [fgazNumber, setFgazNumber] = useState<string | undefined>();
+  const [companyLogoUrl, setCompanyLogoUrl] = useState<string | undefined>();
 
   const [surchargesState, setSurchargesState] = useState<
     {
@@ -242,6 +253,9 @@ function OfferOverview({
   const [multisplitKompletyFromApi, setMultisplitKompletyFromApi] = useState<
     Array<{ producent?: string; internal?: Device[]; aggregate?: Device[] }>
   >([]);
+  const [templateOfferName, setTemplateOfferName] = useState('');
+  const [isTemplateEditMode, setIsTemplateEditMode] = useState(false);
+  const [templateRabatIds, setTemplateRabatIds] = useState<number[]>([]);
 
   const { execute: createOffer } = useApi({
     path: 'oferta_create',
@@ -249,20 +263,36 @@ function OfferOverview({
   const { execute: acceptOffer } = useApi({
     path: 'oferta_accept',
   });
-  const { execute: addTemplate } = useApi({
-    path: 'szablon_create',
-  });
-  const { execute: getSzablonData } = useApi<SzablonDataResponse>({
-    path: 'szablon_data',
-  });
   const { execute: getOfertaData } = useApi<OfertaDataResponse>({
     path: 'oferta_data',
   });
   const { execute: sendOfferEmail } = useApi({
     path: 'oferta_send_email',
   });
+  const { execute: updateTemplate, loading: updateTemplateLoading } = useApi({
+    path: `oferta_template_update/${offerId ?? 0}`,
+  });
   const { getOffers } = useOffers();
   const navigation = useNavigation();
+  const { clients } = useClients();
+
+  const headerTitle = useMemo(() => {
+    if (isTemplate) return templateOfferName || 'Szablon';
+    if (fromInstallation && installationId && clientId && clients?.length) {
+      const client = clients.find(c => c.id === Number(clientId));
+      if (client) {
+        return `Oferta – Instalacja ${installationId} – ${getClientDisplayPrimary(client)}`;
+      }
+    }
+    return 'Oferta';
+  }, [
+    isTemplate,
+    templateOfferName,
+    fromInstallation,
+    installationId,
+    clientId,
+    clients,
+  ]);
 
   const handleGoBack = useCallback(() => {
     if (fromInstallation && installationId && clientId) {
@@ -284,32 +314,47 @@ function OfferOverview({
     }
   }, [fromInstallation, fromClient, installationId, clientId, navigation]);
 
-  // Funkcja do ładowania danych szablonu/oferty (gdy wchodzimy z listy – offerId; dane z API, nie z params)
+  // Funkcja do ładowania danych szablonu/oferty (gdy wchodzimy z listy – offerId; szablony = Oferta is_template)
   const loadData = useCallback(async () => {
     if (offerId) {
       setOverviewDataLoading(true);
       try {
         if (isTemplate) {
-          const response = await getSzablonData({
-            data: { szablon_id: offerId },
+          const response = await getOfertaData({
+            data: { oferta_id: offerId },
           });
           if (response) {
+            setTemplateOfferName((response as any).nazwa_oferty ?? '');
+            setTemplateRabatIds(
+              (response as any).rabat?.map((r: { id: number }) => r.id) ?? [],
+            );
             if (response.devices_split && response.devices_split.length > 0) {
               setTools(response.devices_split);
             } else if (
-              response.devices_multisplit &&
-              response.devices_multisplit.length > 0
+              response.devices_multi_split &&
+              response.devices_multi_split.length > 0
             ) {
-              setTools(response.devices_multisplit);
+              setTools(response.devices_multi_split);
+            } else {
+              setTools([]);
             }
-            if (response.narzuty && response.narzuty.length > 0) {
-              setSurchargesState(
-                response.narzuty.map((n: any) => ({
-                  name: n.name ?? '',
-                  value: n.value ?? null,
-                  id: n.id,
-                })),
-              );
+            const narzutList = response.narzut ?? (response as any).narzuty ?? [];
+            setSurchargesState(
+              narzutList.length > 0
+                ? narzutList.map((n: any) => ({
+                    name: n.name ?? '',
+                    value: n.value ?? null,
+                    id: n.id,
+                  }))
+                : [],
+            );
+            if (
+              response.multisplit_komplety &&
+              response.multisplit_komplety.length > 0
+            ) {
+              setMultisplitKompletyFromApi(response.multisplit_komplety);
+            } else {
+              setMultisplitKompletyFromApi([]);
             }
           }
         } else {
@@ -350,6 +395,12 @@ function OfferOverview({
             if (response.montaz_status) {
               setMontazStatus(response.montaz_status);
             }
+            if (response.fgaz_certificate_number) {
+              setFgazNumber(response.fgaz_certificate_number as string);
+            }
+            if (response.company_logo_url) {
+              setCompanyLogoUrl(response.company_logo_url as string);
+            }
             if (
               response.multisplit_komplety &&
               response.multisplit_komplety.length > 0
@@ -371,7 +422,7 @@ function OfferOverview({
     } else if (allDevices && allDevices.length > 0) {
       setTools(allDevices);
     }
-  }, [offerId, isTemplate, getSzablonData, getOfertaData, allDevices]);
+  }, [offerId, isTemplate, getOfertaData, allDevices]);
 
   // Ładowanie danych szablonu/oferty po wejściu do OfferOverview
   useEffect(() => {
@@ -388,54 +439,43 @@ function OfferOverview({
   );
 
   const onSubmit = useCallback(async () => {
-    const requestData = route.params.isTemplate
-      ? {
-        // Dla szablonów używamy pól z modelu Szablon
-        nazwa: offerName,
-        typ: type === 'split' ? 'split' : 'multisplit',
-        devices_split: type === 'split' ? devices : [],
-        devices_multisplit: type === 'multi_split' ? devices : [],
-        narzuty: surcharges ?? [],
-      }
-      : {
-        // Dla ofert używamy pól z modelu Oferta
-        instalacja: installationId,
-        is_accepted: false,
-        is_template: false,
-        offer_type: type === 'split' ? 'split' : 'multi_split',
-        devices_split: type === 'split' ? devices : [],
-        devices_multi_split: type === 'multi_split' ? devices : [],
-        narzut: surcharges ?? [],
-        nazwa_oferty: offerName,
-        ...(type === 'multi_split' && multisplitKompletyFromParams
-          ? { multisplit_komplety: multisplitKompletyFromParams }
-          : {}),
-      };
+    const savingAsTemplate =
+      route.params.isTemplate || installationId == null;
+    const requestData = {
+      instalacja: savingAsTemplate ? null : installationId,
+      is_accepted: false,
+      is_template: savingAsTemplate,
+      offer_type: type === 'split' ? 'split' : 'multi_split',
+      devices_split: type === 'split' ? devices : [],
+      devices_multi_split: type === 'multi_split' ? devices : [],
+      narzut: surcharges ?? [],
+      nazwa_oferty: offerName,
+      ...(type === 'multi_split' && multisplitKompletyFromParams
+        ? { multisplit_komplety: multisplitKompletyFromParams }
+        : {}),
+    };
 
-    const response = route.params.isTemplate
-      ? await addTemplate({
-        method: 'POST',
-        data: requestData,
-      })
-      : await createOffer({
-        method: 'POST',
-        data: requestData,
-      });
+    const response = await createOffer({
+      method: 'POST',
+      data: requestData,
+    });
 
-    if (getOffers && !route.params.isTemplate) {
+    if (getOffers && !savingAsTemplate) {
       getOffers();
     }
 
-    Alert.alert(
-      'Sukces',
-      route.params.isTemplate ? 'Utworzono szablon' : 'Utworzono ofertę',
-      [
-        {
-          text: 'OK',
-          onPress: handleGoBack,
-        },
-      ],
-    );
+    const successMessage = savingAsTemplate
+      ? installationId == null && !route.params.isTemplate
+        ? 'Oferta zapisana jako szablon'
+        : 'Utworzono szablon'
+      : 'Utworzono ofertę';
+
+    Alert.alert(successMessage, [
+      {
+        text: 'OK',
+        onPress: handleGoBack,
+      },
+    ]);
   }, [
     route.params.isTemplate,
     offerName,
@@ -444,10 +484,59 @@ function OfferOverview({
     surcharges,
     installationId,
     multisplitKompletyFromParams,
-    addTemplate,
     createOffer,
     getOffers,
     handleGoBack,
+  ]);
+
+  const saveTemplateUpdate = useCallback(async () => {
+    if (!offerId || !isTemplate) return;
+    const deviceIds = tools?.map(t => t.id) ?? [];
+    const narzutIds =
+      surchargesState?.map(s => s.id).filter((id): id is number => id != null) ??
+      [];
+    const payload: Record<string, unknown> = {
+      nazwa_oferty: templateOfferName,
+      offer_type: type === 'split' ? 'split' : 'multi_split',
+      devices_split: type === 'split' ? deviceIds : [],
+      devices_multi_split: type === 'multi_split' ? deviceIds : [],
+      narzut: narzutIds,
+      rabat: templateRabatIds,
+    };
+    if (
+      type === 'multi_split' &&
+      multisplitKompletyFromApi &&
+      multisplitKompletyFromApi.length > 0
+    ) {
+      payload.multisplit_komplety = multisplitKompletyFromApi.map(k => ({
+        producent: k.producent ?? '',
+        internal_ids: (k.internal || []).map((d: Device) => d.id),
+        aggregate_ids: (k.aggregate || []).map((d: Device) => d.id),
+      }));
+    }
+    try {
+      await updateTemplate({ method: 'POST', data: payload });
+      Alert.alert('Szablon został zaktualizowany', [
+        { text: 'OK', onPress: () => setIsTemplateEditMode(false) },
+      ]);
+      loadData();
+    } catch (err) {
+      Alert.alert(
+        'Błąd',
+        (err as Error)?.message || 'Nie udało się zaktualizować szablonu',
+      );
+    }
+  }, [
+    offerId,
+    isTemplate,
+    tools,
+    surchargesState,
+    templateOfferName,
+    templateRabatIds,
+    type,
+    multisplitKompletyFromApi,
+    updateTemplate,
+    loadData,
   ]);
 
   const onAddTemplate = useCallback(
@@ -463,15 +552,17 @@ function OfferOverview({
       }
 
       const requestData = {
-        nazwa: data.template_name,
-        narzuty: surcharges ?? [],
+        instalacja: null,
+        is_template: true,
+        nazwa_oferty: data.template_name,
+        offer_type: type === 'split' ? 'split' : 'multi_split',
         devices_split: type === 'split' ? devices : [],
         devices_multi_split: type === 'multi_split' ? devices : [],
-        typ: type === 'split' ? 'split' : 'multisplit',
+        narzut: surcharges ?? [],
       };
 
       try {
-        const response = await addTemplate({
+        const response = await createOffer({
           method: 'POST',
           data: requestData,
         });
@@ -481,11 +572,11 @@ function OfferOverview({
         } else {
           Alert.alert('Nie udało się utworzyć szablonu');
         }
-      } catch (error) {
+      } catch (err) {
         Alert.alert('Wystąpił błąd podczas dodawania szablonu.');
       }
     },
-    [type, surcharges, devices, addTemplate],
+    [type, surcharges, devices, createOffer],
   );
 
   const onAccept = useCallback(async () => {
@@ -518,29 +609,34 @@ function OfferOverview({
           getOffers();
         }
 
-        // Jeśli użytkownik to klient, przekieruj do wyboru terminu
+        // Jeśli użytkownik to klient, przekieruj do wyboru terminu (gdy rezerwacja włączona)
         if (isCurrentUserClient) {
-          Alert.alert(
-            'Sukces',
-            'Oferta została zaakceptowana. Teraz możesz wybrać termin montażu.',
-            [
-              {
-                text: 'Wybierz termin',
-                onPress: () => {
-                  (navigation as any).navigate('SelectMontazDate', {
-                    ofertaId: Number(offerId),
-                  });
+          if (reservationSystemEnabled) {
+            Alert.alert(
+              'Oferta została zaakceptowana. Teraz możesz wybrać termin montażu.',
+              [
+                {
+                  text: 'Wybierz termin',
+                  onPress: () => {
+                    (navigation as any).navigate('SelectMontazDate', {
+                      ofertaId: Number(offerId),
+                    });
+                  },
                 },
-              },
-              {
-                text: 'Później',
-                onPress: handleGoBack,
-                style: 'cancel',
-              },
-            ],
-          );
+                {
+                  text: 'Później',
+                  onPress: handleGoBack,
+                  style: 'cancel',
+                },
+              ],
+            );
+          } else {
+            Alert.alert('Oferta została zaakceptowana', [
+              { text: 'OK', onPress: handleGoBack },
+            ]);
+          }
         } else {
-          Alert.alert('Sukces', 'Oferta została zaakceptowana', [
+          Alert.alert('Oferta została zaakceptowana', [
             {
               text: 'OK',
               onPress: handleGoBack,
@@ -561,6 +657,7 @@ function OfferOverview({
     acceptOffer,
     getOffers,
     isCurrentUserClient,
+    reservationSystemEnabled,
     handleGoBack,
     navigation,
   ]);
@@ -576,6 +673,7 @@ function OfferOverview({
       name: string;
       value: number;
       id: number;
+      unit?: string | null;
     }[]
   >({
     path: 'narzut_list',
@@ -649,7 +747,7 @@ function OfferOverview({
         data: { oferta_id: Number(offerId) },
       })) as { success?: boolean; error?: string };
       if (response?.success) {
-        Alert.alert('Sukces', 'Oferta została wysłana na email klienta');
+        Alert.alert('Oferta została wysłana na email klienta');
       } else {
         Alert.alert('Błąd', response?.error || 'Nie udało się wysłać emaila');
       }
@@ -821,9 +919,10 @@ function OfferOverview({
             <Text style={styles.cell}>
               {label} {modelName}
               {modelName &&
-                (tool.moc_chlodnicza != null || tool.moc_grzewcza != null)
-                ? ` (${tool.moc_chlodnicza ?? '-'}/${tool.moc_grzewcza ?? '-'
-                } kW)`
+              (tool.moc_chlodnicza != null || tool.moc_grzewcza != null)
+                ? ` (${tool.moc_chlodnicza ?? '-'}/${
+                    tool.moc_grzewcza ?? '-'
+                  } kW)`
                 : ''}
               {' x '}
               {count}
@@ -924,7 +1023,10 @@ function OfferOverview({
       style={styles.linearGradient}
     >
       <View style={styles.container}>
-        <ButtonsHeader onBackPress={handleGoBack} title="Oferta" />
+        <ButtonsHeader
+          onBackPress={handleGoBack}
+          title={headerTitle}
+        />
 
         <View style={styles.header}>
           {/* Przycisk wysyłania emaila - widoczny tylko dla montera/admina i tylko dla ofert (nie szablonów) */}
@@ -945,7 +1047,23 @@ function OfferOverview({
             </View>
           ) : null}
           {!overviewDataLoading && (
-            <>
+          <>
+            {(companyLogoUrl || fgazNumber) && (
+              <View style={styles.companyInfoBox}>
+                {companyLogoUrl ? (
+                  <Image
+                    source={{ uri: companyLogoUrl }}
+                    style={styles.companyLogo}
+                    resizeMode="contain"
+                  />
+                ) : null}
+                {fgazNumber ? (
+                  <Text style={styles.companyInfoText}>
+                    Certyfikat F-GAZ: {fgazNumber}
+                  </Text>
+                ) : null}
+              </View>
+            )}
               <Overlay
                 isVisible={templateOverlayVisible}
                 onBackdropPress={closeTemplateOverlay}
@@ -996,7 +1114,7 @@ function OfferOverview({
                 </View>
               </Overlay>
               {type === 'multi_split' &&
-                multisplitKompletyForDisplay.length > 0 ? (
+              multisplitKompletyForDisplay.length > 0 ? (
                 <View style={styles.devicesTable}>
                   <View style={styles.tableHeader}>
                     {offerId && (!clientHasAccount || isCurrentUserClient) && (
@@ -1030,12 +1148,15 @@ function OfferOverview({
                       return (
                         <View key={idx} style={styles.manufacturerGroup}>
                           <View
-                            style={[styles.manufacturerHeaderComplet, styles.tableRowComplet]}
+                            style={[
+                              styles.manufacturerHeaderComplet,
+                              styles.tableRowComplet,
+                            ]}
                           >
                             {offerId && (
                               <View style={styles.radioColumnKomplet}>
                                 {(!clientHasAccount || isCurrentUserClient) &&
-                                  komplet.id != null ? (
+                                komplet.id != null ? (
                                   <Text
                                     style={{
                                       fontSize: 24,
@@ -1287,21 +1408,65 @@ function OfferOverview({
                 route.params.isTemplate
                   ? 'Zapisz szablon'
                   : installationId
-                    ? 'Wyślij'
-                    : 'Zapisz'
+                  ? 'Wyślij'
+                  : 'Zapisz'
               }
               style={styles.submitButton}
               onPress={onSubmit}
             />
+          )}
+          {isTemplate && offerId && (
+            <>
+              {isTemplateEditMode ? (
+                <>
+                  <Input
+                    placeholder="Nazwa szablonu"
+                    value={templateOfferName}
+                    onChangeText={setTemplateOfferName}
+                    containerStyle={{ paddingHorizontal: 0 }}
+                    inputStyle={{ fontSize: 14 }}
+                  />
+                  <SubmitButton
+                    title="Zapisz zmiany"
+                    style={styles.submitButton}
+                    onPress={saveTemplateUpdate}
+                    loading={updateTemplateLoading}
+                  />
+                  <SubmitButton
+                    title="Anuluj"
+                    style={[styles.submitButton, styles.secondaryButton]}
+                    onPress={() => setIsTemplateEditMode(false)}
+                  />
+                </>
+              ) : (
+                <View style={styles.customButtonsWrapper}>
+                  <SubmitButton
+                    title="Aktualizuj szablon"
+                    style={styles.submitButton}
+                    onPress={() => setIsTemplateEditMode(true)}
+                  />
+                  <SubmitButton
+                    title="Utwórz ofertę z szablonu"
+                    style={[styles.submitButton, styles.secondaryButton]}
+                    onPress={() => {
+                      (navigation as any).navigate('CreateOfferFromTemplate', {
+                        templateId: offerId,
+                      });
+                    }}
+                  />
+                </View>
+              )}
+            </>
           )}
           {(mode === 'accept' || (mode === 'view' && isAccepted)) && (
             <View style={styles.customButtonsWrapper}>
               {(!clientHasAccount || isCurrentUserClient) && (
                 <>
                   {isAccepted && isCurrentUserClient ? (
-                    <>
-                      {(montazStatus === 'none' ||
-                        montazStatus === 'rejected') && (
+                    reservationSystemEnabled ? (
+                      <>
+                        {(montazStatus === 'none' ||
+                          montazStatus === 'rejected') && (
                           <SubmitButton
                             style={styles.submitButton}
                             title="Wybierz termin montażu"
@@ -1312,22 +1477,23 @@ function OfferOverview({
                             }}
                           />
                         )}
-                      {montazStatus === 'pending' && (
-                        <Text style={styles.statusMessage}>
-                          ⏳ Oczekuje na potwierdzenie montera
-                        </Text>
-                      )}
-                      {montazStatus === 'confirmed' && (
-                        <Text style={styles.statusMessageSuccess}>
-                          ✅ Termin montażu został potwierdzony
-                        </Text>
-                      )}
-                      {montazStatus === 'rejected' && (
-                        <Text style={styles.statusMessageError}>
-                          ❌ Termin został odrzucony. Wybierz inny termin.
-                        </Text>
-                      )}
-                    </>
+                        {montazStatus === 'pending' && (
+                          <Text style={styles.statusMessage}>
+                            ⏳ Oczekuje na potwierdzenie montera
+                          </Text>
+                        )}
+                        {montazStatus === 'confirmed' && (
+                          <Text style={styles.statusMessageSuccess}>
+                            ✅ Termin montażu został potwierdzony
+                          </Text>
+                        )}
+                        {montazStatus === 'rejected' && (
+                          <Text style={styles.statusMessageError}>
+                            ❌ Termin został odrzucony. Wybierz inny termin.
+                          </Text>
+                        )}
+                      </>
+                    ) : null
                   ) : (
                     <SubmitButton
                       style={styles.submitButton}
@@ -1388,6 +1554,12 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: Colors.teal,
     padding: 0,
+  },
+  secondaryButton: {
+    backgroundColor: Colors.white,
+    borderWidth: 2,
+    borderColor: Colors.teal,
+    marginTop: 8,
   },
   footer: {
     paddingHorizontal: 16,
@@ -1608,6 +1780,22 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 16,
     fontWeight: 'bold',
+  },
+  companyInfoBox: {
+    marginBottom: 16,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: Colors.invoiceFormTextContainer,
+    alignItems: 'center',
+  },
+  companyLogo: {
+    width: 160,
+    height: 60,
+    marginBottom: 8,
+  },
+  companyInfoText: {
+    fontSize: 12,
+    color: Colors.grayText,
   },
 });
 

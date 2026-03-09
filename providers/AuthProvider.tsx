@@ -621,14 +621,14 @@ export function AuthProvider({
           return;
         }
 
-        // Sukces - rejestracja zakończona (status 200 lub 201)
+        // Rejestracja zakończona (status 200 lub 201)
         if (response.status === 200 || response.status === 201) {
           // Usuń token zaproszenia po udanej rejestracji
           if (invitationToken) {
             await AsyncStorage.removeItem('invitation_token');
           }
 
-          // Pokaż komunikat o sukcesie
+          // Pokaż komunikat o powodzeniu
           const successMessage =
             json.message ||
             'Rejestracja zakończona pomyślnie. Możesz się teraz zalogować.';

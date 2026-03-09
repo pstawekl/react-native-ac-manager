@@ -1,55 +1,82 @@
-import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { ButtonGroup } from '../../components/Button';
 import ButtonsHeader from '../../components/ButtonsHeader';
 import Container from '../../components/Container';
+import DatePicker from '../../components/DatePicker';
 import FilePicker, { File } from '../../components/FilePicker';
 import { Dropdown, FormInput } from '../../components/Input';
 import Colors from '../../consts/Colors';
 import useApi from '../../hooks/useApi';
+import useDiscountProducers from '../../hooks/useDiscountProducers';
 import { CatalogsAddFlyerScreenProps } from '../../navigation/types';
 import useCatalogs from '../../providers/CatalogsProvider';
 
 type FlyerData = {
   file: File | null;
+  producent: string;
   name: string;
   is_active: boolean;
+  od?: Date;
+};
+
+const defaultFlyerValues: FlyerData = {
+  file: null,
+  producent: '',
+  name: 'Ulotka',
+  is_active: true,
+  od: undefined,
 };
 
 function AddFlyerForm({ navigation }: CatalogsAddFlyerScreenProps) {
-  const { control, handleSubmit } = useForm<FlyerData>({
-    defaultValues: {
-      file: null,
-      name: 'Ulotka',
-      is_active: true,
-    },
+  const { control, handleSubmit, reset } = useForm<FlyerData>({
+    defaultValues: defaultFlyerValues,
   });
 
   const { getFlyers } = useCatalogs();
 
-  const { result, execute, loading } = useApi<object, FormData>({
+  const { execute, loading } = useApi<object, FormData>({
     path: 'ulotka_add',
   });
 
-  useEffect(() => {
-    // TODO
-  }, [result]);
+  const { producers, loading: producersLoading } = useDiscountProducers();
 
-  const onSubmit = (data: FlyerData) => {
+  const onSubmit = async (data: FlyerData) => {
+    if (!data.producent) {
+      Alert.alert('Błąd', 'Wybierz producenta z listy rabatów.');
+      return;
+    }
+
+    if (!data.file) {
+      Alert.alert('Błąd', 'Wybierz plik PDF ulotki.');
+      return;
+    }
+
+    const fullName = data.producent
+      ? `${data.producent} ${data.name}`.trim()
+      : data.name.trim();
+
     const requestData = new FormData();
-
     requestData.append('file', data.file);
-    // mocked now: what does ac user stand for?
-    requestData.append('name', data.name);
+    requestData.append('name', fullName);
     requestData.append('is_active', data.is_active);
+    if (data.od) {
+      const dateStr = data.od.toISOString().split('T')[0];
+      requestData.append('od', dateStr);
+    }
 
-    execute(requestData);
+    const response = await execute({ data: requestData });
 
-    if (getFlyers) {
-      getFlyers();
-      navigation.navigate('Catalogs');
+    if (response && !('error' in response)) {
+      if (getFlyers) {
+        getFlyers();
+      }
+      reset(defaultFlyerValues);
+      navigation.navigate('Menu', { tab: 'flyers' });
+      Alert.alert('Dodano ulotkę');
+    } else if (response && 'error' in response) {
+      Alert.alert('Błąd', (response as { error: string }).error);
     }
   };
 
@@ -58,13 +85,34 @@ function AddFlyerForm({ navigation }: CatalogsAddFlyerScreenProps) {
       <View>
         <ButtonsHeader onBackPress={navigation.goBack} />
         <View style={styles.formContainer}>
+          <Dropdown
+            name="producent"
+            control={control}
+            label="Producent (zdefiniowany w rabatach)"
+            options={producers.map(producent => ({
+              label: producent,
+              value: producent,
+            }))}
+            isBordered
+            isThin
+            disabled={producersLoading || producers.length === 0}
+          />
+          {producers.length === 0 && !producersLoading && (
+            <Text style={styles.infoText}>
+              Brak zdefiniowanych producentów w rabatach. Dodaj rabat dla
+              producenta w ustawieniach, aby móc przypisać go do dokumentacji.
+            </Text>
+          )}
           <FormInput
             name="name"
             control={control}
             label="Nazwa ulotki"
             noPadding
-            style={styles.firstInput}
           />
+          <View style={styles.datePickerWrapper}>
+            <Text style={styles.datePickerLabel}>Data obowiązywania</Text>
+            <DatePicker control={control} name="od" color={Colors.purple} />
+          </View>
           <Dropdown
             name="is_active"
             control={control}
@@ -122,6 +170,22 @@ const styles = StyleSheet.create({
   },
   firstInput: {
     marginBottom: -4,
+  },
+  infoText: {
+    fontSize: 12,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.red,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  datePickerWrapper: {
+    marginBottom: 10,
+  },
+  datePickerLabel: {
+    fontSize: 14,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.black,
+    marginBottom: 8,
   },
   footer: {
     marginBottom: 30,

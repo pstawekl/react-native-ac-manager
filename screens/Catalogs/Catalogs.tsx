@@ -26,13 +26,7 @@ type CategoryGroup = {
   catalogs: Catalog[];
 };
 
-type YearGroup = {
-  year: number;
-  count: number;
-  catalogs: Catalog[];
-};
-
-type ViewLevel = 'producers' | 'years' | 'catalogs';
+type ViewLevel = 'producers' | 'catalogs';
 
 function CategoryCard({
   category,
@@ -62,32 +56,27 @@ function CategoryCard({
   );
 }
 
-function YearCard({
-  yearGroup,
-  onPress,
-}: {
-  yearGroup: YearGroup;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-    >
-      <View style={styles.categoryCard}>
-        <View style={styles.categoryCardContent}>
-          <View style={styles.categoryCardText}>
-            <Text style={styles.categoryName}>{yearGroup.year}</Text>
-            <Text style={styles.categoryCount}>
-              {yearGroup.count}{' '}
-              {yearGroup.count === 1 ? 'Dokument' : 'Dokumentów'}
-            </Text>
-          </View>
-          <ArrowRightIcon color={Colors.black} size={20} />
-        </View>
-      </View>
-    </Pressable>
-  );
+function formatOdDate(odDate?: string): string {
+  if (!odDate) return '';
+
+  try {
+    const date = new Date(odDate);
+    if (!Number.isNaN(date.getTime())) {
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `obowiązuje od: ${day}/${month}/${year}`;
+    }
+
+    const isoMatch = odDate.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      return `obowiązuje od: ${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+    }
+
+    return `obowiązuje od: ${odDate}`;
+  } catch {
+    return `obowiązuje od: ${odDate}`;
+  }
 }
 
 function CatalogItemCard({
@@ -101,36 +90,6 @@ function CatalogItemCard({
   onEdit?: () => void;
   showEdit?: boolean;
 }) {
-  // Formatuj datę "Od"
-  const formatOdDate = (odDate?: string): string => {
-    if (!odDate) return '';
-
-    try {
-      const date = new Date(odDate);
-      if (!isNaN(date.getTime())) {
-        const day = String(date.getDate()).padStart(2, '0');
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const year = date.getFullYear();
-        return `Od ${day}/${month}/${year}`;
-      }
-
-      // Jeśli parsowanie nie działa, spróbuj wyciągnąć datę z stringa
-      const dateMatch = odDate.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-      if (dateMatch) {
-        return `Od ${dateMatch[1]}/${dateMatch[2]}/${dateMatch[3]}`;
-      }
-
-      const isoMatch = odDate.match(/(\d{4})-(\d{2})-(\d{2})/);
-      if (isoMatch) {
-        return `Od ${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
-      }
-
-      return `Od ${odDate}`;
-    } catch {
-      return `Od ${odDate}`;
-    }
-  };
-
   const statusText = catalog.is_active ? 'Aktualny' : 'Nieaktualny';
   const statusBgColor = catalog.is_active
     ? Colors.statusDone
@@ -197,9 +156,7 @@ export default function Catalogs() {
   const [loadingPdf, setLoadingPdf] = useState(false);
   const [viewLevel, setViewLevel] = useState<ViewLevel>('producers');
   const [selectedProducer, setSelectedProducer] = useState<string | null>(null);
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
-  // Grupowanie katalogów według producenta (pierwsze słowo z nazwy)
   const categories = useMemo(() => {
     if (!catalogs || catalogs.length === 0) return [];
 
@@ -215,108 +172,23 @@ export default function Catalogs() {
     });
 
     const categoryArray: CategoryGroup[] = Array.from(categoryMap.entries())
-      .map(([name, catalogs]) => ({
+      .map(([name, cats]) => ({
         name,
-        count: catalogs.length,
-        catalogs,
+        count: cats.length,
+        catalogs: cats,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
     return categoryArray;
   }, [catalogs]);
 
-  // Grupowanie katalogów według roku dla wybranego producenta
-  const yearGroups = useMemo(() => {
-    if (!selectedProducer || !catalogs || catalogs.length === 0) return [];
-
-    const producerCatalogs =
-      categories.find(cat => cat.name === selectedProducer)?.catalogs || [];
-
-    const yearMap = new Map<number, Catalog[]>();
-
-    producerCatalogs.forEach(catalog => {
-      let year: number;
-
-      if (catalog.od) {
-        try {
-          const date = new Date(catalog.od);
-          if (!isNaN(date.getTime())) {
-            year = date.getFullYear();
-          } else {
-            const yearMatch = catalog.od.match(/\b(19|20)\d{2}\b/);
-            year = yearMatch
-              ? parseInt(yearMatch[0], 10)
-              : new Date().getFullYear();
-          }
-        } catch {
-          year = new Date().getFullYear();
-        }
-      } else {
-        try {
-          const date = new Date(catalog.created_date);
-          year = !isNaN(date.getTime())
-            ? date.getFullYear()
-            : new Date().getFullYear();
-        } catch {
-          year = new Date().getFullYear();
-        }
-      }
-
-      if (!yearMap.has(year)) {
-        yearMap.set(year, []);
-      }
-      yearMap.get(year)!.push(catalog);
-    });
-
-    const yearArray: YearGroup[] = Array.from(yearMap.entries())
-      .map(([year, catalogs]) => ({
-        year,
-        count: catalogs.length,
-        catalogs,
-      }))
-      .sort((a, b) => b.year - a.year);
-
-    return yearArray;
-  }, [selectedProducer, categories]);
-
-  // Lista katalogów dla wybranego producenta i roku
   const filteredCatalogs = useMemo(() => {
-    if (!selectedProducer || selectedYear === null) return [];
+    if (!selectedProducer) return [];
 
-    const producerCatalogs =
-      categories.find(cat => cat.name === selectedProducer)?.catalogs || [];
-
-    return producerCatalogs.filter(catalog => {
-      let year: number;
-
-      if (catalog.od) {
-        try {
-          const date = new Date(catalog.od);
-          if (!isNaN(date.getTime())) {
-            year = date.getFullYear();
-          } else {
-            const yearMatch = catalog.od.match(/\b(19|20)\d{2}\b/);
-            year = yearMatch
-              ? parseInt(yearMatch[0], 10)
-              : new Date().getFullYear();
-          }
-        } catch {
-          return false;
-        }
-      } else {
-        try {
-          const date = new Date(catalog.created_date);
-          year = !isNaN(date.getTime())
-            ? date.getFullYear()
-            : new Date().getFullYear();
-        } catch {
-          return false;
-        }
-      }
-
-      return year === selectedYear;
-    });
-  }, [selectedProducer, selectedYear, categories]);
+    return (
+      categories.find(cat => cat.name === selectedProducer)?.catalogs || []
+    );
+  }, [selectedProducer, categories]);
 
   const onDeleteConfirmed = async () => {
     if (!idToDelete) return;
@@ -339,22 +211,12 @@ export default function Catalogs() {
 
   const handleCategoryPress = (category: CategoryGroup) => {
     setSelectedProducer(category.name);
-    setViewLevel('years');
-  };
-
-  const handleYearPress = (yearGroup: YearGroup) => {
-    setSelectedYear(yearGroup.year);
     setViewLevel('catalogs');
   };
 
   const handleBack = () => {
-    if (viewLevel === 'catalogs') {
-      setViewLevel('years');
-      setSelectedYear(null);
-    } else if (viewLevel === 'years') {
-      setViewLevel('producers');
-      setSelectedProducer(null);
-    }
+    setViewLevel('producers');
+    setSelectedProducer(null);
   };
 
   const openCatalogLink = async (catalog: Catalog) => {
@@ -388,70 +250,40 @@ export default function Catalogs() {
 
   const renderContent = () => {
     if (viewLevel === 'producers') {
-      return (
-        <>
-          {categories.length > 0 ? (
-            <View style={styles.categoriesList}>
-              {categories.map(category => (
-                <CategoryCard
-                  key={category.name}
-                  category={category}
-                  onPress={() => handleCategoryPress(category)}
-                />
-              ))}
-            </View>
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Brak katalogów.</Text>
-            </View>
-          )}
-        </>
-      );
-    }
-
-    if (viewLevel === 'years') {
-      return (
-        <>
-          {yearGroups.length > 0 ? (
-            <View style={styles.categoriesList}>
-              {yearGroups.map(yearGroup => (
-                <YearCard
-                  key={yearGroup.year}
-                  yearGroup={yearGroup}
-                  onPress={() => handleYearPress(yearGroup)}
-                />
-              ))}
-            </View>
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Brak katalogów.</Text>
-            </View>
-          )}
-        </>
+      return categories.length > 0 ? (
+        <View style={styles.categoriesList}>
+          {categories.map(category => (
+            <CategoryCard
+              key={category.name}
+              category={category}
+              onPress={() => handleCategoryPress(category)}
+            />
+          ))}
+        </View>
+      ) : (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>Brak katalogów.</Text>
+        </View>
       );
     }
 
     if (viewLevel === 'catalogs') {
-      return (
-        <>
-          {filteredCatalogs.length > 0 ? (
-            <View style={styles.catalogsList}>
-              {filteredCatalogs.map(catalog => (
-                <CatalogItemCard
-                  key={catalog.id}
-                  catalog={catalog}
-                  onPress={() => openCatalogLink(catalog)}
-                  onEdit={() => navigation.navigate('EditCatalog', { catalog })}
-                  showEdit={hasAccess(Scopes.manageDocumentation)}
-                />
-              ))}
-            </View>
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Brak katalogów.</Text>
-            </View>
-          )}
-        </>
+      return filteredCatalogs.length > 0 ? (
+        <View style={styles.catalogsList}>
+          {filteredCatalogs.map(catalog => (
+            <CatalogItemCard
+              key={catalog.id}
+              catalog={catalog}
+              onPress={() => openCatalogLink(catalog)}
+              onEdit={() => navigation.navigate('EditCatalog', { catalog })}
+              showEdit={hasAccess(Scopes.manageDocumentation)}
+            />
+          ))}
+        </View>
+      ) : (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>Brak katalogów.</Text>
+        </View>
       );
     }
 
@@ -460,15 +292,11 @@ export default function Catalogs() {
 
   return (
     <View style={styles.container}>
-      {(viewLevel === 'years' || viewLevel === 'catalogs') && (
+      {viewLevel === 'catalogs' && (
         <View style={styles.backButtonContainer}>
           <Pressable onPress={handleBack} style={styles.backButton}>
             <ArrowLeftIcon color={Colors.black} size={20} />
-            <Text style={styles.backButtonText}>
-              {viewLevel === 'years'
-                ? 'Wszyscy producenci'
-                : selectedProducer || 'Lata'}
-            </Text>
+            <Text style={styles.backButtonText}>Wszyscy producenci</Text>
           </Pressable>
         </View>
       )}

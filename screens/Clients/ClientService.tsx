@@ -108,7 +108,6 @@ export default function ClientService({
 
       if (response?.success) {
         Alert.alert(
-          'Sukces',
           `Dokument PDF został wygenerowany i zapisany do rekordu ${
             serviceType === 'przeglad' ? 'przeglądu' : 'serwisu'
           }`,
@@ -201,7 +200,6 @@ export default function ClientService({
         (response as any)?.status === 'Przegląd updated'
       ) {
         Alert.alert(
-          'Sukces',
           `Zaktualizowano dane ${
             serviceType === 'przeglad' ? 'przeglądu' : 'serwisu'
           }`,
